@@ -62,6 +62,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [parseError, setParseError] = useState('');
   const [symmetricMode, setSymmetricMode] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // コンテキストメニュー
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
@@ -114,9 +115,20 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   }, [currentCellContent]);
 
-  // キーボードイベントリスナー
+  // キーボードイベントリスナー（行列テーブルにフォーカスがある場合のみ）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 行列テーブルまたはその子要素にフォーカスがある場合のみ処理
+      const activeElement = document.activeElement;
+      const isMatrixFocused = activeElement && (
+        activeElement.closest('.matrix-table') || 
+        activeElement.classList.contains('matrix-cell') ||
+        activeElement.tagName === 'TD' ||
+        activeElement.tagName === 'DIV' && activeElement.closest('.matrix-table')
+      );
+      
+      if (!isMatrixFocused) return;
+      
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 'c':
@@ -758,13 +770,22 @@ const LaTeXMatrixEditor: React.FC = () => {
         LaTeX Matrix Editor
       </h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="space-y-8">
         {/* Editor Section */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-700">Matrix Editor</h2>
+        <div className="bg-white rounded-lg shadow-lg p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-700">Matrix Editor</h2>
+            <button
+              onClick={() => setShowHelp(!showHelp)}
+              className="w-6 h-6 bg-blue-100 hover:bg-blue-200 rounded-full flex items-center justify-center text-blue-600 text-sm font-bold transition-colors"
+              title="Show help"
+            >
+              ?
+            </button>
+          </div>
           
           {/* Controls */}
-          <div className="mb-6 space-y-4">
+          <div className="mb-4 space-y-3">
             {/* Matrix Type */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">
@@ -784,116 +805,22 @@ const LaTeXMatrixEditor: React.FC = () => {
               </select>
             </div>
             
-            {/* Size Controls */}
-            <div className="flex gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">
-                  Size: {matrix.rows} × {matrix.cols}
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  <button 
-                    onClick={() => insertRowAt(matrix.rows - 1)}
-                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                  >
-                    +Row
-                  </button>
-                  <button 
-                    onClick={() => deleteRowAt(matrix.rows - 1)}
-                    className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                    disabled={matrix.rows <= 1}
-                  >
-                    -Row
-                  </button>
-                  <button 
-                    onClick={() => insertColAt(matrix.cols - 1)}
-                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                  >
-                    +Col
-                  </button>
-                  <button 
-                    onClick={() => deleteColAt(matrix.cols - 1)}
-                    className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
-                    disabled={matrix.cols <= 1}
-                  >
-                    -Col
-                  </button>
-                </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  Selected: Row {activeCell.row + 1}, Col {activeCell.col + 1}
-                  {selectionMode === 'range' && (
-                    <span className="ml-2">
-                      Range: ({Math.min(selectedRange.start.row, selectedRange.end.row) + 1},{Math.min(selectedRange.start.col, selectedRange.end.col) + 1}) to ({Math.max(selectedRange.start.row, selectedRange.end.row) + 1},{Math.max(selectedRange.start.col, selectedRange.end.col) + 1})
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {/* Selection Controls */}
+            {/* Matrix Info */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">
-                Selection & Clipboard
+                Size: {matrix.rows} × {matrix.cols}
               </label>
-              <div className="flex gap-2 flex-wrap">
-                <button 
-                  onClick={copySelectedCells}
-                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                  disabled={!selectedRange}
-                >
-                  Copy (Ctrl+C)
-                </button>
-                <button 
-                  onClick={pasteClipboardData}
-                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
-                  disabled={!clipboardData}
-                >
-                  Paste (Ctrl+V)
-                </button>
-                <button 
-                  onClick={selectAllCells}
-                  className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm"
-                >
-                  Select All (Ctrl+A)
-                </button>
-                {copySuccess && (
-                  <span className="text-green-600 text-sm self-center">Copied!</span>
+              <div className="text-xs text-gray-500">
+                Selected: Row {activeCell.row + 1}, Col {activeCell.col + 1}
+                {selectionMode === 'range' && (
+                  <span className="ml-2">
+                    Range: ({Math.min(selectedRange.start.row, selectedRange.end.row) + 1},{Math.min(selectedRange.start.col, selectedRange.end.col) + 1}) to ({Math.max(selectedRange.start.row, selectedRange.end.row) + 1},{Math.max(selectedRange.start.col, selectedRange.end.col) + 1})
+                  </span>
                 )}
               </div>
             </div>
             
-            {/* Presets */}
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
-                Presets
-              </label>
-              <div className="flex gap-2 flex-wrap">
-                <button 
-                  onClick={() => setPreset('identity')}
-                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
-                >
-                  Identity
-                </button>
-                <button 
-                  onClick={() => setPreset('zero')}
-                  className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
-                >
-                  Zero
-                </button>
-                <button 
-                  onClick={() => setPreset('clear')}
-                  className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-sm"
-                >
-                  Clear
-                </button>
-                <button 
-                  onClick={() => setPreset('symmetric')}
-                  className="px-3 py-1 bg-indigo-500 text-white rounded hover:bg-indigo-600 text-sm"
-                  disabled={matrix.rows !== matrix.cols}
-                >
-                  Symmetric
-                </button>
-              </div>
-            </div>
+            
 
             {/* Symmetric Matrix Mode */}
             <div>
@@ -927,7 +854,8 @@ const LaTeXMatrixEditor: React.FC = () => {
               </div>
             </div>
 
-            {/* Import LaTeX */}
+            {/* Import LaTeX - Hidden for now */}
+            {/* 
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">
                 Import from LaTeX
@@ -949,11 +877,12 @@ const LaTeXMatrixEditor: React.FC = () => {
                 </div>
               )}
             </div>
+            */}
           </div>
           
           {/* Matrix Table */}
           <div className="matrix-table-container overflow-visible">
-            <table ref={tableRef} className="mx-auto matrix-table">
+            <table ref={tableRef} className="matrix-table" style={{ margin: '20px auto' }}>
               <thead>
                 <tr>
                   <th className="matrix-col-header w-8"></th>
@@ -1031,7 +960,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                                             i !== j;
                       
                       return (
-                        <td key={j} className="p-1">
+                        <td key={j}>
                           <div
                             tabIndex={0}
                             onClick={(e) => {
@@ -1096,7 +1025,7 @@ const LaTeXMatrixEditor: React.FC = () => {
           </div>
 
           {/* Cell Editor */}
-          <div className="mt-6">
+          <div className="mt-4">
             <label className="block text-sm font-medium text-gray-600 mb-2">
               Edit Cell ({activeCell.row + 1}, {activeCell.col + 1})
             </label>
@@ -1109,21 +1038,37 @@ const LaTeXMatrixEditor: React.FC = () => {
             />
           </div>
           
-          <div className="mt-4 text-xs text-gray-500">
-            <p>• Click cells to select, drag to select range, Ctrl+click for multi-select</p>
-            <p>• Use +/- buttons on row/column headers for insertion/deletion</p>
-            <p>• Right-click for context menu operations</p>
-            <p>• Keyboard shortcuts: Ctrl+C/V for copy/paste, Ctrl+A for select all</p>
-            <p>• Tab/Shift+Tab and arrow keys for navigation</p>
-          </div>
+          {/* Help Popup */}
+          {showHelp && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowHelp(false)}>
+              <div className="bg-white rounded-lg p-6 max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-800">How to Use</h3>
+                  <button
+                    onClick={() => setShowHelp(false)}
+                    className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="text-sm text-gray-600 space-y-2">
+                  <p>• <strong>Selection:</strong> Click cells to select, drag to select range, Ctrl+click for multi-select</p>
+                  <p>• <strong>Table Operations:</strong> Use +/- buttons on row/column headers for insertion/deletion</p>
+                  <p>• <strong>Context Menu:</strong> Right-click for additional operations</p>
+                  <p>• <strong>Keyboard Shortcuts:</strong> Ctrl+C/V for copy/paste, Ctrl+A for select all (when table is focused)</p>
+                  <p>• <strong>Navigation:</strong> Tab/Shift+Tab and arrow keys for cell navigation</p>
+                  <p>• <strong>Symmetric Mode:</strong> Enable for automatic symmetric matrix editing</p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         {/* Preview Section */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-700">Preview</h2>
+        <div className="bg-white rounded-lg shadow-lg p-4">
           
           {/* Rendered Matrix */}
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg min-h-32 flex items-center justify-center">
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg min-h-24 flex items-center justify-center">
             <div ref={previewRef} className="text-center"></div>
           </div>
           

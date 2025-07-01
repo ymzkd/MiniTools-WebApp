@@ -36,11 +36,11 @@ body {
 .matrix-table {
   border-collapse: separate;
   border-spacing: 0;
-  margin: 50px;
+  margin: 30px;
 }
 
 .matrix-table-container {
-  padding: 60px;
+  padding: 0;
   overflow: visible;
 }
 
