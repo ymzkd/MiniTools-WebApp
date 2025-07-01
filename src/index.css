@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css');
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f9fafb;
+}
+
+.katex-cell {
+  transition: transform 0.1s ease;
+}
+
+.katex-cell .katex {
+  font-size: inherit !important;
+}
+
+.katex-cell .katex-display {
+  margin: 0 !important;
+}
+
+/* KaTeX HTML表示を無効化 */
+.katex-html {
+  display: none !important;
+}
+
+/* MathMLのみ表示 */
+.katex-mathml {
+  display: inline !important;
+}
+
+.matrix-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 50px;
+}
+
+.matrix-table-container {
+  padding: 60px;
+  overflow: visible;
+}
+
+.matrix-row-header {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 2px;
+  width: 30px;
+  text-align: center;
+  font-size: 12px;
+  color: #6c757d;
+  user-select: none;
+  position: relative;
+}
+
+.matrix-col-header {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 2px;
+  height: 30px;
+  text-align: center;
+  font-size: 12px;
+  color: #6c757d;
+  user-select: none;
+}
+
+.matrix-cell {
+  position: relative;
+  user-select: none;
+}
+
+.matrix-cell.selected {
+  background: #e3f2fd !important;
+  border-color: #2196f3 !important;
+}
+
+.matrix-cell.in-selection {
+  background: #e8f5e8 !important;
+  border-color: #4caf50 !important;
+}
+
+.row-controls, .col-controls {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 1000;
+  display: flex;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.matrix-row-header:hover .row-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.matrix-col-header:hover .col-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.row-controls {
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+.col-controls {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+  margin-bottom: 10px;
+}
+
+.insert-btn, .delete-btn {
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  pointer-events: auto;
+}
+
+.delete-btn {
+  background: #f44336;
+}
+
+.insert-btn:hover {
+  background: #1976d2;
+}
+
+.delete-btn:hover {
+  background: #d32f2f;
+}
+
+.context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  z-index: 1000;
+  min-width: 150px;
+}
+
+.context-menu-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.context-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.context-menu-item:last-child {
+  border-bottom: none;
+}
+
+.context-menu-item.disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+.context-menu-item.disabled:hover {
+  background: transparent;
+}
