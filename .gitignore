@@ -8,6 +8,11 @@ yarn-error.log*
 dist/
 build/
 
+# TypeScript build cache and compiled files
+*.tsbuildinfo
+*.d.ts
+vite.config.js
+
 # Environment variables
 .env
 .env.local
