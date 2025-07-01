@@ -183,7 +183,6 @@ const LaTeXMatrixEditor = () => {
 
   // その他の状態
   const [currentCellContent, setCurrentCellContent] = useState('a_{11}');
-  const [renderedLatex, setRenderedLatex] = useState('');
   const [latexCode, setLatexCode] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const [parseError, setParseError] = useState('');
@@ -196,7 +195,6 @@ const LaTeXMatrixEditor = () => {
   const [clipboardData, setClipboardData] = useState<string[][] | null>(null);
 
   // refs
-  const cellRefs = useRef<{[key: string]: HTMLElement}>({});
   const cellKatexRefs = useRef<{[key: string]: HTMLElement}>({});
   const previewRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -545,7 +543,7 @@ const LaTeXMatrixEditor = () => {
       }, 0);
       
     } catch (error) {
-      setParseError(error.message);
+      setParseError((error as Error).message);
     }
   };
 
@@ -570,7 +568,7 @@ const LaTeXMatrixEditor = () => {
         // ハイライト適用
         setTimeout(() => applyHighlight(), 50);
       } catch (error) {
-        previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${error.message}</span>`;
+        previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
       }
     }
   };
@@ -1179,7 +1177,9 @@ const LaTeXMatrixEditor = () => {
                             }`}
                           >
                             <div
-                              ref={(el) => cellKatexRefs.current[`${i}-${j}`] = el}
+                              ref={(el) => {
+                                if (el) cellKatexRefs.current[`${i}-${j}`] = el;
+                              }}
                               className="katex-cell text-center max-w-full max-h-full"
                               style={{ 
                                 fontSize: '14px',

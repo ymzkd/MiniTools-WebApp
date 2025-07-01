@@ -30,7 +30,7 @@ declare global {
     katex: {
       render: (tex: string, element: HTMLElement, options?: any) => void;
     };
-    parseTimeout?: NodeJS.Timeout;
+    parseTimeout?: number;
   }
 }
 
@@ -74,6 +74,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const cellKatexRefs = useRef<{[key: string]: HTMLElement}>({});
   const previewRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  const cellEditorRef = useRef<HTMLInputElement>(null);
 
   // KaTeX動的ロード
   useEffect(() => {
@@ -648,101 +649,102 @@ const LaTeXMatrixEditor: React.FC = () => {
     }, 0);
   };
 
-  // プリセット設定
-  const setPreset = (type: string) => {
-    let newCells: string[][];
+  // セルにフォーカスを移動するユーティリティ関数
+  const focusCell = (row: number, col: number) => {
+    const tableElement = tableRef.current;
+    if (!tableElement) return;
     
-    switch (type) {
-      case 'identity':
-        newCells = matrix.cells.map((row, i) => 
-          row.map((_, j) => i === j ? '1' : '0')
-        );
-        break;
-      case 'zero':
-        newCells = matrix.cells.map(row => row.map(() => '0'));
-        break;
-      case 'clear':
-        newCells = matrix.cells.map(row => row.map(() => ''));
-        break;
-      case 'symmetric':
-        // 対称行列のサンプルを生成
-        if (matrix.rows === matrix.cols) {
-          newCells = matrix.cells.map((row, i) => 
-            row.map((_, j) => {
-              if (i === j) return '1'; // 対角成分
-              if (i < j) return `a_{${i+1}${j+1}}`; // 上三角
-              return `a_{${j+1}${i+1}}`; // 下三角（対称）
-            })
-          );
-        } else {
-          alert('対称行列は正方行列である必要があります');
-          return;
-        }
-        break;
-      default:
-        return;
+    // テーブル内の指定されたセルを検索（行・列ヘッダーを除く）
+    const cellSelector = `[data-row="${row}"][data-col="${col}"]`;
+    const cellElement = tableElement.querySelector(cellSelector) as HTMLElement;
+    
+    if (cellElement) {
+      cellElement.focus();
     }
-    
-    setMatrix(prev => ({ ...prev, cells: newCells }));
-    // 現在のセルの内容も更新
-    setCurrentCellContent(newCells[activeCell.row][activeCell.col] || '');
-    
-    // セルの再レンダリング
-    setTimeout(() => {
-      if (window.katex) {
-        renderAllCells();
-      }
-    }, 0);
   };
 
-  // キーボードナビゲーション
+  // キーボードナビゲーション（簡素化版）
   const handleKeyDown = (e: React.KeyboardEvent, row: number, col: number) => {
     let newRow = row;
     let newCol = col;
+    let shouldMove = true;
     
     switch (e.key) {
       case 'Tab':
         e.preventDefault();
         if (e.shiftKey) {
-          newCol = col > 0 ? col - 1 : matrix.cols - 1;
-          if (newCol === matrix.cols - 1 && col === 0) {
-            newRow = row > 0 ? row - 1 : matrix.rows - 1;
+          // Shift+Tab: 左に移動、行の端で上の行の最後へ
+          if (col > 0) {
+            newCol = col - 1;
+          } else if (row > 0) {
+            newRow = row - 1;
+            newCol = matrix.cols - 1;
+          } else {
+            newRow = matrix.rows - 1;
+            newCol = matrix.cols - 1;
           }
         } else {
-          newCol = col < matrix.cols - 1 ? col + 1 : 0;
-          if (newCol === 0 && col === matrix.cols - 1) {
-            newRow = row < matrix.rows - 1 ? row + 1 : 0;
+          // Tab: 右に移動、行の端で次の行の最初へ
+          if (col < matrix.cols - 1) {
+            newCol = col + 1;
+          } else if (row < matrix.rows - 1) {
+            newRow = row + 1;
+            newCol = 0;
+          } else {
+            newRow = 0;
+            newCol = 0;
           }
         }
         break;
       case 'ArrowUp':
         e.preventDefault();
-        newRow = row > 0 ? row - 1 : matrix.rows - 1;
+        if (row > 0) {
+          newRow = row - 1;
+        } else {
+          shouldMove = false; // 境界で停止
+        }
         break;
       case 'ArrowDown':
+        e.preventDefault();
+        if (row < matrix.rows - 1) {
+          newRow = row + 1;
+        } else {
+          shouldMove = false; // 境界で停止
+        }
+        break;
       case 'Enter':
         e.preventDefault();
-        newRow = row < matrix.rows - 1 ? row + 1 : 0;
-        break;
+        // セル編集テキストボックスにフォーカスを移動
+        if (cellEditorRef.current) {
+          cellEditorRef.current.focus();
+          cellEditorRef.current.select(); // テキストを全選択
+        }
+        return; // セル移動は行わない
       case 'ArrowLeft':
         e.preventDefault();
-        newCol = col > 0 ? col - 1 : matrix.cols - 1;
-        if (newCol === matrix.cols - 1 && col === 0) {
-          newRow = row > 0 ? row - 1 : matrix.rows - 1;
+        if (col > 0) {
+          newCol = col - 1;
+        } else {
+          shouldMove = false; // 境界で停止
         }
         break;
       case 'ArrowRight':
         e.preventDefault();
-        newCol = col < matrix.cols - 1 ? col + 1 : 0;
-        if (newCol === 0 && col === matrix.cols - 1) {
-          newRow = row < matrix.rows - 1 ? row + 1 : 0;
+        if (col < matrix.cols - 1) {
+          newCol = col + 1;
+        } else {
+          shouldMove = false; // 境界で停止
         }
         break;
       default:
         return;
     }
     
-    selectCell(newRow, newCol, e.shiftKey);
+    if (shouldMove) {
+      selectCell(newRow, newCol, e.shiftKey);
+      // 移動先のセルにフォーカスを移動
+      setTimeout(() => focusCell(newRow, newCol), 0);
+    }
   };
 
   // LaTeXコード手動編集
@@ -963,6 +965,8 @@ const LaTeXMatrixEditor: React.FC = () => {
                         <td key={j}>
                           <div
                             tabIndex={0}
+                            data-row={i}
+                            data-col={j}
                             onClick={(e) => {
                               if (e.ctrlKey || e.metaKey) {
                                 // Ctrl+クリックで複数選択モード
@@ -979,6 +983,8 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 // 通常のクリック
                                 selectCell(i, j);
                               }
+                              // クリック後にセルにフォーカスを設定
+                              e.currentTarget.focus();
                             }}
                             onMouseDown={(e) => {
                               if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -1030,9 +1036,18 @@ const LaTeXMatrixEditor: React.FC = () => {
               Edit Cell ({activeCell.row + 1}, {activeCell.col + 1})
             </label>
             <input
+              ref={cellEditorRef}
               type="text"
               value={currentCellContent}
               onChange={(e) => updateCurrentCell(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Escape') {
+                  e.preventDefault();
+                  e.currentTarget.blur(); // フォーカスを外す
+                  // アクティブセルにフォーカスを戻す
+                  focusCell(activeCell.row, activeCell.col);
+                }
+              }}
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               placeholder="Enter LaTeX expression..."
             />
