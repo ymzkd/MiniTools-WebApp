@@ -1,153 +1,153 @@
 # LaTeX Matrix Editor
 
-A modern, interactive web application for visual editing of mathematical matrices with real-time LaTeX preview and generation. Transform tedious text-based LaTeX matrix editing into an intuitive, spreadsheet-like experience.
+数学行列の視覚的編集とリアルタイムLaTeXプレビュー生成が可能なモダンで対話的なWebアプリケーションです。面倒なテキストベースのLaTeX行列編集を、直感的なスプレッドシート風の体験に変換します。
 
-## ✨ Features
+## ✨ 機能
 
-### 🎯 Core Functionality
-- **Visual Matrix Editing**: Spreadsheet-like interface with real-time cell editing
-- **Multiple Matrix Types**: Support for `matrix`, `pmatrix`, `bmatrix`, `vmatrix`, `Vmatrix`, and `smallmatrix`
-- **Real-time KaTeX Rendering**: Live mathematical preview with automatic scaling
-- **LaTeX Import/Export**: Bidirectional conversion between visual editor and LaTeX code
+### 🎯 核心機能
+- **視覚的行列編集**: リアルタイムセル編集機能付きスプレッドシート風インターフェース
+- **複数の行列タイプ**: `matrix`、`pmatrix`、`bmatrix`、`vmatrix`、`Vmatrix`、`smallmatrix`に対応
+- **リアルタイムKaTeXレンダリング**: 自動スケーリング機能付きライブ数式プレビュー
+- **LaTeXインポート/エクスポート**: 視覚エディターとLaTeXコード間の双方向変換
 
-### 🎮 Advanced UI Controls
-- **Smart Selection**: Single cell, range selection (drag/Shift+click), multi-selection (Ctrl+click)
-- **Copy & Paste**: Internal clipboard with TSV compatibility, auto-expands matrix dimensions
-- **Dynamic Table Operations**: Hover-based row/column insertion/deletion controls
-- **Context Menus**: Right-click operations for efficient matrix management
-- **Keyboard Navigation**: Full Tab/arrow key support with Enter for direct cell editing
+### 🎮 高度なUI操作
+- **スマート選択**: 単一セル、範囲選択（ドラッグ/Shift+クリック）、複数選択（Ctrl+クリック）
+- **コピー＆ペースト**: TSV互換の内部クリップボード、行列サイズの自動拡張
+- **動的テーブル操作**: ホバーベースの行/列挿入・削除コントロール
+- **コンテキストメニュー**: 効率的な行列管理のための右クリック操作
+- **キーボードナビゲーション**: Enterキーによる直接セル編集を含むTab/矢印キーの完全サポート
 
-### 🔧 Specialized Features
-- **Symmetric Matrix Mode**: Auto-synchronizes opposite cells in square matrices
-- **Selection Highlighting**: Visual feedback in both table and preview
-- **Responsive Scaling**: Auto-scaling cell content to fit within boundaries
-- **Real-time Validation**: LaTeX parsing with error handling
+### 🔧 専門機能
+- **対称行列モード**: 正方行列における対称位置セルの自動同期
+- **選択ハイライト**: テーブルとプレビュー両方での視覚的フィードバック
+- **レスポンシブスケーリング**: 境界内に収まるセル内容の自動スケーリング
+- **リアルタイム検証**: エラーハンドリング機能付きLaTeX解析
 
-## 🚀 Quick Start
+## 🚀 クイックスタート
 
-### Prerequisites
-- Node.js 18+ 
-- npm or yarn
+### 必要な環境
+- Node.js 18以上
+- npm または yarn
 
-### Installation
+### インストール
 ```bash
-# Clone the repository
+# リポジトリをクローン
 git clone <repository-url>
 cd latex-matrix-editor
 
-# Install dependencies
+# 依存関係をインストール
 npm install
 
-# Start development server
+# 開発サーバーを起動
 npm run dev
 ```
 
-Visit `http://localhost:3000` to start editing matrices!
+`http://localhost:3000` にアクセスして行列編集を開始してください！
 
-### Production Build
+### プロダクションビルド
 ```bash
-# Build for production
+# プロダクション用ビルド
 npm run build
 
-# Preview production build
+# プロダクションビルドをプレビュー
 npm run preview
 ```
 
-## 🛠 Technology Stack
+## 🛠 技術スタック
 
-- **Frontend**: React 18 + TypeScript
-- **Build Tool**: Vite (with hot reload)
-- **Math Rendering**: KaTeX 0.16.8 (CDN)
-- **Styling**: Tailwind CSS
-- **Code Quality**: ESLint + TypeScript
+- **フロントエンド**: React 18 + TypeScript
+- **ビルドツール**: Vite（ホットリロード機能付き）
+- **数式レンダリング**: KaTeX 0.16.8（CDN）
+- **スタイリング**: Tailwind CSS
+- **コード品質**: ESLint + TypeScript
 
-## 📖 Usage Guide
+## 📖 使用方法
 
-### Basic Operations
-1. **Select Cells**: Click to select, drag for range selection
-2. **Edit Content**: Use the cell editor or press Enter on selected cell
-3. **Navigate**: Tab/Shift+Tab for sequential navigation, arrow keys for directional movement
-4. **Copy/Paste**: Ctrl+C/V for clipboard operations, Ctrl+A to select all
+### 基本操作
+1. **セル選択**: クリックで選択、ドラッグで範囲選択
+2. **内容編集**: セルエディターを使用するか、選択したセルでEnterキーを押す
+3. **ナビゲーション**: Tab/Shift+Tabで順次移動、矢印キーで方向移動
+4. **コピー/ペースト**: Ctrl+C/Vでクリップボード操作、Ctrl+Aで全選択
 
-### Matrix Operations
-- **Add Rows/Columns**: Use hover controls on headers or right-click context menu
-- **Delete Rows/Columns**: Click × buttons or use context menu
-- **Change Matrix Type**: Select from dropdown (parentheses, brackets, determinant, etc.)
+### 行列操作
+- **行/列の追加**: ヘッダーのホバーコントロールまたは右クリックコンテキストメニューを使用
+- **行/列の削除**: ×ボタンまたはコンテキストメニューを使用
+- **行列タイプ変更**: ドロップダウンから選択（括弧、角括弧、行列式など）
 
-### Advanced Features
-- **Symmetric Mode**: Enable for automatic symmetric matrix editing
-- **LaTeX Import**: Paste existing LaTeX matrix code in the code editor
-- **Export**: Copy generated LaTeX code for use in documents
+### 高度な機能
+- **対称モード**: 自動対称行列編集を有効化
+- **LaTeXインポート**: コードエディターで既存のLaTeX行列コードを貼り付け
+- **エクスポート**: 文書用に生成されたLaTeXコードをコピー
 
-## 🏗 Project Structure
+## 🏗 プロジェクト構造
 
 ```
 src/
 ├── components/
-│   └── LaTeXMatrixEditor.tsx  # Main component with full functionality
-├── App.tsx                    # Application entry point
-├── main.tsx                   # React root
-└── index.css                  # Global styles
+│   └── LaTeXMatrixEditor.tsx  # 全機能を含むメインコンポーネント
+├── App.tsx                    # アプリケーションエントリーポイント
+├── main.tsx                   # Reactルート
+└── index.css                  # グローバルスタイル
 ```
 
-## 📋 Development Commands
+## 📋 開発コマンド
 
 ```bash
-npm run dev      # Start development server (port 3000)
-npm run build    # Build for production
-npm run lint     # Run ESLint
-npm run preview  # Preview production build
+npm run dev      # 開発サーバー起動（ポート3000）
+npm run build    # プロダクション用ビルド
+npm run lint     # ESLint実行
+npm run preview  # プロダクションビルドプレビュー
 ```
 
-## 🚀 Deployment
+## 🚀 デプロイ
 
-This application is optimized for static hosting platforms:
+このアプリケーションは静的ホスティングプラットフォーム向けに最適化されています：
 
-### Recommended Platforms
-- **Vercel**: Zero-config deployment with Git integration
-- **Netlify**: Drag-and-drop or Git-based deployment
-- **GitHub Pages**: Free hosting for public repositories
+### 推奨プラットフォーム
+- **Vercel**: Git統合によるゼロ設定デプロイメント
+- **Netlify**: ドラッグ&ドロップまたはGitベースのデプロイメント
+- **GitHub Pages**: パブリックリポジトリの無料ホスティング
 
-### Deploy to Vercel
-1. Push code to GitHub repository
-2. Connect repository to Vercel
-3. Automatic deployment with custom domain
+### Vercelへのデプロイ
+1. GitHubリポジトリにコードをプッシュ
+2. リポジトリをVercelに接続
+3. カスタムドメインでの自動デプロイメント
 
-### Deploy to Netlify
-1. Run `npm run build`
-2. Drag `dist` folder to Netlify deploy area
-3. Instant deployment with HTTPS
+### Netlifyへのデプロイ
+1. `npm run build` を実行
+2. `dist` フォルダをNetlifyデプロイエリアにドラッグ
+3. HTTPSによる即座のデプロイメント
 
-## 🎨 Key Features Showcase
+## 🎨 主要機能の紹介
 
-### Matrix Types Support
+### 行列タイプサポート
 ```latex
-\begin{pmatrix} a & b \\ c & d \end{pmatrix}  % Parentheses
-\begin{bmatrix} a & b \\ c & d \end{bmatrix}  % Brackets
-\begin{vmatrix} a & b \\ c & d \end{vmatrix}  % Determinant
+\begin{pmatrix} a & b \\ c & d \end{pmatrix}  % 括弧
+\begin{bmatrix} a & b \\ c & d \end{bmatrix}  % 角括弧
+\begin{vmatrix} a & b \\ c & d \end{vmatrix}  % 行列式
 ```
 
-### Symmetric Matrix Auto-Sync
-When symmetric mode is enabled, editing `a[i][j]` automatically updates `a[j][i]`.
+### 対称行列自動同期
+対称モードが有効な場合、`a[i][j]` の編集により `a[j][i]` が自動的に更新されます。
 
-### Real-time LaTeX Generation
-Visual edits instantly generate clean, properly formatted LaTeX code ready for academic documents.
+### リアルタイムLaTeX生成
+視覚的編集により、学術文書向けのクリーンで適切にフォーマットされたLaTeXコードが即座に生成されます。
 
-## 🤝 Contributing
+## 🤝 貢献
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with proper TypeScript types
-4. Test with `npm run build` and `npm run lint`
-5. Submit a pull request
+1. リポジトリをフォーク
+2. 機能ブランチを作成
+3. 適切なTypeScript型で変更を加える
+4. `npm run build` と `npm run lint` でテスト
+5. プルリクエストを提出
 
-## 📄 License
+## 📄 ライセンス
 
-MIT License - feel free to use this project for academic or commercial purposes.
+MITライセンス - 学術または商用目的での使用は自由です。
 
-## 🔗 Links
+## 🔗 リンク
 
-- [KaTeX Documentation](https://katex.org/)
-- [React Documentation](https://react.dev/)
-- [Vite Documentation](https://vite.dev/)
+- [KaTeX ドキュメント](https://katex.org/)
+- [React ドキュメント](https://react.dev/)
+- [Vite ドキュメント](https://vite.dev/)
 - [Tailwind CSS](https://tailwindcss.com/)
