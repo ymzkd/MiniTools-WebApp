@@ -63,6 +63,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const [parseError, setParseError] = useState('');
   const [symmetricMode, setSymmetricMode] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showZeros, setShowZeros] = useState(true);
 
   // コンテキストメニュー
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
