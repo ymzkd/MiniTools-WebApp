@@ -153,69 +153,6 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   }, [showZeros]);
 
-  // キーボードイベントリスナー（行列テーブルにフォーカスがある場合のみ）
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const activeElement = document.activeElement as HTMLElement;
-      if (!activeElement) return;
-      
-      const isInCellEditor = cellEditorRef.current && activeElement === cellEditorRef.current;
-      const isInLatexTextarea = activeElement.tagName.toLowerCase() === 'textarea' && 
-                               activeElement.className.includes('font-mono');
-      const isInOtherInput = activeElement.tagName.toLowerCase() === 'input' || 
-                            activeElement.tagName.toLowerCase() === 'textarea' ||
-                            activeElement.contentEditable === 'true';
-      
-      if (isInCellEditor || isInLatexTextarea) return;
-      
-      if (isInOtherInput) return;
-      
-      const matrixEditor = document.querySelector('.latex-matrix-editor');
-      const isInMatrixEditor = matrixEditor && (
-        matrixEditor.contains(activeElement) ||
-        activeElement.closest('.latex-matrix-editor')
-      );
-      
-      if (!isInMatrixEditor) return;
-      
-      if (e.ctrlKey || e.metaKey) {
-        switch (e.key) {
-          case 'c':
-            e.preventDefault();
-            e.stopPropagation();
-            copySelectedCells();
-            break;
-          case 'v':
-            e.preventDefault();
-            e.stopPropagation();
-            pasteClipboardData();
-            break;
-          case 'a':
-            e.preventDefault();
-            e.stopPropagation();
-            selectAllCells();
-            break;
-          case 'z':
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.shiftKey) {
-              redo();
-            } else {
-              undo();
-            }
-            break;
-          case 'y':
-            e.preventDefault();
-            e.stopPropagation();
-            redo();
-            break;
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown, true);
-    return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [selectedRange, clipboardData]);
 
   // コンテキストメニューを閉じる
   useEffect(() => {
@@ -904,6 +841,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       setActiveCell(historyEntry.activeCell);
       setCurrentCellContent(historyEntry.matrix.cells[historyEntry.activeCell.row][historyEntry.activeCell.col]);
       setUndoRedoState(prev => ({ ...prev, currentIndex: newIndex }));
+      
+      if (cellEditorRef.current) {
+        cellEditorRef.current.blur();
+      }
     }
   };
 
@@ -916,6 +857,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       setActiveCell(historyEntry.activeCell);
       setCurrentCellContent(historyEntry.matrix.cells[historyEntry.activeCell.row][historyEntry.activeCell.col]);
       setUndoRedoState(prev => ({ ...prev, currentIndex: newIndex }));
+      
+      if (cellEditorRef.current) {
+        cellEditorRef.current.blur();
+      }
     }
   };
 
@@ -929,6 +874,70 @@ const LaTeXMatrixEditor: React.FC = () => {
       setTimeout(() => setCopySuccess(false), 2000);
     });
   };
+
+  // キーボードイベントリスナー（行列テーブルにフォーカスがある場合のみ）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement as HTMLElement;
+      if (!activeElement) return;
+      
+      const isInCellEditor = cellEditorRef.current && activeElement === cellEditorRef.current;
+      const isInLatexTextarea = activeElement.tagName.toLowerCase() === 'textarea' && 
+                               activeElement.className.includes('font-mono');
+      const isInOtherInput = activeElement.tagName.toLowerCase() === 'input' || 
+                            activeElement.tagName.toLowerCase() === 'textarea' ||
+                            activeElement.contentEditable === 'true';
+      
+      if (isInCellEditor || isInLatexTextarea) return;
+      
+      if (isInOtherInput) return;
+      
+      const matrixEditor = document.querySelector('.latex-matrix-editor');
+      const isInMatrixEditor = matrixEditor && (
+        matrixEditor.contains(activeElement) ||
+        activeElement.closest('.latex-matrix-editor')
+      );
+      
+      if (!isInMatrixEditor) return;
+      
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'c':
+            e.preventDefault();
+            e.stopPropagation();
+            copySelectedCells();
+            break;
+          case 'v':
+            e.preventDefault();
+            e.stopPropagation();
+            pasteClipboardData();
+            break;
+          case 'a':
+            e.preventDefault();
+            e.stopPropagation();
+            selectAllCells();
+            break;
+          case 'z':
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.shiftKey) {
+              redo();
+            } else {
+              undo();
+            }
+            break;
+          case 'y':
+            e.preventDefault();
+            e.stopPropagation();
+            redo();
+            break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [selectedRange, clipboardData, undo, redo, copySelectedCells, pasteClipboardData, selectAllCells]);
 
   return (
     <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
