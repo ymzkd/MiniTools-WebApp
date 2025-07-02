@@ -174,7 +174,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     setIsUndoRedoOperation(true);
     
-    // Restore state
+    // Restore state in batch
     setMatrix(targetState.matrix);
     setActiveCell(targetState.activeCell);
     setSelectedRange(targetState.selectedRange);
@@ -186,14 +186,13 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     setHistoryIndex(targetIndex);
     
-    // Reset the flag and re-render after state updates
+    // Force complete re-render with multiple attempts to ensure synchronization
     setTimeout(() => {
       setIsUndoRedoOperation(false);
-      if (window.katex) {
-        renderAllCells();
-        generateLatex();
-      }
-    }, 100);
+      
+      // Force update of all display elements
+      forceCompleteRerender();
+    }, 50);
   };
 
   // Redo function
@@ -212,7 +211,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     setIsUndoRedoOperation(true);
     
-    // Restore state
+    // Restore state in batch
     setMatrix(targetState.matrix);
     setActiveCell(targetState.activeCell);
     setSelectedRange(targetState.selectedRange);
@@ -224,14 +223,48 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     setHistoryIndex(targetIndex);
     
-    // Reset the flag and re-render after state updates
+    // Force complete re-render with multiple attempts to ensure synchronization
     setTimeout(() => {
       setIsUndoRedoOperation(false);
+      
+      // Force update of all display elements
+      forceCompleteRerender();
+    }, 50);
+  };
+
+  // Force complete re-render of all display elements
+  const forceCompleteRerender = () => {
+    // 複数回の再レンダリングを確実に実行
+    const updateDisplays = () => {
       if (window.katex) {
-        renderAllCells();
+        // 1. LaTeXコード生成（最初に実行）
         generateLatex();
+        
+        // 2. 全セルの再レンダリング
+        renderAllCells();
+        
+        // 3. セル編集ボックスの内容を強制更新
+        if (cellEditorRef.current && matrix.cells[activeCell.row] && matrix.cells[activeCell.row][activeCell.col] !== undefined) {
+          const correctValue = matrix.cells[activeCell.row][activeCell.col];
+          cellEditorRef.current.value = correctValue;
+          // Reactの状態も確実に同期
+          if (currentCellContent !== correctValue) {
+            setCurrentCellContent(correctValue);
+          }
+        }
+        
+        // 4. アクティブセルのハイライト適用
+        setTimeout(() => {
+          applyHighlight();
+        }, 30);
       }
-    }, 100);
+    };
+    
+    // 段階的な再レンダリングで確実に同期
+    updateDisplays(); // 即座に実行
+    setTimeout(updateDisplays, 50); // 短い間隔で再実行
+    setTimeout(updateDisplays, 150); // さらに確実にするため
+    setTimeout(updateDisplays, 300); // 最終確認
   };
 
   // Check if undo/redo is available
@@ -266,13 +299,21 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // アクティブセル変更時に編集ボックスの内容を更新
   useEffect(() => {
-    // 前のセルの編集を完了
-    finishCellEdit();
+    // 前のセルの編集を完了（Undo/Redo操作中は除く）
+    if (!isUndoRedoOperation) {
+      finishCellEdit();
+    }
     
     if (matrix.cells[activeCell.row] && matrix.cells[activeCell.row][activeCell.col] !== undefined) {
-      setCurrentCellContent(matrix.cells[activeCell.row][activeCell.col]);
+      const cellContent = matrix.cells[activeCell.row][activeCell.col];
+      setCurrentCellContent(cellContent);
+      
+      // セル編集ボックスの内容も強制更新
+      if (cellEditorRef.current) {
+        cellEditorRef.current.value = cellContent;
+      }
     }
-  }, [activeCell, matrix.cells]);
+  }, [activeCell, matrix.cells, isUndoRedoOperation]);
 
   // セル内容変更時の個別レンダリング
   useEffect(() => {
@@ -283,11 +324,26 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // ゼロ表示切り替え時の再レンダリング
   useEffect(() => {
-    if (window.katex) {
+    if (window.katex && !isUndoRedoOperation) {
+      generateLatex();
+      renderAllCells();
+      
+      // アクティブセルの内容も更新
+      setTimeout(() => {
+        if (cellEditorRef.current) {
+          cellEditorRef.current.value = currentCellContent;
+        }
+      }, 50);
+    }
+  }, [showZeros, isUndoRedoOperation, currentCellContent]);
+
+  // 行列データ変更時の包括的な再レンダリング
+  useEffect(() => {
+    if (window.katex && !isUndoRedoOperation) {
       generateLatex();
       renderAllCells();
     }
-  }, [showZeros]);
+  }, [matrix, isUndoRedoOperation]);
 
   // キーボードイベントリスナー（行列テーブルにフォーカスがある場合のみ）
   useEffect(() => {
@@ -489,7 +545,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     // アクティブセルを調整
     if (activeCell.row >= insertIndex) {
-      setActiveCell(prev => ({ ...prev, row: prev.row + 1 }));
+      setActiveCell((prev: CellPosition) => ({ ...prev, row: prev.row + 1 }));
     }
   };
 
@@ -498,7 +554,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     saveToHistory(`Insert column ${before ? 'before' : 'after'} column ${index + 1}`);
     
     const insertIndex = before ? index : index + 1;
-    const newCells = matrix.cells.map(row => {
+    const newCells = matrix.cells.map((row: string[]) => {
       const newRow = [...row];
       newRow.splice(insertIndex, 0, '');
       return newRow;
@@ -512,7 +568,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     // アクティブセルを調整
     if (activeCell.col >= insertIndex) {
-      setActiveCell(prev => ({ ...prev, col: prev.col + 1 }));
+      setActiveCell((prev: CellPosition) => ({ ...prev, col: prev.col + 1 }));
     }
   };
 
@@ -531,7 +587,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     // アクティブセルを調整
     if (activeCell.row >= index && activeCell.row > 0) {
-      setActiveCell(prev => ({ ...prev, row: prev.row - 1 }));
+      setActiveCell((prev: CellPosition) => ({ ...prev, row: prev.row - 1 }));
     }
   };
 
@@ -541,8 +597,8 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     saveToHistory(`Delete column ${index + 1}`);
 
-    const newCells = matrix.cells.map(row => row.filter((_, j) => j !== index));
-    setMatrix(prev => ({
+    const newCells = matrix.cells.map((row: string[]) => row.filter((_, j) => j !== index));
+    setMatrix((prev: MatrixData) => ({
       ...prev,
       cols: prev.cols - 1,
       cells: newCells
@@ -550,7 +606,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     // アクティブセルを調整
     if (activeCell.col >= index && activeCell.col > 0) {
-      setActiveCell(prev => ({ ...prev, col: prev.col - 1 }));
+      setActiveCell((prev: CellPosition) => ({ ...prev, col: prev.col - 1 }));
     }
   };
 
