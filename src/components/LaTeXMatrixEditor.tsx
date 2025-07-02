@@ -772,7 +772,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         LaTeX Matrix Editor
       </h1>
       
-      <div className="space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Editor Section */}
         <div className="bg-white rounded-lg shadow-lg p-4">
           <div className="flex justify-between items-center mb-4">
