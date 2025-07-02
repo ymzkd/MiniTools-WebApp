@@ -157,33 +157,44 @@ const LaTeXMatrixEditor: React.FC = () => {
   // キーボードイベントリスナー（行列テーブルにフォーカスがある場合のみ）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // 行列テーブルまたはその子要素にフォーカスがある場合のみ処理
-      const activeElement = document.activeElement;
-      const isMatrixFocused = activeElement && (
-        activeElement.closest('.matrix-table') || 
-        activeElement.classList.contains('matrix-cell') ||
-        activeElement.tagName === 'TD' ||
-        activeElement.tagName === 'DIV' && activeElement.closest('.matrix-table')
+      const activeElement = document.activeElement as HTMLElement;
+      if (!activeElement) return;
+      
+      const tagName = activeElement.tagName.toLowerCase();
+      const isInputElement = tagName === 'input' || tagName === 'textarea' || 
+                            activeElement.contentEditable === 'true' ||
+                            activeElement.getAttribute('contenteditable') === 'true';
+      
+      if (isInputElement) return;
+      
+      const matrixEditor = document.querySelector('.latex-matrix-editor');
+      const isInMatrixEditor = matrixEditor && (
+        matrixEditor.contains(activeElement) ||
+        activeElement.closest('.latex-matrix-editor')
       );
       
-      if (!isMatrixFocused) return;
+      if (!isInMatrixEditor) return;
       
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 'c':
             e.preventDefault();
+            e.stopPropagation();
             copySelectedCells();
             break;
           case 'v':
             e.preventDefault();
+            e.stopPropagation();
             pasteClipboardData();
             break;
           case 'a':
             e.preventDefault();
+            e.stopPropagation();
             selectAllCells();
             break;
           case 'z':
             e.preventDefault();
+            e.stopPropagation();
             if (e.shiftKey) {
               redo();
             } else {
@@ -192,14 +203,15 @@ const LaTeXMatrixEditor: React.FC = () => {
             break;
           case 'y':
             e.preventDefault();
+            e.stopPropagation();
             redo();
             break;
         }
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [selectedRange, clipboardData]);
 
   // コンテキストメニューを閉じる
@@ -679,6 +691,14 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     const newMatrix = { ...matrix, cells: newCells };
     setMatrix(newMatrix);
+  };
+
+  const commitCellEdit = (value: string) => {
+    updateCurrentCell(value);
+    const newCells = matrix.cells.map((r, i) => 
+      r.map((c, j) => (i === activeCell.row && j === activeCell.col) ? value : c)
+    );
+    const newMatrix = { ...matrix, cells: newCells };
     addToHistory(newMatrix, activeCell);
   };
 
@@ -1233,12 +1253,22 @@ const LaTeXMatrixEditor: React.FC = () => {
               value={currentCellContent}
               onChange={(e) => updateCurrentCell(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === 'Escape') {
+                if (e.key === 'Enter') {
                   e.preventDefault();
+                  commitCellEdit(currentCellContent);
+                  e.currentTarget.blur(); // フォーカスを外す
+                  // アクティブセルにフォーカスを戻す
+                  focusCell(activeCell.row, activeCell.col);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setCurrentCellContent(matrix.cells[activeCell.row][activeCell.col]);
                   e.currentTarget.blur(); // フォーカスを外す
                   // アクティブセルにフォーカスを戻す
                   focusCell(activeCell.row, activeCell.col);
                 }
+              }}
+              onBlur={() => {
+                commitCellEdit(currentCellContent);
               }}
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               placeholder="Enter LaTeX expression..."
