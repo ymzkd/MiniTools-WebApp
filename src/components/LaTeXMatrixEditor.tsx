@@ -117,6 +117,14 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   }, [currentCellContent]);
 
+  // ゼロ表示切り替え時の再レンダリング
+  useEffect(() => {
+    if (window.katex) {
+      generateLatex();
+      renderAllCells();
+    }
+  }, [showZeros]);
+
   // キーボードイベントリスナー（行列テーブルにフォーカスがある場合のみ）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -440,7 +448,12 @@ const LaTeXMatrixEditor: React.FC = () => {
   const generateLatex = () => {
     const { type, cells } = matrix;
     const matrixContent = cells.map(row => 
-      row.join(' & ')
+      row.map(cell => {
+        if (!cell && !showZeros) {
+          return ''; // ゼロ成分をブランクに
+        }
+        return cell || '0'; // ゼロ成分を明示的に表示
+      }).join(' & ')
     ).join(' \\\\ ');
     
     const latexString = `\\begin{${type}}\n${matrixContent}\n\\end{${type}}`;
@@ -470,8 +483,8 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     if (cellElement && window.katex) {
       try {
-        // 空の場合は0を表示
-        const displayContent = content || '0';
+        // ゼロ成分の表示切り替え
+        const displayContent = !content && !showZeros ? '' : (content || '0');
         
         window.katex.render(displayContent, cellElement, {
           displayMode: false,
@@ -482,7 +495,8 @@ const LaTeXMatrixEditor: React.FC = () => {
         // セルサイズに合わせてスケール調整
         setTimeout(() => adjustCellScale(cellElement), 0);
       } catch (error) {
-        cellElement.textContent = content || '0';
+        const displayContent = !content && !showZeros ? '' : (content || '0');
+        cellElement.textContent = displayContent;
       }
     }
   };
@@ -534,11 +548,12 @@ const LaTeXMatrixEditor: React.FC = () => {
     const { type, cells } = matrix;
     const highlightCells = cells.map((row, i) => 
       row.map((cell, j) => {
+        const displayContent = !cell && !showZeros ? '' : (cell || '0');
         if (isCellInSelection(i, j)) {
           // 選択されたセルに色とスタイルを適用
-          return `\\color{red}{\\mathbf{${cell || '0'}}}`;
+          return `\\color{red}{\\mathbf{${displayContent}}}`;
         }
-        return cell || '0';
+        return displayContent;
       })
     );
     
@@ -557,7 +572,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         });
       } catch (error) {
         // エラーの場合は通常のレンダリングに戻す
-        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => cell || '0').join(' & ')).join(' \\\\ ')}\n\\end{${type}}`;
+        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (!cell && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\ ')}\n\\end{${type}}`;
         window.katex.render(normalLatexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
@@ -825,6 +840,25 @@ const LaTeXMatrixEditor: React.FC = () => {
             
             
 
+            {/* Display Options */}
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-2">
+                Display Options
+              </label>
+              <div className="flex gap-2 flex-wrap items-center">
+                <button 
+                  onClick={() => setShowZeros(!showZeros)}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    showZeros 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                  }`}
+                >
+                  Show Zeros: {showZeros ? 'ON' : 'OFF'}
+                </button>
+              </div>
+            </div>
+
             {/* Symmetric Matrix Mode */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">
@@ -961,6 +995,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                                             activeCell.row === j && 
                                             activeCell.col === i && 
                                             i !== j;
+                      const isDiagonal = i === j;
                       
                       return (
                         <td key={j}>
@@ -1003,6 +1038,8 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 ? 'in-selection'
                                 : isSymmetricPair
                                 ? 'border-purple-400 bg-purple-50'
+                                : isDiagonal
+                                ? 'border-gray-300 bg-yellow-50 hover:border-gray-400'
                                 : 'border-gray-300 hover:border-gray-400'
                             }`}
                           >
