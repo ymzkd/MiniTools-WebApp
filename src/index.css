@@ -98,8 +98,8 @@ body {
 }
 
 .matrix-cell.in-selection {
-  background: #e8f5e8 !important;
-  border-color: #4caf50 !important;
+  background: #f3e8ff !important;
+  border-color: #9333ea !important;
 }
 
 .row-controls, .col-controls {

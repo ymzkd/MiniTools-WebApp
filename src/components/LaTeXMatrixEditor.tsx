@@ -555,12 +555,12 @@ const LaTeXMatrixEditor: React.FC = () => {
           // 選択されたセルに色とスタイルを適用
           return `\\color{red}{\\mathbf{${displayContent}}}`;
         }
-        // 対称行列モードが有効で、対称成分をパープルでハイライト
+        // 対称行列モードが有効で、対称成分をグリーンでハイライト
         if (symmetricMode && 
             i < minDim && j < minDim &&
             i === activeCell.col && j === activeCell.row &&
             activeCell.row !== activeCell.col) {
-          return `\\color{purple}{\\mathbf{${displayContent}}}`;
+          return `\\color{green}{\\mathbf{${displayContent}}}`;
         }
         return displayContent;
       })
@@ -1087,7 +1087,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 : isSymmetricPair
                                 ? 'border-purple-400 bg-purple-50'
                                 : isDiagonal
-                                ? 'border-gray-300 bg-yellow-50 hover:border-gray-400'
+                                ? 'border-gray-300 bg-green-50 hover:border-gray-400'
                                 : 'border-gray-300 hover:border-gray-400'
                             }`}
                           >
@@ -1162,6 +1162,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                   <p>• <strong>Keyboard Shortcuts:</strong> Ctrl+C/V for copy/paste, Ctrl+A for select all (when table is focused)</p>
                   <p>• <strong>Navigation:</strong> Tab/Shift+Tab and arrow keys for cell navigation</p>
                   <p>• <strong>Large Matrices:</strong> Both the table and preview areas support horizontal scrolling when content is wider than the panel</p>
+                  <p>• <strong>Color Coding:</strong> Active cell (red in preview), symmetric pairs (green in preview), diagonal cells (green background), multi-selection (purple background)</p>
                   <p>• <strong>Symmetric Mode:</strong> Toggle ON for automatic symmetric matrix editing. Priority setting (Upper/Lower) can be set anytime and controls which triangular values are copied when mode is enabled. Works with non-square matrices for the symmetric portion.</p>
                 </div>
               </div>
