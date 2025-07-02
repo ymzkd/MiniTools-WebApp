@@ -41,7 +41,27 @@ body {
 
 .matrix-table-container {
   padding: 0;
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-width: 100%;
+}
+
+.matrix-table-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.matrix-table-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.matrix-table-container::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.matrix-table-container::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 .matrix-row-header {
@@ -176,4 +196,41 @@ body {
 
 .context-menu-item.disabled:hover {
   background: transparent;
+}
+
+/* Preview area scroll styling */
+.bg-gray-50.overflow-x-auto::-webkit-scrollbar {
+  height: 6px;
+}
+
+.bg-gray-50.overflow-x-auto::-webkit-scrollbar-track {
+  background: #f8f9fa;
+  border-radius: 3px;
+}
+
+.bg-gray-50.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.bg-gray-50.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Ensure table cells maintain their size */
+.matrix-cell {
+  min-width: 80px;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.matrix-col-header {
+  min-width: 80px;
+  width: 80px;
+}
+
+.matrix-row-header {
+  min-width: 40px;
+  width: 40px;
+  flex-shrink: 0;
 }

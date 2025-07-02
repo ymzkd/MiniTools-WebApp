@@ -956,8 +956,8 @@ const LaTeXMatrixEditor: React.FC = () => {
           </div>
           
           {/* Matrix Table */}
-          <div className="matrix-table-container overflow-visible">
-            <table ref={tableRef} className="matrix-table" style={{ margin: '20px auto' }}>
+          <div className="matrix-table-container overflow-x-auto overflow-y-visible max-w-full">
+            <table ref={tableRef} className="matrix-table" style={{ margin: '20px auto', minWidth: 'fit-content' }}>
               <thead>
                 <tr>
                   <th className="matrix-col-header w-8"></th>
@@ -1128,9 +1128,12 @@ const LaTeXMatrixEditor: React.FC = () => {
                   focusCell(activeCell.row, activeCell.col);
                 }
               }}
-              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
               placeholder="Enter LaTeX expression..."
             />
+            <div className="text-xs text-gray-500 mt-1">
+              Tip: Use horizontal scroll in the table and preview areas when matrix is large
+            </div>
           </div>
           
           {/* Help Popup */}
@@ -1152,6 +1155,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                   <p>• <strong>Context Menu:</strong> Right-click for additional operations</p>
                   <p>• <strong>Keyboard Shortcuts:</strong> Ctrl+C/V for copy/paste, Ctrl+A for select all (when table is focused)</p>
                   <p>• <strong>Navigation:</strong> Tab/Shift+Tab and arrow keys for cell navigation</p>
+                  <p>• <strong>Large Matrices:</strong> Both the table and preview areas support horizontal scrolling when content is wider than the panel</p>
                   <p>• <strong>Symmetric Mode:</strong> Toggle ON for automatic symmetric matrix editing. Choose upper/lower triangular priority to control which values are copied. Works with non-square matrices for the symmetric portion.</p>
                 </div>
               </div>
@@ -1161,10 +1165,13 @@ const LaTeXMatrixEditor: React.FC = () => {
         
         {/* Preview Section */}
         <div className="bg-white rounded-lg shadow-lg p-4">
+          <h2 className="text-xl font-semibold text-gray-700 mb-4">LaTeX Preview</h2>
           
           {/* Rendered Matrix */}
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg min-h-24 flex items-center justify-center">
-            <div ref={previewRef} className="text-center"></div>
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg min-h-24 overflow-x-auto">
+            <div className="flex items-center justify-center min-w-fit">
+              <div ref={previewRef} className="text-center"></div>
+            </div>
           </div>
           
           {/* LaTeX Code */}
@@ -1187,8 +1194,9 @@ const LaTeXMatrixEditor: React.FC = () => {
             <textarea
               value={latexCode}
               onChange={(e) => handleLatexCodeChange(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto whitespace-nowrap"
               placeholder="Paste LaTeX matrix code here or edit generated code..."
+              style={{ resize: 'vertical' }}
             />
             <div className="mt-2 text-xs text-gray-500">
               <p>You can paste existing LaTeX matrix code here. Supported: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
