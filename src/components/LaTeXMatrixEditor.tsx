@@ -115,6 +115,10 @@ const LaTeXMatrixEditor: React.FC = () => {
   useEffect(() => {
     if (window.katex) {
       renderCellContent(activeCell.row, activeCell.col, currentCellContent);
+      // 少し遅延させて再度レンダリングを試行（エラー回復のため）
+      setTimeout(() => {
+        renderCellContent(activeCell.row, activeCell.col, currentCellContent);
+      }, 100);
     }
   }, [currentCellContent]);
 
@@ -437,6 +441,7 @@ const LaTeXMatrixEditor: React.FC = () => {
       setTimeout(() => {
         if (window.katex) {
           renderAllCells();
+          generateLatex();
         }
       }, 0);
       
@@ -483,10 +488,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     const cellElement = cellKatexRefs.current[cellKey];
     
     if (cellElement && window.katex) {
+      // ゼロ成分の表示切り替え
+      const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
+      
       try {
-        // ゼロ成分の表示切り替え
-        const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
-        
         window.katex.render(displayContent, cellElement, {
           displayMode: false,
           throwOnError: false,
@@ -496,8 +501,29 @@ const LaTeXMatrixEditor: React.FC = () => {
         // セルサイズに合わせてスケール調整
         setTimeout(() => adjustCellScale(cellElement), 0);
       } catch (error) {
-        const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
-        cellElement.textContent = displayContent;
+        try {
+          window.katex.render(displayContent, cellElement, {
+            displayMode: false,
+            throwOnError: false,
+            output: 'mathml'
+          });
+        } catch (secondError) {
+          cellElement.textContent = displayContent;
+        }
+        
+        setTimeout(() => {
+          if (window.katex && cellElement) {
+            try {
+              window.katex.render(displayContent, cellElement, {
+                displayMode: false,
+                throwOnError: false,
+                output: 'mathml'
+              });
+              setTimeout(() => adjustCellScale(cellElement), 0);
+            } catch (retryError) {
+            }
+          }
+        }, 100);
       }
     }
   };
@@ -623,17 +649,19 @@ const LaTeXMatrixEditor: React.FC = () => {
       );
       setMatrix(prev => ({ ...prev, cells: newCells }));
       
-      // 対称位置のセルも再レンダリング
+      // 対称位置のセルも再レンダリング（強制的に）
       setTimeout(() => {
         if (window.katex) {
           renderCellContent(activeCell.col, activeCell.row, value);
+          renderCellContent(activeCell.row, activeCell.col, value); // 現在のセルも強制再レンダリング
           generateLatex(); // プレビューも確実に更新
         }
       }, 50);
     } else {
-      // 対称モードではない場合も確実にプレビュー更新
+      // 対称モードではない場合も確実にプレビュー更新と現在セルの強制再レンダリング
       setTimeout(() => {
         if (window.katex) {
+          renderCellContent(activeCell.row, activeCell.col, value); // 現在のセルを強制再レンダリング
           generateLatex();
         }
       }, 50);
