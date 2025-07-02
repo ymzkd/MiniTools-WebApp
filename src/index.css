@@ -11,6 +11,11 @@ body {
   background-color: #f9fafb;
 }
 
+/* Dark mode body */
+.dark body {
+  background-color: #111827;
+}
+
 .katex-cell {
   transition: transform 0.1s ease;
 }
@@ -21,6 +26,12 @@ body {
 
 .katex-cell .katex-display {
   margin: 0 !important;
+}
+
+/* Dark mode for KaTeX */
+.dark .katex-cell,
+.dark .katex {
+  color: #f3f4f6 !important;
 }
 
 /* KaTeX HTML表示を無効化 */
@@ -55,13 +66,27 @@ body {
   border-radius: 3px;
 }
 
+.dark .matrix-table-container::-webkit-scrollbar-track {
+  background: #374151;
+  border-radius: 3px;
+}
+
 .matrix-table-container::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 3px;
 }
 
+.dark .matrix-table-container::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 3px;
+}
+
 .matrix-table-container::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+.dark .matrix-table-container::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
 }
 
 .matrix-row-header {
@@ -76,6 +101,12 @@ body {
   position: relative;
 }
 
+.dark .matrix-row-header {
+  background: #374151;
+  border-color: #4b5563;
+  color: #9ca3af;
+}
+
 .matrix-col-header {
   background: #f8f9fa;
   border: 1px solid #dee2e6;
@@ -85,6 +116,12 @@ body {
   font-size: 12px;
   color: #6c757d;
   user-select: none;
+}
+
+.dark .matrix-col-header {
+  background: #374151;
+  border-color: #4b5563;
+  color: #9ca3af;
 }
 
 .matrix-cell {
@@ -97,9 +134,19 @@ body {
   border-color: #2196f3 !important;
 }
 
+.dark .matrix-cell.selected {
+  background: #1e3a8a !important;
+  border-color: #3b82f6 !important;
+}
+
 .matrix-cell.in-selection {
   background: #f3e8ff !important;
   border-color: #9333ea !important;
+}
+
+.dark .matrix-cell.in-selection {
+  background: #581c87 !important;
+  border-color: #a855f7 !important;
 }
 
 .row-controls, .col-controls {
@@ -175,14 +222,28 @@ body {
   min-width: 150px;
 }
 
+.dark .context-menu {
+  background: #374151;
+  border: 1px solid #4b5563;
+  color: #f3f4f6;
+}
+
 .context-menu-item {
   padding: 8px 12px;
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
 }
 
+.dark .context-menu-item {
+  border-bottom: 1px solid #4b5563;
+}
+
 .context-menu-item:hover {
   background: #f5f5f5;
+}
+
+.dark .context-menu-item:hover {
+  background: #4b5563;
 }
 
 .context-menu-item:last-child {
@@ -192,6 +253,10 @@ body {
 .context-menu-item.disabled {
   color: #ccc;
   cursor: not-allowed;
+}
+
+.dark .context-menu-item.disabled {
+  color: #6b7280;
 }
 
 .context-menu-item.disabled:hover {
@@ -208,12 +273,26 @@ body {
   border-radius: 3px;
 }
 
+.dark .bg-gray-50.overflow-x-auto::-webkit-scrollbar-track {
+  background: #374151;
+  border-radius: 3px;
+}
+
 .bg-gray-50.overflow-x-auto::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 3px;
 }
 
+.dark .bg-gray-50.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 3px;
+}
+
 .bg-gray-50.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.dark .bg-gray-50.overflow-x-auto::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
 

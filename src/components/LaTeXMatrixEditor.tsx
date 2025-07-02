@@ -954,19 +954,19 @@ const LaTeXMatrixEditor: React.FC = () => {
   };
 
   return (
-    <div className="w-full px-4 py-6 bg-gray-50 min-h-screen">
-      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">
+    <div className="w-full px-4 py-6 bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-200">
+      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800 dark:text-gray-100">
         LaTeX Matrix Editor
       </h1>
       
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Editor Section */}
-        <div className="bg-white rounded-lg shadow-lg p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-700">Matrix Editor</h2>
+            <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">Matrix Editor</h2>
             <button
               onClick={() => setShowHelp(!showHelp)}
-              className="w-6 h-6 bg-blue-100 hover:bg-blue-200 rounded-full flex items-center justify-center text-blue-600 text-sm font-bold transition-colors"
+              className="w-6 h-6 bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-300 text-sm font-bold transition-colors"
               title="Show help"
             >
               ?
@@ -977,13 +977,13 @@ const LaTeXMatrixEditor: React.FC = () => {
           <div className="mb-4 space-y-3">
             {/* Matrix Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
                 Matrix Type
               </label>
               <select 
                 value={matrix.type}
                 onChange={(e) => changeMatrixType(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="matrix">matrix (no brackets)</option>
                 <option value="pmatrix">pmatrix ( )</option>
@@ -996,10 +996,10 @@ const LaTeXMatrixEditor: React.FC = () => {
             
             {/* Matrix Info */}
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
                 Size: {matrix.rows} × {matrix.cols}
               </label>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 Selected: Row {activeCell.row + 1}, Col {activeCell.col + 1}
                 {selectionMode === 'range' && (
                   <span className="ml-2">
@@ -1013,7 +1013,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
             {/* Display Options */}
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
                 Display Options
               </label>
               <div className="flex gap-2 flex-wrap items-center">
@@ -1022,7 +1022,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                   className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                     showZeros 
                       ? 'bg-green-500 text-white' 
-                      : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                      : 'bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-400 dark:hover:bg-gray-500'
                   }`}
                 >
                   Show Zeros: {showZeros ? 'ON' : 'OFF'}
@@ -1032,7 +1032,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
             {/* Symmetric Matrix Mode */}
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
                 Symmetric Matrix Mode
               </label>
               <div className="flex gap-2 flex-wrap items-center">
@@ -1041,7 +1041,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                   className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                     symmetricMode 
                       ? 'bg-blue-500 text-white' 
-                      : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+                      : 'bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-400 dark:hover:bg-gray-500'
                   }`}
                 >
                   {symmetricMode ? 'ON' : 'OFF'}
@@ -1068,10 +1068,10 @@ const LaTeXMatrixEditor: React.FC = () => {
                   Priority: {triangularPreference === 'upper' ? 'Upper ▲' : 'Lower ▼'}
                 </button>
                 {matrix.rows !== matrix.cols && (
-                  <span className="text-xs text-orange-500">Non-square: symmetric editing available for {Math.min(matrix.rows, matrix.cols)}×{Math.min(matrix.rows, matrix.cols)} portion</span>
+                  <span className="text-xs text-orange-500 dark:text-orange-400">Non-square: symmetric editing available for {Math.min(matrix.rows, matrix.cols)}×{Math.min(matrix.rows, matrix.cols)} portion</span>
                 )}
                 {symmetricMode && (
-                  <span className="text-xs text-blue-600">Auto-symmetric editing enabled</span>
+                  <span className="text-xs text-blue-600 dark:text-blue-400">Auto-symmetric editing enabled</span>
                 )}
               </div>
             </div>
@@ -1224,10 +1224,10 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 : isSelected
                                 ? 'in-selection'
                                 : isSymmetricPair
-                                ? 'border-green-400 bg-green-50'
+                                ? 'border-green-400 bg-green-50 dark:bg-green-900'
                                 : isDiagonal
-                                ? 'border-gray-300 bg-yellow-50 hover:border-gray-400'
-                                : 'border-gray-300 hover:border-gray-400'
+                                ? 'border-gray-300 dark:border-gray-600 bg-yellow-50 dark:bg-yellow-900 hover:border-gray-400 dark:hover:border-gray-500'
+                                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500 bg-white dark:bg-gray-800'
                             }`}
                           >
                             <div
@@ -1257,7 +1257,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
           {/* Cell Editor */}
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-600 mb-2">
+            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
               Edit Cell ({activeCell.row + 1}, {activeCell.col + 1})
             </label>
             <input
@@ -1279,10 +1279,10 @@ const LaTeXMatrixEditor: React.FC = () => {
                   generateLatex();
                 }
               }}
-              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               placeholder="Enter LaTeX expression..."
             />
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Tip: Use horizontal scroll in the table and preview areas when matrix is large
             </div>
           </div>
@@ -1290,17 +1290,17 @@ const LaTeXMatrixEditor: React.FC = () => {
           {/* Help Popup */}
           {showHelp && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowHelp(false)}>
-              <div className="bg-white rounded-lg p-6 max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">How to Use</h3>
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">How to Use</h3>
                   <button
                     onClick={() => setShowHelp(false)}
-                    className="text-gray-500 hover:text-gray-700 text-xl font-bold"
+                    className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xl font-bold"
                   >
                     ×
                   </button>
                 </div>
-                <div className="text-sm text-gray-600 space-y-2">
+                <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
                   <p>• <strong>Selection:</strong> Click cells to select, drag to select range, Ctrl+click for multi-select</p>
                   <p>• <strong>Table Operations:</strong> Use +/- buttons on row/column headers for insertion/deletion</p>
                   <p>• <strong>Context Menu:</strong> Right-click for additional operations</p>
@@ -1316,11 +1316,11 @@ const LaTeXMatrixEditor: React.FC = () => {
         </div>
         
         {/* Preview Section */}
-        <div className="bg-white rounded-lg shadow-lg p-4">
-          <h2 className="text-xl font-semibold text-gray-700 mb-4">LaTeX Preview</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
+          <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200 mb-4">LaTeX Preview</h2>
           
           {/* Rendered Matrix */}
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg min-h-24 overflow-x-auto">
+          <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg min-h-24 overflow-x-auto">
             <div className="flex items-center justify-center min-w-fit">
               <div ref={previewRef} className="text-center"></div>
             </div>
@@ -1329,7 +1329,7 @@ const LaTeXMatrixEditor: React.FC = () => {
           {/* LaTeX Code */}
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="text-sm font-medium text-gray-600">
+              <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
                 LaTeX Code (Editable)
               </label>
               <button
@@ -1346,14 +1346,14 @@ const LaTeXMatrixEditor: React.FC = () => {
             <textarea
               value={latexCode}
               onChange={(e) => handleLatexCodeChange(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto"
+              className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               placeholder="Paste LaTeX matrix code here or edit generated code..."
               style={{ resize: 'vertical' }}
             />
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
               <p>You can paste existing LaTeX matrix code here. Supported: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
               {parseError && (
-                <p className="text-red-600 mt-1">Parse error: {parseError}</p>
+                <p className="text-red-600 dark:text-red-400 mt-1">Parse error: {parseError}</p>
               )}
             </div>
           </div>
