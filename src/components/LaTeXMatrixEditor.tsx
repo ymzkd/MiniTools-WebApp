@@ -448,7 +448,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     const { type, cells } = matrix;
     const matrixContent = cells.map(row => 
       row.map(cell => {
-        if (!cell && !showZeros) {
+        if (isZeroValue(cell) && !showZeros) {
           return ''; // ゼロ成分をブランクに
         }
         return cell || '0'; // ゼロ成分を明示的に表示
@@ -483,7 +483,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     if (cellElement && window.katex) {
       try {
         // ゼロ成分の表示切り替え
-        const displayContent = !content && !showZeros ? '' : (content || '0');
+        const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
         
         window.katex.render(displayContent, cellElement, {
           displayMode: false,
@@ -494,7 +494,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         // セルサイズに合わせてスケール調整
         setTimeout(() => adjustCellScale(cellElement), 0);
       } catch (error) {
-        const displayContent = !content && !showZeros ? '' : (content || '0');
+        const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
         cellElement.textContent = displayContent;
       }
     }
@@ -547,7 +547,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     const { type, cells } = matrix;
     const highlightCells = cells.map((row, i) => 
       row.map((cell, j) => {
-        const displayContent = !cell && !showZeros ? '' : (cell || '0');
+        const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
         if (isCellInSelection(i, j)) {
           // 選択されたセルに色とスタイルを適用
           return `\\color{red}{\\mathbf{${displayContent}}}`;
@@ -571,7 +571,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         });
       } catch (error) {
         // エラーの場合は通常のレンダリングに戻す
-        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (!cell && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\ ')}\n\\end{${type}}`;
+        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (isZeroValue(cell) && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\ ')}\n\\end{${type}}`;
         window.katex.render(normalLatexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
@@ -771,6 +771,13 @@ const LaTeXMatrixEditor: React.FC = () => {
     window.parseTimeout = setTimeout(() => {
       parseLatexMatrix(value);
     }, 500);
+  };
+
+  // セルの値がゼロかどうかを判定
+  const isZeroValue = (value: string): boolean => {
+    if (!value || value.trim() === '') return true;
+    const numValue = parseFloat(value.trim());
+    return !isNaN(numValue) && numValue === 0;
   };
 
   // コピー機能
