@@ -522,7 +522,7 @@ const LaTeXMatrixEditor: React.FC = () => {
           renderAllCells();
           generateLatex();
         }
-      }, 0);
+      }, 50);
       
     } catch (error) {
       setParseError((error as Error).message);
@@ -729,6 +729,11 @@ const LaTeXMatrixEditor: React.FC = () => {
       setMatrix(prev => ({ ...prev, cells: newCells }));
       
       // 対称位置のセルも再レンダリング（強制的に）
+      if (window.katex) {
+        renderCellContent(activeCell.col, activeCell.row, value);
+        renderCellContent(activeCell.row, activeCell.col, value);
+        generateLatex();
+      }
       setTimeout(() => {
         if (window.katex) {
           renderCellContent(activeCell.col, activeCell.row, value);
@@ -738,6 +743,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       }, 50);
     } else {
       // 対称モードではない場合も確実にプレビュー更新と現在セルの強制再レンダリング
+      if (window.katex) {
+        renderCellContent(activeCell.row, activeCell.col, value);
+        generateLatex();
+      }
       setTimeout(() => {
         if (window.katex) {
           renderCellContent(activeCell.row, activeCell.col, value); // 現在のセルを強制再レンダリング
@@ -899,11 +908,18 @@ const LaTeXMatrixEditor: React.FC = () => {
   const handleLatexCodeChange = (value: string) => {
     setLatexCode(value);
     
-    // リアルタイムで解析を試行（デバウンス）
-    clearTimeout(window.parseTimeout);
-    window.parseTimeout = setTimeout(() => {
+    const currentLength = latexCode.length;
+    const newLength = value.length;
+    const isLargeChange = Math.abs(newLength - currentLength) > 20;
+    
+    if (isLargeChange) {
       parseLatexMatrix(value);
-    }, 500);
+    } else {
+      clearTimeout(window.parseTimeout);
+      window.parseTimeout = setTimeout(() => {
+        parseLatexMatrix(value);
+      }, 500);
+    }
   };
 
   // セルの値がゼロかどうかを判定
@@ -1239,6 +1255,12 @@ const LaTeXMatrixEditor: React.FC = () => {
                   e.currentTarget.blur(); // フォーカスを外す
                   // アクティブセルにフォーカスを戻す
                   focusCell(activeCell.row, activeCell.col);
+                }
+              }}
+              onBlur={() => {
+                if (window.katex) {
+                  renderCellContent(activeCell.row, activeCell.col, currentCellContent);
+                  generateLatex();
                 }
               }}
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
