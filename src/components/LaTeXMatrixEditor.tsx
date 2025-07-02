@@ -159,12 +159,16 @@ const LaTeXMatrixEditor: React.FC = () => {
       const activeElement = document.activeElement as HTMLElement;
       if (!activeElement) return;
       
-      const tagName = activeElement.tagName.toLowerCase();
-      const isInputElement = tagName === 'input' || tagName === 'textarea' || 
-                            activeElement.contentEditable === 'true' ||
-                            activeElement.getAttribute('contenteditable') === 'true';
+      const isInCellEditor = cellEditorRef.current && activeElement === cellEditorRef.current;
+      const isInLatexTextarea = activeElement.tagName.toLowerCase() === 'textarea' && 
+                               activeElement.className.includes('font-mono');
+      const isInOtherInput = activeElement.tagName.toLowerCase() === 'input' || 
+                            activeElement.tagName.toLowerCase() === 'textarea' ||
+                            activeElement.contentEditable === 'true';
       
-      if (isInputElement) return;
+      if (isInCellEditor || isInLatexTextarea) return;
+      
+      if (isInOtherInput) return;
       
       const matrixEditor = document.querySelector('.latex-matrix-editor');
       const isInMatrixEditor = matrixEditor && (
@@ -657,21 +661,39 @@ const LaTeXMatrixEditor: React.FC = () => {
   const updateCurrentCell = (value: string) => {
     setCurrentCellContent(value);
     
-    // 対称行列モードが有効で、正方行列で、非対角成分の場合の表示更新のみ
+    let newCells;
+    
+    // 対称行列モードが有効で、正方行列で、非対角成分の場合
     if (symmetricMode && 
         matrix.rows === matrix.cols && 
         activeCell.row !== activeCell.col &&
         activeCell.col < matrix.rows && 
         activeCell.row < matrix.cols) {
       
-      // 対称位置のセルも再レンダリング（表示のみ、状態は更新しない）
+      // 対称位置も更新
+      newCells = matrix.cells.map((r, i) => 
+        r.map((c, j) => {
+          if (i === activeCell.row && j === activeCell.col) return value;
+          if (i === activeCell.col && j === activeCell.row) return value;
+          return c;
+        })
+      );
+      
+      // 対称位置のセルも再レンダリング
       setTimeout(() => {
         if (window.katex) {
           renderCellContent(activeCell.col, activeCell.row, value);
         }
       }, 0);
+    } else {
+      // 通常の更新
+      newCells = matrix.cells.map((r, i) => 
+        r.map((c, j) => (i === activeCell.row && j === activeCell.col) ? value : c)
+      );
     }
     
+    const newMatrix = { ...matrix, cells: newCells };
+    setMatrix(newMatrix);
   };
 
   const commitCellEdit = (value: string) => {
@@ -1236,7 +1258,7 @@ const LaTeXMatrixEditor: React.FC = () => {
               ref={cellEditorRef}
               type="text"
               value={currentCellContent}
-              onChange={(e) => setCurrentCellContent(e.target.value)}
+              onChange={(e) => updateCurrentCell(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
