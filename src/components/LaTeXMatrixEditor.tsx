@@ -455,7 +455,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         }
         return cell || '0'; // ゼロ成分を明示的に表示
       }).join(' & ')
-    ).join(' \\\\ ');
+    ).join(' \\\\\n');
     
     const latexString = `\\begin{${type}}\n${matrixContent}\n\\end{${type}}`;
     setLatexCode(latexString);
@@ -560,7 +560,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     const highlightMatrixContent = highlightCells.map(row => 
       row.join(' & ')
-    ).join(' \\\\ ');
+    ).join(' \\\\\n');
     
     const highlightLatexString = `\\begin{${type}}\n${highlightMatrixContent}\n\\end{${type}}`;
     
@@ -573,7 +573,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         });
       } catch (error) {
         // エラーの場合は通常のレンダリングに戻す
-        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (isZeroValue(cell) && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\ ')}\n\\end{${type}}`;
+        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (isZeroValue(cell) && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\\n')}\n\\end{${type}}`;
         window.katex.render(normalLatexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
@@ -1194,7 +1194,7 @@ const LaTeXMatrixEditor: React.FC = () => {
             <textarea
               value={latexCode}
               onChange={(e) => handleLatexCodeChange(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto whitespace-nowrap"
+              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto"
               placeholder="Paste LaTeX matrix code here or edit generated code..."
               style={{ resize: 'vertical' }}
             />
