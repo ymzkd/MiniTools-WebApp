@@ -82,6 +82,10 @@ const LaTeXMatrixEditor: React.FC = () => {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isUndoRedoOperation, setIsUndoRedoOperation] = useState(false);
+  
+  // セル編集開始時の値を記録
+  const [editStartValue, setEditStartValue] = useState<string>('');
+  const [isEditing, setIsEditing] = useState(false);
 
   // コンテキストメニュー
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
@@ -97,8 +101,23 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // Initialize history with initial state
   useEffect(() => {
-    if (history.length === 0) {
-      saveToHistory('Initial state');
+    if (history.length === 0 && !isUndoRedoOperation) {
+      const initialState: HistoryState = {
+        matrix: JSON.parse(JSON.stringify(matrix)),
+        activeCell: { ...activeCell },
+        selectedRange: {
+          start: { ...selectedRange.start },
+          end: { ...selectedRange.end }
+        },
+        selectionMode,
+        currentCellContent,
+        symmetricMode,
+        showZeros,
+        timestamp: Date.now(),
+        actionType: 'Initial state'
+      };
+      setHistory([initialState]);
+      setHistoryIndex(0);
     }
   }, []);
 
@@ -129,20 +148,24 @@ const LaTeXMatrixEditor: React.FC = () => {
       // Limit history to last 50 operations to prevent memory issues
       if (newHistory.length > 50) {
         newHistory.shift();
+        setHistoryIndex(Math.min(historyIndex, 48)); // Adjust index when shifting
         return newHistory;
       }
+      
+      // Update historyIndex to point to the new last item
+      setHistoryIndex(newHistory.length - 1);
       return newHistory;
-    });
-    
-    setHistoryIndex((prev: number) => {
-      const newIndex = Math.min(prev + 1, 49); // Adjust for max history size
-      return newIndex;
     });
   };
 
   // Undo function
   const undo = () => {
     if (historyIndex <= 0) return; // Can't undo further
+    
+    // 現在編集中の場合は編集を完了してから履歴操作
+    if (isEditing) {
+      finishCellEdit();
+    }
     
     const targetIndex = historyIndex - 1;
     const targetState = history[targetIndex];
@@ -159,16 +182,28 @@ const LaTeXMatrixEditor: React.FC = () => {
     setCurrentCellContent(targetState.currentCellContent);
     setSymmetricMode(targetState.symmetricMode);
     setShowZeros(targetState.showZeros);
+    setIsEditing(false); // 編集状態をリセット
     
     setHistoryIndex(targetIndex);
     
-    // Reset the flag after state updates
-    setTimeout(() => setIsUndoRedoOperation(false), 0);
+    // Reset the flag and re-render after state updates
+    setTimeout(() => {
+      setIsUndoRedoOperation(false);
+      if (window.katex) {
+        renderAllCells();
+        generateLatex();
+      }
+    }, 100);
   };
 
   // Redo function
   const redo = () => {
     if (historyIndex >= history.length - 1) return; // Can't redo further
+    
+    // 現在編集中の場合は編集を完了してから履歴操作
+    if (isEditing) {
+      finishCellEdit();
+    }
     
     const targetIndex = historyIndex + 1;
     const targetState = history[targetIndex];
@@ -185,11 +220,18 @@ const LaTeXMatrixEditor: React.FC = () => {
     setCurrentCellContent(targetState.currentCellContent);
     setSymmetricMode(targetState.symmetricMode);
     setShowZeros(targetState.showZeros);
+    setIsEditing(false); // 編集状態をリセット
     
     setHistoryIndex(targetIndex);
     
-    // Reset the flag after state updates
-    setTimeout(() => setIsUndoRedoOperation(false), 0);
+    // Reset the flag and re-render after state updates
+    setTimeout(() => {
+      setIsUndoRedoOperation(false);
+      if (window.katex) {
+        renderAllCells();
+        generateLatex();
+      }
+    }, 100);
   };
 
   // Check if undo/redo is available
@@ -224,6 +266,9 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // アクティブセル変更時に編集ボックスの内容を更新
   useEffect(() => {
+    // 前のセルの編集を完了
+    finishCellEdit();
+    
     if (matrix.cells[activeCell.row] && matrix.cells[activeCell.row][activeCell.col] !== undefined) {
       setCurrentCellContent(matrix.cells[activeCell.row][activeCell.col]);
     }
@@ -725,21 +770,37 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   };
 
-  // セル値更新
+  // セル値更新（履歴保存なし - 編集完了時に別途保存）
   const updateCell = (row: number, col: number, value: string) => {
-    // Save history only if the value actually changed
-    if (matrix.cells[row][col] !== value) {
-      saveToHistory(`Edit cell (${row + 1}, ${col + 1})`);
-    }
-    
     const newCells = matrix.cells.map((r, i) => 
       r.map((c, j) => (i === row && j === col) ? value : c)
     );
     setMatrix(prev => ({ ...prev, cells: newCells }));
   };
 
+  // セル編集開始
+  const startCellEdit = () => {
+    if (!isEditing) {
+      setEditStartValue(currentCellContent);
+      setIsEditing(true);
+    }
+  };
+
+  // セル編集完了（履歴保存）
+  const finishCellEdit = () => {
+    if (isEditing && editStartValue !== currentCellContent) {
+      saveToHistory(`Edit cell (${activeCell.row + 1}, ${activeCell.col + 1})`);
+    }
+    setIsEditing(false);
+  };
+
   // 現在のセル内容を更新（対称行列モード対応）
   const updateCurrentCell = (value: string) => {
+    // 編集開始の検出
+    if (!isEditing) {
+      startCellEdit();
+    }
+    
     setCurrentCellContent(value);
     
     // 通常の更新
@@ -1278,11 +1339,22 @@ const LaTeXMatrixEditor: React.FC = () => {
               type="text"
               value={currentCellContent}
               onChange={(e) => updateCurrentCell(e.target.value)}
+              onFocus={() => startCellEdit()}
+              onBlur={() => finishCellEdit()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === 'Escape') {
+                if (e.key === 'Enter') {
                   e.preventDefault();
+                  finishCellEdit(); // 編集完了として履歴保存
                   e.currentTarget.blur(); // フォーカスを外す
                   // アクティブセルにフォーカスを戻す
+                  focusCell(activeCell.row, activeCell.col);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  // Escapeの場合は変更を破棄
+                  setCurrentCellContent(editStartValue);
+                  updateCell(activeCell.row, activeCell.col, editStartValue);
+                  setIsEditing(false);
+                  e.currentTarget.blur();
                   focusCell(activeCell.row, activeCell.col);
                 }
               }}
