@@ -547,12 +547,20 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     // ハイライト用の特別なレンダリング
     const { type, cells } = matrix;
+    const minDim = Math.min(matrix.rows, matrix.cols);
     const highlightCells = cells.map((row, i) => 
       row.map((cell, j) => {
         const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
         if (isCellInSelection(i, j)) {
           // 選択されたセルに色とスタイルを適用
           return `\\color{red}{\\mathbf{${displayContent}}}`;
+        }
+        // 対称行列モードが有効で、対称成分をパープルでハイライト
+        if (symmetricMode && 
+            i < minDim && j < minDim &&
+            i === activeCell.col && j === activeCell.row &&
+            activeCell.row !== activeCell.col) {
+          return `\\color{purple}{\\mathbf{${displayContent}}}`;
         }
         return displayContent;
       })
@@ -1035,7 +1043,6 @@ const LaTeXMatrixEditor: React.FC = () => {
                                             activeCell.row === j && 
                                             activeCell.col === i && 
                                             i !== j;
-                      const isDiagonal = i === j;
                       
                       return (
                         <td key={j}>
@@ -1078,10 +1085,6 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 ? 'in-selection'
                                 : isSymmetricPair
                                 ? 'border-purple-400 bg-purple-50'
-                                : isDiagonal && isInSymmetricRegion
-                                ? 'border-gray-300 bg-yellow-50 hover:border-gray-400'
-                                : symmetricMode && isInSymmetricRegion && !isDiagonal
-                                ? 'border-blue-200 bg-blue-50 hover:border-blue-300'
                                 : 'border-gray-300 hover:border-gray-400'
                             }`}
                           >
