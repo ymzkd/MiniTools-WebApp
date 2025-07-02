@@ -62,6 +62,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const [copySuccess, setCopySuccess] = useState(false);
   const [parseError, setParseError] = useState('');
   const [symmetricMode, setSymmetricMode] = useState(false);
+  const [triangularPreference, setTriangularPreference] = useState<'upper' | 'lower'>('upper');
   const [showHelp, setShowHelp] = useState(false);
   const [showZeros, setShowZeros] = useState(true);
 
@@ -454,7 +455,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         }
         return cell || '0'; // ゼロ成分を明示的に表示
       }).join(' & ')
-    ).join(' \\\\ ');
+    ).join(' \\\\\n');
     
     const latexString = `\\begin{${type}}\n${matrixContent}\n\\end{${type}}`;
     setLatexCode(latexString);
@@ -546,6 +547,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     
     // ハイライト用の特別なレンダリング
     const { type, cells } = matrix;
+    const minDim = Math.min(matrix.rows, matrix.cols);
     const highlightCells = cells.map((row, i) => 
       row.map((cell, j) => {
         const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
@@ -553,13 +555,20 @@ const LaTeXMatrixEditor: React.FC = () => {
           // 選択されたセルに色とスタイルを適用
           return `\\color{red}{\\mathbf{${displayContent}}}`;
         }
+        // 対称行列モードが有効で、対称成分を明るいグリーンでハイライト
+        if (symmetricMode && 
+            i < minDim && j < minDim &&
+            i === activeCell.col && j === activeCell.row &&
+            activeCell.row !== activeCell.col) {
+          return `\\color{lime}{\\mathbf{${displayContent}}}`;
+        }
         return displayContent;
       })
     );
     
     const highlightMatrixContent = highlightCells.map(row => 
       row.join(' & ')
-    ).join(' \\\\ ');
+    ).join(' \\\\\n');
     
     const highlightLatexString = `\\begin{${type}}\n${highlightMatrixContent}\n\\end{${type}}`;
     
@@ -572,7 +581,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         });
       } catch (error) {
         // エラーの場合は通常のレンダリングに戻す
-        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (isZeroValue(cell) && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\ ')}\n\\end{${type}}`;
+        const normalLatexString = `\\begin{${type}}\n${cells.map(row => row.map(cell => (isZeroValue(cell) && !showZeros) ? '' : (cell || '0')).join(' & ')).join(' \\\\\n')}\n\\end{${type}}`;
         window.katex.render(normalLatexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
@@ -597,12 +606,12 @@ const LaTeXMatrixEditor: React.FC = () => {
     // 通常の更新
     updateCell(activeCell.row, activeCell.col, value);
     
-    // 対称行列モードが有効で、正方行列で、非対角成分の場合
+    // 対称行列モードが有効で、対称可能な領域内の非対角成分の場合
+    const minDim = Math.min(matrix.rows, matrix.cols);
     if (symmetricMode && 
-        matrix.rows === matrix.cols && 
-        activeCell.row !== activeCell.col &&
-        activeCell.col < matrix.rows && 
-        activeCell.row < matrix.cols) {
+        activeCell.row < minDim && 
+        activeCell.col < minDim &&
+        activeCell.row !== activeCell.col) {
       
       // 対称位置も更新
       const newCells = matrix.cells.map((r, i) => 
@@ -618,8 +627,16 @@ const LaTeXMatrixEditor: React.FC = () => {
       setTimeout(() => {
         if (window.katex) {
           renderCellContent(activeCell.col, activeCell.row, value);
+          generateLatex(); // プレビューも確実に更新
         }
-      }, 0);
+      }, 50);
+    } else {
+      // 対称モードではない場合も確実にプレビュー更新
+      setTimeout(() => {
+        if (window.katex) {
+          generateLatex();
+        }
+      }, 50);
     }
   };
 
@@ -628,41 +645,49 @@ const LaTeXMatrixEditor: React.FC = () => {
     setMatrix(prev => ({ ...prev, type }));
   };
 
-  // 対称行列モード切り替え
-  const toggleSymmetricMode = () => {
-    setSymmetricMode(prev => !prev);
-  };
-
-  // 現在の行列を対称行列に変換
-  const makeMatrixSymmetric = () => {
-    if (matrix.rows !== matrix.cols) {
-      alert('対称行列は正方行列である必要があります');
-      return;
-    }
+  // 対称行列への変換を実行
+  const applySymmetricTransformation = () => {
+    const minDim = Math.min(matrix.rows, matrix.cols);
+    const newCells = matrix.cells.map((row, _) => [...row]);
     
-    const newCells = matrix.cells.map((row, i) => 
-      row.map((cell, j) => {
-        if (i === j) {
-          return cell; // 対角成分はそのまま
-        } else if (i < j) {
-          return cell; // 上三角はそのまま
+    for (let i = 0; i < minDim; i++) {
+      for (let j = i + 1; j < minDim; j++) { // 上三角部分のみを処理
+        if (triangularPreference === 'upper') {
+          // 上三角優先：上三角の値を下三角にコピー
+          newCells[j][i] = newCells[i][j];
         } else {
-          return matrix.cells[j][i]; // 下三角は上三角からコピー
+          // 下三角優先：下三角の値を上三角にコピー
+          newCells[i][j] = newCells[j][i];
         }
-      })
-    );
+      }
+    }
     
     setMatrix(prev => ({ ...prev, cells: newCells }));
     
     // 現在のセルの内容も更新
     setCurrentCellContent(newCells[activeCell.row][activeCell.col] || '');
     
-    // セルの再レンダリング
+    // セルの再レンダリングと同期
     setTimeout(() => {
       if (window.katex) {
         renderAllCells();
+        generateLatex(); // プレビューも確実に更新
       }
     }, 0);
+  };
+
+  // 対称行列モード切り替え
+  const toggleSymmetricMode = () => {
+    const newSymmetricMode = !symmetricMode;
+    setSymmetricMode(newSymmetricMode);
+    
+    // 対称モードをONにした時は自動的に対称変換を実行
+    if (newSymmetricMode) {
+      // 少し遅延させて状態が確実に更新されてから実行
+      setTimeout(() => {
+        applySymmetricTransformation();
+      }, 50);
+    }
   };
 
   // セルにフォーカスを移動するユーティリティ関数
@@ -790,12 +815,12 @@ const LaTeXMatrixEditor: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
+    <div className="w-full px-4 py-6 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">
         LaTeX Matrix Editor
       </h1>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Editor Section */}
         <div className="bg-white rounded-lg shadow-lg p-4">
           <div className="flex justify-between items-center mb-4">
@@ -883,16 +908,30 @@ const LaTeXMatrixEditor: React.FC = () => {
                   {symmetricMode ? 'ON' : 'OFF'}
                 </button>
                 <button 
-                  onClick={makeMatrixSymmetric}
-                  className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm"
-                  disabled={matrix.rows !== matrix.cols}
+                  onClick={() => {
+                    setTriangularPreference(prev => {
+                      const newPref = prev === 'upper' ? 'lower' : 'upper';
+                      // 対称モードが有効な場合のみ設定変更後に対称変換を再適用
+                      if (symmetricMode) {
+                        setTimeout(() => {
+                          applySymmetricTransformation();
+                        }, 50);
+                      }
+                      return newPref;
+                    });
+                  }}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    triangularPreference === 'upper' 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-orange-500 text-white'
+                  }`}
                 >
-                  Make Symmetric
+                  Priority: {triangularPreference === 'upper' ? 'Upper ▲' : 'Lower ▼'}
                 </button>
                 {matrix.rows !== matrix.cols && (
-                  <span className="text-xs text-red-500">Square matrix required</span>
+                  <span className="text-xs text-orange-500">Non-square: symmetric editing available for {Math.min(matrix.rows, matrix.cols)}×{Math.min(matrix.rows, matrix.cols)} portion</span>
                 )}
-                {symmetricMode && matrix.rows === matrix.cols && (
+                {symmetricMode && (
                   <span className="text-xs text-blue-600">Auto-symmetric editing enabled</span>
                 )}
               </div>
@@ -925,8 +964,8 @@ const LaTeXMatrixEditor: React.FC = () => {
           </div>
           
           {/* Matrix Table */}
-          <div className="matrix-table-container overflow-visible">
-            <table ref={tableRef} className="matrix-table" style={{ margin: '20px auto' }}>
+          <div className="matrix-table-container overflow-x-auto overflow-y-visible max-w-full">
+            <table ref={tableRef} className="matrix-table" style={{ margin: '20px auto', minWidth: 'fit-content' }}>
               <thead>
                 <tr>
                   <th className="matrix-col-header w-8"></th>
@@ -997,8 +1036,10 @@ const LaTeXMatrixEditor: React.FC = () => {
                     {row.map((cell, j) => {
                       const isSelected = isCellInSelection(i, j);
                       const isActive = activeCell.row === i && activeCell.col === j;
+                      const minDim = Math.min(matrix.rows, matrix.cols);
+                      const isInSymmetricRegion = i < minDim && j < minDim;
                       const isSymmetricPair = symmetricMode && 
-                                            matrix.rows === matrix.cols && 
+                                            isInSymmetricRegion &&
                                             activeCell.row === j && 
                                             activeCell.col === i && 
                                             i !== j;
@@ -1044,7 +1085,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 : isSelected
                                 ? 'in-selection'
                                 : isSymmetricPair
-                                ? 'border-purple-400 bg-purple-50'
+                                ? 'border-green-400 bg-green-50'
                                 : isDiagonal
                                 ? 'border-gray-300 bg-yellow-50 hover:border-gray-400'
                                 : 'border-gray-300 hover:border-gray-400'
@@ -1063,7 +1104,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                               {cell || '0'}
                             </div>
                             {isSymmetricPair && (
-                              <div className="absolute top-0 right-0 w-2 h-2 bg-purple-400 rounded-full"></div>
+                              <div className="absolute top-0 right-0 w-2 h-2 bg-green-400 rounded-full"></div>
                             )}
                           </div>
                         </td>
@@ -1093,9 +1134,12 @@ const LaTeXMatrixEditor: React.FC = () => {
                   focusCell(activeCell.row, activeCell.col);
                 }
               }}
-              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
               placeholder="Enter LaTeX expression..."
             />
+            <div className="text-xs text-gray-500 mt-1">
+              Tip: Use horizontal scroll in the table and preview areas when matrix is large
+            </div>
           </div>
           
           {/* Help Popup */}
@@ -1117,7 +1161,9 @@ const LaTeXMatrixEditor: React.FC = () => {
                   <p>• <strong>Context Menu:</strong> Right-click for additional operations</p>
                   <p>• <strong>Keyboard Shortcuts:</strong> Ctrl+C/V for copy/paste, Ctrl+A for select all (when table is focused)</p>
                   <p>• <strong>Navigation:</strong> Tab/Shift+Tab and arrow keys for cell navigation</p>
-                  <p>• <strong>Symmetric Mode:</strong> Enable for automatic symmetric matrix editing</p>
+                  <p>• <strong>Large Matrices:</strong> Both the table and preview areas support horizontal scrolling when content is wider than the panel</p>
+                  <p>• <strong>Color Coding:</strong> Active cell (red in preview), symmetric pairs (lime in preview, green border/background), diagonal cells (yellow background), multi-selection (purple background)</p>
+                  <p>• <strong>Symmetric Mode:</strong> Toggle ON for automatic symmetric matrix editing. Priority setting (Upper/Lower) can be set anytime and controls which triangular values are copied when mode is enabled. Works with non-square matrices for the symmetric portion.</p>
                 </div>
               </div>
             </div>
@@ -1126,10 +1172,13 @@ const LaTeXMatrixEditor: React.FC = () => {
         
         {/* Preview Section */}
         <div className="bg-white rounded-lg shadow-lg p-4">
+          <h2 className="text-xl font-semibold text-gray-700 mb-4">LaTeX Preview</h2>
           
           {/* Rendered Matrix */}
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg min-h-24 flex items-center justify-center">
-            <div ref={previewRef} className="text-center"></div>
+          <div className="mb-4 p-3 bg-gray-50 rounded-lg min-h-24 overflow-x-auto">
+            <div className="flex items-center justify-center min-w-fit">
+              <div ref={previewRef} className="text-center"></div>
+            </div>
           </div>
           
           {/* LaTeX Code */}
@@ -1152,8 +1201,9 @@ const LaTeXMatrixEditor: React.FC = () => {
             <textarea
               value={latexCode}
               onChange={(e) => handleLatexCodeChange(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full h-32 p-3 border border-gray-300 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto"
               placeholder="Paste LaTeX matrix code here or edit generated code..."
+              style={{ resize: 'vertical' }}
             />
             <div className="mt-2 text-xs text-gray-500">
               <p>You can paste existing LaTeX matrix code here. Supported: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
