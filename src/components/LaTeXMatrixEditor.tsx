@@ -65,6 +65,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const [triangularPreference, setTriangularPreference] = useState<'upper' | 'lower'>('upper');
   const [showHelp, setShowHelp] = useState(false);
   const [showZeros, setShowZeros] = useState(true);
+  const [syncDirection, setSyncDirection] = useState<'code-to-table' | 'table-to-code' | 'idle'>('idle');
 
   // コンテキストメニュー
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
@@ -520,7 +521,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       setTimeout(() => {
         if (window.katex) {
           renderAllCells();
-          generateLatex();
+          setSyncDirection('idle');
+          setTimeout(() => {
+            generateLatex();
+          }, 10);
         }
       }, 50);
       
@@ -531,6 +535,10 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // LaTeXコード生成
   const generateLatex = () => {
+    if (syncDirection === 'code-to-table') {
+      return;
+    }
+    
     const { type, cells } = matrix;
     const matrixContent = cells.map(row => 
       row.map(cell => {
@@ -708,8 +716,14 @@ const LaTeXMatrixEditor: React.FC = () => {
   const updateCurrentCell = (value: string) => {
     setCurrentCellContent(value);
     
+    setSyncDirection('table-to-code');
+    
     // 通常の更新
     updateCell(activeCell.row, activeCell.col, value);
+    
+    setTimeout(() => {
+      setSyncDirection('idle');
+    }, 100);
     
     // 対称行列モードが有効で、対称可能な領域内の非対角成分の場合
     const minDim = Math.min(matrix.rows, matrix.cols);
@@ -911,6 +925,8 @@ const LaTeXMatrixEditor: React.FC = () => {
     const currentLength = latexCode.length;
     const newLength = value.length;
     const isLargeChange = Math.abs(newLength - currentLength) > 20;
+    
+    setSyncDirection('code-to-table');
     
     if (isLargeChange) {
       parseLatexMatrix(value);
