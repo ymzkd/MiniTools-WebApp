@@ -154,9 +154,20 @@ const LaTeXMatrixEditor: React.FC = () => {
             e.preventDefault();
             pasteClipboardData();
             break;
+          case 'x':
+            e.preventDefault();
+            cutSelectedCells();
+            break;
           case 'a':
             e.preventDefault();
             selectAllCells();
+            break;
+        }
+      } else {
+        switch (e.key) {
+          case 'Delete':
+            e.preventDefault();
+            clearSelectedCells();
             break;
         }
       }
@@ -253,6 +264,54 @@ const LaTeXMatrixEditor: React.FC = () => {
     setTimeout(() => setCopySuccess(false), 1000);
   };
 
+  // 選択されたセルを切り取り
+  const cutSelectedCells = () => {
+    copySelectedCells();
+    
+    clearSelectedCells();
+  };
+
+  // 選択されたセルをクリア
+  const clearSelectedCells = () => {
+    const minRow = Math.min(selectedRange.start.row, selectedRange.end.row);
+    const maxRow = Math.max(selectedRange.start.row, selectedRange.end.row);
+    const minCol = Math.min(selectedRange.start.col, selectedRange.end.col);
+    const maxCol = Math.max(selectedRange.start.col, selectedRange.end.col);
+
+    const newCells = [...matrix.cells];
+    
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        newCells[i][j] = '';
+        
+        // 対称行列モードが有効で、対称可能な領域内の非対角成分の場合
+        const minDim = Math.min(matrix.rows, matrix.cols);
+        if (symmetricMode && 
+            i < minDim && 
+            j < minDim &&
+            i !== j) {
+          newCells[j][i] = '';
+        }
+      }
+    }
+
+    setMatrix(prev => ({ ...prev, cells: newCells }));
+    
+    // アクティブセルの内容も更新
+    if (activeCell.row >= minRow && activeCell.row <= maxRow &&
+        activeCell.col >= minCol && activeCell.col <= maxCol) {
+      setCurrentCellContent('');
+    }
+    
+    // セルの再レンダリング
+    setTimeout(() => {
+      if (window.katex) {
+        renderAllCells();
+        generateLatex();
+      }
+    }, 0);
+  };
+
   // クリップボードデータを貼り付け
   const pasteClipboardData = () => {
     if (!clipboardData) return;
@@ -287,6 +346,15 @@ const LaTeXMatrixEditor: React.FC = () => {
         const targetCol = startCol + j;
         if (targetRow < newCells.length && targetCol < newCells[targetRow].length) {
           newCells[targetRow][targetCol] = cell;
+          
+          // 対称行列モードが有効で、対称可能な領域内の非対角成分の場合
+          const minDim = Math.min(newCells.length, Math.max(...newCells.map(row => row.length)));
+          if (symmetricMode && 
+              targetRow < minDim && 
+              targetCol < minDim &&
+              targetRow !== targetCol) {
+            newCells[targetCol][targetRow] = cell;
+          }
         }
       });
     });
@@ -297,6 +365,17 @@ const LaTeXMatrixEditor: React.FC = () => {
       cols: Math.max(...newCells.map(row => row.length)),
       cells: newCells
     }));
+    
+    // アクティブセルの内容も更新
+    setCurrentCellContent(newCells[activeCell.row][activeCell.col] || '');
+    
+    // セルの再レンダリング
+    setTimeout(() => {
+      if (window.katex) {
+        renderAllCells();
+        generateLatex();
+      }
+    }, 0);
   };
 
   // 行を任意の位置に挿入
