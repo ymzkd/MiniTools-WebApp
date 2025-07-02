@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 interface MatrixData {
   type: string;
@@ -160,21 +160,23 @@ const LaTeXMatrixEditor: React.FC = () => {
   }, []);
 
   // 選択範囲にセルが含まれているかチェック
-  const isCellInSelection = (row: number, col: number): boolean => {
-    if (selectionMode === 'single') {
-      return row === activeCell.row && col === activeCell.col;
-    }
-    
-    const minRow = Math.min(selectedRange.start.row, selectedRange.end.row);
-    const maxRow = Math.max(selectedRange.start.row, selectedRange.end.row);
-    const minCol = Math.min(selectedRange.start.col, selectedRange.end.col);
-    const maxCol = Math.max(selectedRange.start.col, selectedRange.end.col);
-    
-    return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
-  };
+  const isCellInSelection = useMemo(() => {
+    return (row: number, col: number): boolean => {
+      if (selectionMode === 'single') {
+        return row === activeCell.row && col === activeCell.col;
+      }
+      
+      const minRow = Math.min(selectedRange.start.row, selectedRange.end.row);
+      const maxRow = Math.max(selectedRange.start.row, selectedRange.end.row);
+      const minCol = Math.min(selectedRange.start.col, selectedRange.end.col);
+      const maxCol = Math.max(selectedRange.start.col, selectedRange.end.col);
+      
+      return row >= minRow && row <= maxRow && col >= minCol && col <= maxCol;
+    };
+  }, [selectionMode, activeCell, selectedRange]);
 
   // セル選択
-  const selectCell = (row: number, col: number, extend: boolean = false) => {
+  const selectCell = useCallback((row: number, col: number, extend: boolean = false) => {
     if (extend && selectionMode === 'range') {
       setSelectedRange(prev => ({ ...prev, end: { row, col } }));
     } else {
@@ -182,39 +184,39 @@ const LaTeXMatrixEditor: React.FC = () => {
       setSelectedRange({ start: { row, col }, end: { row, col } });
       setSelectionMode('single');
     }
-  };
+  }, [selectionMode]);
 
   // 範囲選択開始
-  const startRangeSelection = (row: number, col: number) => {
+  const startRangeSelection = useCallback((row: number, col: number) => {
     setIsSelecting(true);
     setSelectionMode('range');
     setSelectedRange({ start: { row, col }, end: { row, col } });
     setActiveCell({ row, col });
-  };
+  }, []);
 
   // 範囲選択更新
-  const updateRangeSelection = (row: number, col: number) => {
+  const updateRangeSelection = useCallback((row: number, col: number) => {
     if (isSelecting && selectionMode === 'range') {
       setSelectedRange(prev => ({ ...prev, end: { row, col } }));
     }
-  };
+  }, [isSelecting, selectionMode]);
 
   // 範囲選択終了
-  const endRangeSelection = () => {
+  const endRangeSelection = useCallback(() => {
     setIsSelecting(false);
-  };
+  }, []);
 
   // 全選択
-  const selectAllCells = () => {
+  const selectAllCells = useCallback(() => {
     setSelectionMode('range');
     setSelectedRange({
       start: { row: 0, col: 0 },
       end: { row: matrix.rows - 1, col: matrix.cols - 1 }
     });
-  };
+  }, [matrix.rows, matrix.cols]);
 
   // 選択されたセルをコピー
-  const copySelectedCells = () => {
+  const copySelectedCells = useCallback(() => {
     const minRow = Math.min(selectedRange.start.row, selectedRange.end.row);
     const maxRow = Math.max(selectedRange.start.row, selectedRange.end.row);
     const minCol = Math.min(selectedRange.start.col, selectedRange.end.col);
@@ -237,10 +239,10 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 1000);
-  };
+  }, [selectedRange, matrix.cells]);
 
   // クリップボードデータを貼り付け
-  const pasteClipboardData = () => {
+  const pasteClipboardData = useCallback(() => {
     if (!clipboardData) return;
 
     const startRow = activeCell.row;
@@ -283,10 +285,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       cols: Math.max(...newCells.map(row => row.length)),
       cells: newCells
     }));
-  };
+  }, [clipboardData, activeCell, matrix.cells, matrix.cols]);
 
   // 行を任意の位置に挿入
-  const insertRowAt = (index: number, before: boolean = false) => {
+  const insertRowAt = useCallback((index: number, before: boolean = false) => {
     const insertIndex = before ? index : index + 1;
     const newRow = Array(matrix.cols).fill('');
     const newCells = [...matrix.cells];
@@ -302,10 +304,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     if (activeCell.row >= insertIndex) {
       setActiveCell(prev => ({ ...prev, row: prev.row + 1 }));
     }
-  };
+  }, [matrix.cols, matrix.cells, activeCell.row]);
 
   // 列を任意の位置に挿入
-  const insertColAt = (index: number, before: boolean = false) => {
+  const insertColAt = useCallback((index: number, before: boolean = false) => {
     const insertIndex = before ? index : index + 1;
     const newCells = matrix.cells.map(row => {
       const newRow = [...row];
@@ -323,10 +325,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     if (activeCell.col >= insertIndex) {
       setActiveCell(prev => ({ ...prev, col: prev.col + 1 }));
     }
-  };
+  }, [matrix.cells, activeCell.col]);
 
   // 行を削除
-  const deleteRowAt = (index: number) => {
+  const deleteRowAt = useCallback((index: number) => {
     if (matrix.rows <= 1) return;
 
     const newCells = matrix.cells.filter((_, i) => i !== index);
@@ -340,10 +342,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     if (activeCell.row >= index && activeCell.row > 0) {
       setActiveCell(prev => ({ ...prev, row: prev.row - 1 }));
     }
-  };
+  }, [matrix.rows, matrix.cells, activeCell.row]);
 
   // 列を削除
-  const deleteColAt = (index: number) => {
+  const deleteColAt = useCallback((index: number) => {
     if (matrix.cols <= 1) return;
 
     const newCells = matrix.cells.map(row => row.filter((_, j) => j !== index));
@@ -357,10 +359,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     if (activeCell.col >= index && activeCell.col > 0) {
       setActiveCell(prev => ({ ...prev, col: prev.col - 1 }));
     }
-  };
+  }, [matrix.cols, matrix.cells, activeCell.col]);
 
   // コンテキストメニューを表示
-  const showContextMenu = (e: React.MouseEvent, type: 'row' | 'col' | 'cell', index: number) => {
+  const showContextMenu = useCallback((e: React.MouseEvent, type: 'row' | 'col' | 'cell', index: number) => {
     e.preventDefault();
     setContextMenu({
       x: e.clientX,
@@ -368,10 +370,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       type,
       index
     });
-  };
+  }, []);
 
   // LaTeXコード解析
-  const parseLatexMatrix = (latexCode: string) => {
+  const parseLatexMatrix = useCallback((latexCode: string) => {
     try {
       setParseError('');
       
@@ -433,10 +435,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     } catch (error) {
       setParseError((error as Error).message);
     }
-  };
+  }, []);
 
   // LaTeXコード生成
-  const generateLatex = () => {
+  const generateLatex = useCallback(() => {
     const { type, cells } = matrix;
     const matrixContent = cells.map(row => 
       row.join(' & ')
@@ -460,7 +462,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
       }
     }
-  };
+  }, [matrix]);
 
   // セルの数式をレンダリング
   const renderCellContent = (row: number, col: number, content: string) => {
@@ -515,7 +517,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   };
 
   // 全セルの数式をレンダリング
-  const renderAllCells = () => {
+  const renderAllCells = useCallback(() => {
     if (!window.katex) return;
     
     matrix.cells.forEach((row, i) => {
@@ -523,10 +525,10 @@ const LaTeXMatrixEditor: React.FC = () => {
         renderCellContent(i, j, cell);
       });
     });
-  };
+  }, [matrix.cells]);
 
   // ハイライト適用
-  const applyHighlight = () => {
+  const applyHighlight = useCallback(() => {
     if (!previewRef.current) return;
     
     // ハイライト用の特別なレンダリング
@@ -564,18 +566,18 @@ const LaTeXMatrixEditor: React.FC = () => {
         });
       }
     }
-  };
+  }, [matrix, isCellInSelection]);
 
   // セル値更新
-  const updateCell = (row: number, col: number, value: string) => {
+  const updateCell = useCallback((row: number, col: number, value: string) => {
     const newCells = matrix.cells.map((r, i) => 
       r.map((c, j) => (i === row && j === col) ? value : c)
     );
     setMatrix(prev => ({ ...prev, cells: newCells }));
-  };
+  }, [matrix.cells]);
 
   // 現在のセル内容を更新（対称行列モード対応）
-  const updateCurrentCell = (value: string) => {
+  const updateCurrentCell = useCallback((value: string) => {
     setCurrentCellContent(value);
     
     // 通常の更新
@@ -605,20 +607,20 @@ const LaTeXMatrixEditor: React.FC = () => {
         }
       }, 0);
     }
-  };
+  }, [updateCell, activeCell, symmetricMode, matrix.rows, matrix.cols, matrix.cells]);
 
   // 行列タイプ変更
-  const changeMatrixType = (type: string) => {
+  const changeMatrixType = useCallback((type: string) => {
     setMatrix(prev => ({ ...prev, type }));
-  };
+  }, []);
 
   // 対称行列モード切り替え
-  const toggleSymmetricMode = () => {
+  const toggleSymmetricMode = useCallback(() => {
     setSymmetricMode(prev => !prev);
-  };
+  }, []);
 
   // 現在の行列を対称行列に変換
-  const makeMatrixSymmetric = () => {
+  const makeMatrixSymmetric = useCallback(() => {
     if (matrix.rows !== matrix.cols) {
       alert('対称行列は正方行列である必要があります');
       return;
@@ -647,10 +649,10 @@ const LaTeXMatrixEditor: React.FC = () => {
         renderAllCells();
       }
     }, 0);
-  };
+  }, [matrix.rows, matrix.cols, matrix.cells, activeCell.row, activeCell.col, renderAllCells]);
 
   // セルにフォーカスを移動するユーティリティ関数
-  const focusCell = (row: number, col: number) => {
+  const focusCell = useCallback((row: number, col: number) => {
     const tableElement = tableRef.current;
     if (!tableElement) return;
     
@@ -661,10 +663,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     if (cellElement) {
       cellElement.focus();
     }
-  };
+  }, []);
 
   // キーボードナビゲーション（簡素化版）
-  const handleKeyDown = (e: React.KeyboardEvent, row: number, col: number) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent, row: number, col: number) => {
     let newRow = row;
     let newCol = col;
     let shouldMove = true;
@@ -745,10 +747,10 @@ const LaTeXMatrixEditor: React.FC = () => {
       // 移動先のセルにフォーカスを移動
       setTimeout(() => focusCell(newRow, newCol), 0);
     }
-  };
+  }, [matrix.cols, matrix.rows, selectCell, focusCell]);
 
   // LaTeXコード手動編集
-  const handleLatexCodeChange = (value: string) => {
+  const handleLatexCodeChange = useCallback((value: string) => {
     setLatexCode(value);
     
     // リアルタイムで解析を試行（デバウンス）
@@ -756,15 +758,15 @@ const LaTeXMatrixEditor: React.FC = () => {
     window.parseTimeout = setTimeout(() => {
       parseLatexMatrix(value);
     }, 500);
-  };
+  }, [parseLatexMatrix]);
 
   // コピー機能
-  const copyToClipboard = () => {
+  const copyToClipboard = useCallback(() => {
     navigator.clipboard.writeText(latexCode).then(() => {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     });
-  };
+  }, [latexCode]);
 
   return (
     <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
