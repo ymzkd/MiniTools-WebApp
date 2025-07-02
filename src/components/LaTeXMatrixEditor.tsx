@@ -907,27 +907,27 @@ const LaTeXMatrixEditor: React.FC = () => {
                 >
                   {symmetricMode ? 'ON' : 'OFF'}
                 </button>
-                {symmetricMode && (
-                  <button 
-                    onClick={() => {
-                      setTriangularPreference(prev => {
-                        const newPref = prev === 'upper' ? 'lower' : 'upper';
-                        // 設定変更後に対称変換を再適用
+                <button 
+                  onClick={() => {
+                    setTriangularPreference(prev => {
+                      const newPref = prev === 'upper' ? 'lower' : 'upper';
+                      // 対称モードが有効な場合のみ設定変更後に対称変換を再適用
+                      if (symmetricMode) {
                         setTimeout(() => {
                           applySymmetricTransformation();
                         }, 50);
-                        return newPref;
-                      });
-                    }}
-                    className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                      triangularPreference === 'upper' 
-                        ? 'bg-green-500 text-white' 
-                        : 'bg-orange-500 text-white'
-                    }`}
-                  >
-                    Priority: {triangularPreference === 'upper' ? 'Upper ▲' : 'Lower ▼'}
-                  </button>
-                )}
+                      }
+                      return newPref;
+                    });
+                  }}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    triangularPreference === 'upper' 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-orange-500 text-white'
+                  }`}
+                >
+                  Priority: {triangularPreference === 'upper' ? 'Upper ▲' : 'Lower ▼'}
+                </button>
                 {matrix.rows !== matrix.cols && (
                   <span className="text-xs text-orange-500">Non-square: symmetric editing available for {Math.min(matrix.rows, matrix.cols)}×{Math.min(matrix.rows, matrix.cols)} portion</span>
                 )}
@@ -1043,6 +1043,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                                             activeCell.row === j && 
                                             activeCell.col === i && 
                                             i !== j;
+                      const isDiagonal = i === j;
                       
                       return (
                         <td key={j}>
@@ -1085,6 +1086,8 @@ const LaTeXMatrixEditor: React.FC = () => {
                                 ? 'in-selection'
                                 : isSymmetricPair
                                 ? 'border-purple-400 bg-purple-50'
+                                : isDiagonal
+                                ? 'border-gray-300 bg-yellow-50 hover:border-gray-400'
                                 : 'border-gray-300 hover:border-gray-400'
                             }`}
                           >
@@ -1159,7 +1162,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                   <p>• <strong>Keyboard Shortcuts:</strong> Ctrl+C/V for copy/paste, Ctrl+A for select all (when table is focused)</p>
                   <p>• <strong>Navigation:</strong> Tab/Shift+Tab and arrow keys for cell navigation</p>
                   <p>• <strong>Large Matrices:</strong> Both the table and preview areas support horizontal scrolling when content is wider than the panel</p>
-                  <p>• <strong>Symmetric Mode:</strong> Toggle ON for automatic symmetric matrix editing. Choose upper/lower triangular priority to control which values are copied. Works with non-square matrices for the symmetric portion.</p>
+                  <p>• <strong>Symmetric Mode:</strong> Toggle ON for automatic symmetric matrix editing. Priority setting (Upper/Lower) can be set anytime and controls which triangular values are copied when mode is enabled. Works with non-square matrices for the symmetric portion.</p>
                 </div>
               </div>
             </div>
