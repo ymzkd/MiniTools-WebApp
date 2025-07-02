@@ -640,7 +640,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   // 対称行列への変換を実行
   const applySymmetricTransformation = () => {
     const minDim = Math.min(matrix.rows, matrix.cols);
-    const newCells = matrix.cells.map((row, i) => [...row]);
+    const newCells = matrix.cells.map((row, _) => [...row]);
     
     for (let i = 0; i < minDim; i++) {
       for (let j = i + 1; j < minDim; j++) { // 上三角部分のみを処理
