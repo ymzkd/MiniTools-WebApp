@@ -69,12 +69,14 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // その他の状態
   const [currentCellContent, setCurrentCellContent] = useState('a_{11}');
+  const [originalCellContent, setOriginalCellContent] = useState('a_{11}');
   const [latexCode, setLatexCode] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const [parseError, setParseError] = useState('');
   const [symmetricMode, setSymmetricMode] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showZeros, setShowZeros] = useState(true);
+  const [isEscapePressed, setIsEscapePressed] = useState(false);
 
   const [undoRedoState, setUndoRedoState] = useState<UndoRedoState>({
     history: [{
@@ -135,16 +137,13 @@ const LaTeXMatrixEditor: React.FC = () => {
   // アクティブセル変更時に編集ボックスの内容を更新
   useEffect(() => {
     if (matrix.cells[activeCell.row] && matrix.cells[activeCell.row][activeCell.col] !== undefined) {
-      setCurrentCellContent(matrix.cells[activeCell.row][activeCell.col]);
+      const cellValue = matrix.cells[activeCell.row][activeCell.col];
+      setCurrentCellContent(cellValue);
+      setOriginalCellContent(cellValue);
     }
   }, [activeCell, matrix.cells]);
 
-  // セル内容変更時の個別レンダリング
-  useEffect(() => {
-    if (window.katex) {
-      renderCellContent(activeCell.row, activeCell.col, currentCellContent);
-    }
-  }, [currentCellContent]);
+  // セル内容変更時の個別レンダリング（編集確定時のみ）
 
   // ゼロ表示切り替え時の再レンダリング
   useEffect(() => {
@@ -658,39 +657,21 @@ const LaTeXMatrixEditor: React.FC = () => {
   const updateCurrentCell = (value: string) => {
     setCurrentCellContent(value);
     
-    let newCells;
-    
-    // 対称行列モードが有効で、正方行列で、非対角成分の場合
+    // 対称行列モードが有効で、正方行列で、非対角成分の場合の表示更新のみ
     if (symmetricMode && 
         matrix.rows === matrix.cols && 
         activeCell.row !== activeCell.col &&
         activeCell.col < matrix.rows && 
         activeCell.row < matrix.cols) {
       
-      // 対称位置も更新
-      newCells = matrix.cells.map((r, i) => 
-        r.map((c, j) => {
-          if (i === activeCell.row && j === activeCell.col) return value;
-          if (i === activeCell.col && j === activeCell.row) return value;
-          return c;
-        })
-      );
-      
-      // 対称位置のセルも再レンダリング
+      // 対称位置のセルも再レンダリング（表示のみ、状態は更新しない）
       setTimeout(() => {
         if (window.katex) {
           renderCellContent(activeCell.col, activeCell.row, value);
         }
       }, 0);
-    } else {
-      // 通常の更新
-      newCells = matrix.cells.map((r, i) => 
-        r.map((c, j) => (i === activeCell.row && j === activeCell.col) ? value : c)
-      );
     }
     
-    const newMatrix = { ...matrix, cells: newCells };
-    setMatrix(newMatrix);
   };
 
   const commitCellEdit = (value: string) => {
@@ -700,6 +681,10 @@ const LaTeXMatrixEditor: React.FC = () => {
     );
     const newMatrix = { ...matrix, cells: newCells };
     addToHistory(newMatrix, activeCell);
+    
+    if (window.katex) {
+      renderCellContent(activeCell.row, activeCell.col, value);
+    }
   };
 
   // 行列タイプ変更
@@ -1251,7 +1236,7 @@ const LaTeXMatrixEditor: React.FC = () => {
               ref={cellEditorRef}
               type="text"
               value={currentCellContent}
-              onChange={(e) => updateCurrentCell(e.target.value)}
+              onChange={(e) => setCurrentCellContent(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -1261,14 +1246,29 @@ const LaTeXMatrixEditor: React.FC = () => {
                   focusCell(activeCell.row, activeCell.col);
                 } else if (e.key === 'Escape') {
                   e.preventDefault();
-                  setCurrentCellContent(matrix.cells[activeCell.row][activeCell.col]);
+                  setIsEscapePressed(true);
+                  setCurrentCellContent(originalCellContent);
+                  
+                  const newCells = matrix.cells.map((row, rowIndex) =>
+                    row.map((cell, colIndex) =>
+                      rowIndex === activeCell.row && colIndex === activeCell.col
+                        ? originalCellContent
+                        : cell
+                    )
+                  );
+                  setMatrix({ ...matrix, cells: newCells });
+                  
                   e.currentTarget.blur(); // フォーカスを外す
                   // アクティブセルにフォーカスを戻す
                   focusCell(activeCell.row, activeCell.col);
+                  
+                  setTimeout(() => setIsEscapePressed(false), 100);
                 }
               }}
               onBlur={() => {
-                commitCellEdit(currentCellContent);
+                if (!isEscapePressed) {
+                  commitCellEdit(currentCellContent);
+                }
               }}
               className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
               placeholder="Enter LaTeX expression..."
