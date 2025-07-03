@@ -8,6 +8,22 @@
     <!-- KaTeX CDN for production stability -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <!-- ダークモード初期化スクリプト (ちらつき防止) -->
+    <script>
+      (function() {
+        try {
+          const savedTheme = localStorage.getItem('theme');
+          const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          
+          if (savedTheme === 'dark' || (!savedTheme && systemPrefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (error) {
+          console.warn('Failed to initialize theme:', error);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
