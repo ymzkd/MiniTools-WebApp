@@ -85,14 +85,14 @@ const DarkModeToggle: React.FC = () => {
     localStorage.setItem('theme', newDarkMode ? 'dark' : 'light');
   };
 
-  // システム設定にリセットする関数（必要に応じて使用）
-  const resetToSystemPreference = () => {
-    const systemPrefersDark = getSystemTheme();
-    applyTheme(systemPrefersDark);
-    setIsSystemPreference(true);
-    // システム設定に戻す場合は、ローカルストレージの設定を削除
-    localStorage.removeItem('theme');
-  };
+  // システム設定にリセットする関数（将来の機能拡張用）
+  // const resetToSystemPreference = () => {
+  //   const systemPrefersDark = getSystemTheme();
+  //   applyTheme(systemPrefersDark);
+  //   setIsSystemPreference(true);
+  //   // システム設定に戻す場合は、ローカルストレージの設定を削除
+  //   localStorage.removeItem('theme');
+  // };
 
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
@@ -134,8 +134,8 @@ const DarkModeToggle: React.FC = () => {
         </div>
       </button>
       
-      {/* システム設定追従状態表示 (本番環境では非表示) */}
-      {process.env.NODE_ENV === 'development' && isSystemPreference && (
+      {/* システム設定追従状態表示 (控えめに表示) */}
+      {false && isSystemPreference && (
         <div className="text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
           システム設定
         </div>
