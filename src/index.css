@@ -170,7 +170,7 @@ body {
 }
 
 .row-controls {
-  left: calc(100% + 10px);
+  right: calc(100% + 10px);
   top: 50%;
   transform: translateY(-50%);
   flex-direction: column;
