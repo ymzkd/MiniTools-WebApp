@@ -501,6 +501,9 @@ const LaTeXMatrixEditor: React.FC = () => {
         return row;
       });
       
+      // 同期方向をリセットして確実にLaTeX生成が実行されるようにする
+      setSyncDirection('idle');
+      
       // 状態を更新
       setMatrix({
         type: matrixType,
@@ -517,14 +520,39 @@ const LaTeXMatrixEditor: React.FC = () => {
       // 編集ボックスの内容も更新
       setCurrentCellContent(normalizedCells[0][0] || '');
       
-      // セルの再レンダリング
+      // 新しい行列データに基づいてLaTeXコードを即座に生成
+      const newMatrixContent = normalizedCells.map(row => 
+        row.map(cell => {
+          if (isZeroValue(cell) && !showZeros) {
+            return ''; // ゼロ成分をブランクに
+          }
+          return cell || '0'; // ゼロ成分を明示的に表示
+        }).join(' & ')
+      ).join(' \\\\\n');
+      
+      const newLatexString = `\\begin{${matrixType}}\n${newMatrixContent}\n\\end{${matrixType}}`;
+      setLatexCode(newLatexString);
+      
+      // セルの再レンダリングとプレビュー更新
       setTimeout(() => {
         if (window.katex) {
           renderAllCells();
-          setSyncDirection('idle');
-          setTimeout(() => {
-            generateLatex();
-          }, 10);
+          
+          // プレビューも即座に更新
+          if (previewRef.current) {
+            try {
+              window.katex.render(newLatexString, previewRef.current, {
+                displayMode: true,
+                throwOnError: false,
+                output: 'mathml'
+              });
+              
+              // ハイライト適用
+              setTimeout(() => applyHighlight(), 50);
+            } catch (error) {
+              previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
+            }
+          }
         }
       }, 50);
       
@@ -716,14 +744,8 @@ const LaTeXMatrixEditor: React.FC = () => {
   const updateCurrentCell = (value: string) => {
     setCurrentCellContent(value);
     
-    setSyncDirection('table-to-code');
-    
     // 通常の更新
     updateCell(activeCell.row, activeCell.col, value);
-    
-    setTimeout(() => {
-      setSyncDirection('idle');
-    }, 100);
     
     // 対称行列モードが有効で、対称可能な領域内の非対角成分の場合
     const minDim = Math.min(matrix.rows, matrix.cols);
@@ -742,31 +764,33 @@ const LaTeXMatrixEditor: React.FC = () => {
       );
       setMatrix(prev => ({ ...prev, cells: newCells }));
       
-      // 対称位置のセルも再レンダリング（強制的に）
+      // 対称位置のセルも再レンダリング（即座に実行）
       if (window.katex) {
         renderCellContent(activeCell.col, activeCell.row, value);
         renderCellContent(activeCell.row, activeCell.col, value);
-        generateLatex();
       }
+      
+      // LaTeX生成は遅延なしで即座に実行
       setTimeout(() => {
+        generateLatex();
         if (window.katex) {
           renderCellContent(activeCell.col, activeCell.row, value);
-          renderCellContent(activeCell.row, activeCell.col, value); // 現在のセルも強制再レンダリング
-          generateLatex(); // プレビューも確実に更新
+          renderCellContent(activeCell.row, activeCell.col, value);
         }
-      }, 50);
+      }, 0);
     } else {
-      // 対称モードではない場合も確実にプレビュー更新と現在セルの強制再レンダリング
+      // 対称モードではない場合も即座にプレビュー更新
       if (window.katex) {
         renderCellContent(activeCell.row, activeCell.col, value);
-        generateLatex();
       }
+      
+      // LaTeX生成は遅延なしで即座に実行
       setTimeout(() => {
+        generateLatex();
         if (window.katex) {
-          renderCellContent(activeCell.row, activeCell.col, value); // 現在のセルを強制再レンダリング
-          generateLatex();
+          renderCellContent(activeCell.row, activeCell.col, value);
         }
-      }, 50);
+      }, 0);
     }
   };
 
