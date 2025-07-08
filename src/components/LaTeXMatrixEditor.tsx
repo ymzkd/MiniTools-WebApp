@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import type { FC } from 'react';
 
 interface MatrixData {
   type: string;
@@ -34,7 +35,7 @@ declare global {
   }
 }
 
-const LaTeXMatrixEditor: React.FC = () => {
+const LaTeXMatrixEditor: FC = () => {
   // 基本状態
   const [matrix, setMatrix] = useState<MatrixData>({
     type: 'pmatrix',
@@ -131,16 +132,35 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   }, [showZeros]);
 
-  // 行列データ変更時の完全な再レンダリング
+  // 行列データ変更時の完全な再レンダリング（改善版）
   useEffect(() => {
     if (window.katex && matrix.cells.length > 0) {
-      // 短時間遅延して確実にDOM要素が存在するのを待つ
+      // 段階的レンダリングで確実に更新
       const timeoutId = setTimeout(() => {
-        matrix.cells.forEach((row, i) => {
-          row.forEach((cell, j) => {
-            forceRenderCell(i, j, cell);
+        // Phase 1: LaTeXコードを即座に生成
+        generateLatex();
+        
+        // Phase 2: 全セルを確実にレンダリング
+        requestAnimationFrame(() => {
+          matrix.cells.forEach((row, i) => {
+            row.forEach((cell, j) => {
+              forceRenderCell(i, j, cell);
+            });
           });
         });
+        
+        // Phase 3: さらなる確認レンダリング
+        setTimeout(() => {
+          matrix.cells.forEach((row, i) => {
+            row.forEach((cell, j) => {
+              const success = forceRenderCell(i, j, cell);
+              if (!success) {
+                // 失敗した場合は少し遅延して再試行
+                setTimeout(() => forceRenderCell(i, j, cell), 20);
+              }
+            });
+          });
+        }, 50);
       }, 10);
       
       return () => clearTimeout(timeoutId);
@@ -480,58 +500,85 @@ const LaTeXMatrixEditor: React.FC = () => {
     });
   };
 
-  // 完全にセルとプレビューをクリアする
+  // 完全に全てをクリアする強化版
   const clearAllCellsAndPreview = () => {
-    // 既存のセル内容を完全にクリア
-    const allCells = document.querySelectorAll('.katex-cell');
-    allCells.forEach(cell => {
-      const element = cell as HTMLElement;
-      element.innerHTML = '';
-      element.textContent = '';
-      element.style.transform = '';
-      element.style.fontSize = '';
-      // KaTeX固有のクラスもクリア
-      element.classList.remove('katex', 'katex-display');
-    });
-    
-    // 古いテーブルセルもクリア（サイズ変更の場合）
-    const oldCells = document.querySelectorAll('.matrix-cell');
-    oldCells.forEach(cell => {
-      const element = cell as HTMLElement;
-      const katexCell = element.querySelector('.katex-cell');
-      if (katexCell) {
-        katexCell.innerHTML = '';
-        katexCell.textContent = '';
-      }
-    });
-    
-    // プレビューをクリア
+    // 1. プレビューを即座にクリア
     if (previewRef.current) {
       previewRef.current.innerHTML = '';
       previewRef.current.textContent = '';
+      previewRef.current.className = previewRef.current.className; // クラスをリセット
     }
     
-    // 参照を完全にクリア
+    // 2. 全てのKaTeX関連セルをクリア（より包括的なセレクタ）
+    const allSelectors = [
+      '.katex-cell',
+      '.katex',
+      '.katex-display',
+      '.matrix-cell .katex-cell',
+      '[class*="katex"]'
+    ];
+    
+    allSelectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(element => {
+        const el = element as HTMLElement;
+        el.innerHTML = '';
+        el.textContent = '';
+        el.style.transform = '';
+        el.style.fontSize = '';
+        el.style.scale = '';
+        
+        // KaTeX関連のクラスを全て削除
+        const classesToRemove = Array.from(el.classList).filter(cls => 
+          cls.includes('katex') || cls.includes('math')
+        );
+        classesToRemove.forEach(cls => el.classList.remove(cls));
+      });
+    });
+    
+    // 3. マトリックステーブル内の全セルをクリア
+    if (tableRef.current) {
+      const matrixCells = tableRef.current.querySelectorAll('.matrix-cell');
+      matrixCells.forEach(cell => {
+        const katexCell = cell.querySelector('.katex-cell');
+        if (katexCell) {
+          katexCell.innerHTML = '';
+          katexCell.textContent = '';
+        }
+      });
+    }
+    
+    // 4. 参照を完全にクリア
     cellKatexRefs.current = {};
   };
 
-  // 確実にセルをレンダリングする
+  // 確実にセルをレンダリングする強化版
   const forceRenderCell = (row: number, col: number, content: string): boolean => {
     if (!window.katex) return false;
     
     const cellKey = `${row}-${col}`;
-    const cellElement = document.querySelector(`[data-row="${row}"][data-col="${col}"] .katex-cell`) as HTMLElement;
+    
+    // 複数の方法でセル要素を取得
+    let cellElement = cellKatexRefs.current[cellKey];
+    if (!cellElement) {
+      cellElement = document.querySelector(`[data-row="${row}"][data-col="${col}"] .katex-cell`) as HTMLElement;
+      if (cellElement) {
+        cellKatexRefs.current[cellKey] = cellElement;
+      }
+    }
     
     if (!cellElement) return false;
     
-    // 参照を更新
-    cellKatexRefs.current[cellKey] = cellElement;
-    
-    // 既存の内容を完全にクリア
+    // 既存の内容を徹底的にクリア
     cellElement.innerHTML = '';
     cellElement.textContent = '';
-    cellElement.style.transform = '';
-    cellElement.style.fontSize = '';
+    cellElement.style.cssText = ''; // 全スタイルをリセット
+    
+    // KaTeX関連のクラスを削除
+    const classesToRemove = Array.from(cellElement.classList).filter(cls => 
+      cls.includes('katex') || cls.includes('math')
+    );
+    classesToRemove.forEach(cls => cellElement.classList.remove(cls));
     
     const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
     
@@ -542,20 +589,21 @@ const LaTeXMatrixEditor: React.FC = () => {
         output: 'mathml'
       });
       
-      // スケール調整を即座に実行
-      requestAnimationFrame(() => adjustCellScale(cellElement));
+      // スケール調整を確実に実行
+      setTimeout(() => adjustCellScale(cellElement), 10);
       return true;
     } catch (error) {
+      // フォールバック：プレーンテキスト
       cellElement.textContent = displayContent;
       return true;
     }
   };
 
-  // 新しい行列で完全にレンダリングする
+  // 完全な行列レンダリングシステム（完全書き直し）
   const renderCompleteMatrix = (matrixData: MatrixData, latexString: string) => {
     if (!window.katex) return;
     
-    // 1. プレビューを即座に更新
+    // Phase 1: プレビューを即座に更新
     if (previewRef.current) {
       try {
         window.katex.render(latexString, previewRef.current, {
@@ -564,38 +612,41 @@ const LaTeXMatrixEditor: React.FC = () => {
           output: 'mathml'
         });
       } catch (error) {
-        previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
+        previewRef.current.innerHTML = `<span style="color: red;">Rendering error</span>`;
       }
     }
     
-    // 2. すべてのセルを確実にレンダリング
-    const renderAllCellsWithRetry = () => {
-      let allSuccess = true;
+    // Phase 2: 確実なセルレンダリング（段階的アプローチ）
+    const renderAllCells = (attempt = 1, maxAttempts = 3) => {
+      let successCount = 0;
+      const totalCells = matrixData.rows * matrixData.cols;
       
       for (let i = 0; i < matrixData.rows; i++) {
         for (let j = 0; j < matrixData.cols; j++) {
           const success = forceRenderCell(i, j, matrixData.cells[i][j]);
-          if (!success) {
-            allSuccess = false;
-          }
+          if (success) successCount++;
         }
       }
       
-      // 失敗した場合は短時間後に再試行
-      if (!allSuccess) {
-        requestAnimationFrame(() => renderAllCellsWithRetry());
+      // 成功率をチェック
+      const successRate = successCount / totalCells;
+      
+      if (successRate < 0.9 && attempt < maxAttempts) {
+        // 成功率が90%未満の場合は再試行
+        setTimeout(() => renderAllCells(attempt + 1, maxAttempts), 50 * attempt);
+      } else if (successRate >= 0.9 && attempt === 1) {
+        // 初回で高い成功率の場合、さらなる改善のため1回追加実行
+        setTimeout(() => renderAllCells(2, 2), 20);
       }
     };
     
-    // DOM更新を待ってからレンダリング開始
+    // DOM更新を待ってレンダリング開始
     requestAnimationFrame(() => {
-      renderAllCellsWithRetry();
-      // さらに確実にするため少し遅延して再実行
-      setTimeout(() => renderAllCellsWithRetry(), 50);
+      renderAllCells();
     });
   };
 
-  // LaTeXコード解析（完全に書き直し）
+  // LaTeXコード解析（大幅改善版）
   const parseLatexMatrix = (latexCode: string) => {
     try {
       setParseError('');
@@ -604,8 +655,8 @@ const LaTeXMatrixEditor: React.FC = () => {
         throw new Error('Invalid LaTeX code provided');
       }
       
-      // matrix環境を抽出
-      const matrixRegex = /\\begin\{(\w+matrix)\}([\s\S]*?)\\end\{\1\}/;
+      // matrix環境を抽出（より柔軟な正規表現）
+      const matrixRegex = /\\begin\{(\w*matrix)\}([\s\S]*?)\\end\{\1\}/;
       const match = latexCode.match(matrixRegex);
       
       if (!match) {
@@ -615,14 +666,17 @@ const LaTeXMatrixEditor: React.FC = () => {
       const matrixType = match[1];
       const content = match[2].trim();
       
-      // 行を分割（\\で区切り）
-      const rows = content.split('\\\\').map(row => row.trim()).filter(row => row);
+      // 行を分割（\\で区切り、より厳密な処理）
+      const rows = content
+        .split(/\\\\/)
+        .map(row => row.trim())
+        .filter(row => row);
       
       if (rows.length === 0) {
         throw new Error('No matrix rows found');
       }
       
-      // 各行のセルを分割（&で区切り）
+      // 各行のセルを分割（&で区切り、空白処理も改善）
       const cells = rows.map(row => 
         row.split('&').map(cell => cell.trim())
       );
@@ -640,19 +694,10 @@ const LaTeXMatrixEditor: React.FC = () => {
         return row;
       });
       
-      // 新しい行列データに基づいてLaTeXコードを生成
-      const newMatrixContent = normalizedCells.map(row => 
-        row.map(cell => {
-          if (isZeroValue(cell) && !showZeros) {
-            return ''; // ゼロ成分をブランクに
-          }
-          return cell || '0'; // ゼロ成分を明示的に表示
-        }).join(' & ')
-      ).join(' \\\\\n');
+      // Phase 1: 既存のコンテンツを完全にクリア（複数回で確実に）
+      clearAllCellsAndPreview();
       
-      const newLatexString = `\\begin{${matrixType}}\n${newMatrixContent}\n\\end{${matrixType}}`;
-      
-      // 新しい行列データオブジェクト
+      // Phase 2: 新しい行列データを準備
       const newMatrixData = {
         type: matrixType,
         rows: normalizedCells.length,
@@ -660,11 +705,19 @@ const LaTeXMatrixEditor: React.FC = () => {
         cells: normalizedCells
       };
       
-      // 1. 既存のコンテンツを完全にクリア（複数回実行で確実に）
-      clearAllCellsAndPreview();
-      requestAnimationFrame(() => clearAllCellsAndPreview());
+      // 新しいLaTeXコードを生成
+      const newMatrixContent = normalizedCells.map(row => 
+        row.map(cell => {
+          if (isZeroValue(cell) && !showZeros) {
+            return '';
+          }
+          return cell || '0';
+        }).join(' & ')
+      ).join(' \\\\\n');
       
-      // 2. 状態を即座に更新
+      const newLatexString = `\\begin{${matrixType}}\n${newMatrixContent}\n\\end{${matrixType}}`;
+      
+      // Phase 3: 状態を同期的に更新
       setSyncDirection('idle');
       setMatrix(newMatrixData);
       setActiveCell({ row: 0, col: 0 });
@@ -673,13 +726,17 @@ const LaTeXMatrixEditor: React.FC = () => {
       setCurrentCellContent(normalizedCells[0][0] || '');
       setLatexCode(newLatexString);
       
-      // 3. 新しい行列で即座にレンダリング開始（複数段階で確実に）
-      renderCompleteMatrix(newMatrixData, newLatexString);
+      // Phase 4: レンダリングを確実に実行（段階的アプローチ）
+      // 少し遅延させてReactの状態更新完了を待つ
+      setTimeout(() => {
+        clearAllCellsAndPreview(); // 最終クリア
+        renderCompleteMatrix(newMatrixData, newLatexString);
+      }, 10);
       
-      // 4. さらに確実にするため追加のレンダリング
+      // Phase 5: 最終確認レンダリング
       setTimeout(() => {
         renderCompleteMatrix(newMatrixData, newLatexString);
-      }, 100);
+      }, 150);
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown parsing error';
@@ -688,7 +745,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   };
 
-  // LaTeXコード生成
+  // LaTeXコード生成（改善版）
   const generateLatex = () => {
     if (syncDirection === 'code-to-table') {
       return;
@@ -698,28 +755,31 @@ const LaTeXMatrixEditor: React.FC = () => {
     const matrixContent = cells.map(row => 
       row.map(cell => {
         if (isZeroValue(cell) && !showZeros) {
-          return ''; // ゼロ成分をブランクに
+          return '';
         }
-        return cell || '0'; // ゼロ成分を明示的に表示
+        return cell || '0';
       }).join(' & ')
     ).join(' \\\\\n');
     
     const latexString = `\\begin{${type}}\n${matrixContent}\n\\end{${type}}`;
     setLatexCode(latexString);
     
-    // 通常のレンダリング
+    // プレビューレンダリング（改善版）
     if (window.katex && previewRef.current) {
       try {
+        // まず基本レンダリング
         window.katex.render(latexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
           output: 'mathml'
         });
         
-        // ハイライト適用
-        setTimeout(() => applyHighlight(), 50);
+        // ハイライト適用を確実に実行
+        requestAnimationFrame(() => {
+          applyHighlight();
+        });
       } catch (error) {
-        previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
+        previewRef.current.innerHTML = `<span style="color: red;">Rendering error</span>`;
       }
     }
   };
@@ -867,7 +927,7 @@ const LaTeXMatrixEditor: React.FC = () => {
     setMatrix(prev => ({ ...prev, cells: newCells }));
   };
 
-  // 現在のセル内容を更新（対称行列モード対応）
+  // 現在のセル内容を更新（対称行列モード対応、同期改善版）
   const updateCurrentCell = (value: string) => {
     setCurrentCellContent(value);
     
@@ -891,33 +951,22 @@ const LaTeXMatrixEditor: React.FC = () => {
       );
       setMatrix(prev => ({ ...prev, cells: newCells }));
       
-      // 対称位置のセルも再レンダリング（即座に実行）
-      if (window.katex) {
-        renderCellContent(activeCell.col, activeCell.row, value);
-        renderCellContent(activeCell.row, activeCell.col, value);
-      }
-      
-      // LaTeX生成は遅延なしで即座に実行
-      setTimeout(() => {
-        generateLatex();
+      // 両方のセルを即座にレンダリング
+      requestAnimationFrame(() => {
         if (window.katex) {
-          renderCellContent(activeCell.col, activeCell.row, value);
-          renderCellContent(activeCell.row, activeCell.col, value);
+          forceRenderCell(activeCell.row, activeCell.col, value);
+          forceRenderCell(activeCell.col, activeCell.row, value);
         }
-      }, 0);
+        generateLatex();
+      });
     } else {
-      // 対称モードではない場合も即座にプレビュー更新
-      if (window.katex) {
-        renderCellContent(activeCell.row, activeCell.col, value);
-      }
-      
-      // LaTeX生成は遅延なしで即座に実行
-      setTimeout(() => {
-        generateLatex();
+      // 対称モードではない場合
+      requestAnimationFrame(() => {
         if (window.katex) {
-          renderCellContent(activeCell.row, activeCell.col, value);
+          forceRenderCell(activeCell.row, activeCell.col, value);
         }
-      }, 0);
+        generateLatex();
+      });
     }
   };
 
@@ -1069,8 +1118,6 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   };
 
-
-
   // クリップボードからのペースト機能
   const pasteFromClipboard = async () => {
     try {
@@ -1160,8 +1207,6 @@ const LaTeXMatrixEditor: React.FC = () => {
               </div>
             </div>
             
-            
-
             {/* Display Options */}
             <div>
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
