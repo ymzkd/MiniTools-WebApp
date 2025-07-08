@@ -66,6 +66,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const [showHelp, setShowHelp] = useState(false);
   const [showZeros, setShowZeros] = useState(true);
   const [syncDirection, setSyncDirection] = useState<'code-to-table' | 'table-to-code' | 'idle'>('idle');
+  const [isParsing, setIsParsing] = useState(false);
 
   // コンテキストメニュー
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
@@ -86,17 +87,21 @@ const LaTeXMatrixEditor: React.FC = () => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.js';
         script.onload = () => {
-          generateLatex();
-          renderAllCells();
+          if (!isParsing) {
+            generateLatex();
+            renderAllCells();
+          }
         };
         document.head.appendChild(script);
       } else {
-        generateLatex();
-        renderAllCells();
+        if (!isParsing) {
+          generateLatex();
+          renderAllCells();
+        }
       }
     };
     loadKaTeX();
-  }, [matrix]);
+  }, [matrix, isParsing]);
 
   // アクティブセル変更時のハイライト更新
   useEffect(() => {
@@ -468,6 +473,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   const parseLatexMatrix = (latexCode: string) => {
     try {
       setParseError('');
+      setIsParsing(true); // 解析開始フラグ
       
       // matrix環境を抽出
       const matrixRegex = /\\begin\{(\w+matrix)\}([\s\S]*?)\\end\{\1\}/;
@@ -501,26 +507,15 @@ const LaTeXMatrixEditor: React.FC = () => {
         return row;
       });
       
-      // 同期方向をリセットして確実にLaTeX生成が実行されるようにする
-      setSyncDirection('idle');
-      
-      // 状態を更新
-      setMatrix({
+      // 新しい行列データオブジェクト
+      const newMatrixData = {
         type: matrixType,
         rows: normalizedCells.length,
         cols: maxCols,
         cells: normalizedCells
-      });
+      };
       
-      // アクティブセルをリセット
-      setActiveCell({ row: 0, col: 0 });
-      setSelectedRange({ start: { row: 0, col: 0 }, end: { row: 0, col: 0 } });
-      setSelectionMode('single');
-      
-      // 編集ボックスの内容も更新
-      setCurrentCellContent(normalizedCells[0][0] || '');
-      
-      // 新しい行列データに基づいてLaTeXコードを即座に生成
+      // 新しい行列データに基づいてLaTeXコードを生成
       const newMatrixContent = normalizedCells.map(row => 
         row.map(cell => {
           if (isZeroValue(cell) && !showZeros) {
@@ -531,14 +526,44 @@ const LaTeXMatrixEditor: React.FC = () => {
       ).join(' \\\\\n');
       
       const newLatexString = `\\begin{${matrixType}}\n${newMatrixContent}\n\\end{${matrixType}}`;
+      
+      // 同期方向をリセット
+      setSyncDirection('idle');
+      
+      // 状態を一括更新
+      setMatrix(newMatrixData);
+      setActiveCell({ row: 0, col: 0 });
+      setSelectedRange({ start: { row: 0, col: 0 }, end: { row: 0, col: 0 } });
+      setSelectionMode('single');
+      setCurrentCellContent(normalizedCells[0][0] || '');
       setLatexCode(newLatexString);
       
-      // セルの再レンダリングとプレビュー更新
+      // 新しいデータを使って直接レンダリング（状態更新を待たない）
       setTimeout(() => {
         if (window.katex) {
-          renderAllCells();
+          // 新しい行列データを使って全セルをレンダリング
+          normalizedCells.forEach((row, i) => {
+            row.forEach((cell, j) => {
+              const cellKey = `${i}-${j}`;
+              const cellElement = cellKatexRefs.current[cellKey];
+              
+              if (cellElement) {
+                const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
+                try {
+                  window.katex.render(displayContent, cellElement, {
+                    displayMode: false,
+                    throwOnError: false,
+                    output: 'mathml'
+                  });
+                  setTimeout(() => adjustCellScale(cellElement), 0);
+                } catch (error) {
+                  cellElement.textContent = displayContent;
+                }
+              }
+            });
+          });
           
-          // プレビューも即座に更新
+          // プレビューも新しいデータでレンダリング
           if (previewRef.current) {
             try {
               window.katex.render(newLatexString, previewRef.current, {
@@ -546,18 +571,19 @@ const LaTeXMatrixEditor: React.FC = () => {
                 throwOnError: false,
                 output: 'mathml'
               });
-              
-              // ハイライト適用
-              setTimeout(() => applyHighlight(), 50);
             } catch (error) {
               previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
             }
           }
         }
-      }, 50);
+        
+        // 解析完了フラグ
+        setIsParsing(false);
+      }, 100);
       
     } catch (error) {
       setParseError((error as Error).message);
+      setIsParsing(false); // エラー時も解析完了フラグを設定
     }
   };
 
