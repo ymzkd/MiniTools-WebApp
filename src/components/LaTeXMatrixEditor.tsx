@@ -517,11 +517,11 @@ const LaTeXMatrixEditor: React.FC = () => {
       // 編集ボックスの内容も更新
       setCurrentCellContent(normalizedCells[0][0] || '');
       
-      // セルの再レンダリング
+      // セルの再レンダリング（一方向同期：クリップボード → 行列テーブル → LaTeXコード）
       setTimeout(() => {
         if (window.katex) {
           renderAllCells();
-          setSyncDirection('idle');
+          // クリップボードからのインポート時は行列テーブルからLaTeXコードを再生成
           setTimeout(() => {
             generateLatex();
           }, 10);
@@ -918,24 +918,35 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   };
 
-  // LaTeXコード手動編集
-  const handleLatexCodeChange = (value: string) => {
-    setLatexCode(value);
-    
-    const currentLength = latexCode.length;
-    const newLength = value.length;
-    const isLargeChange = Math.abs(newLength - currentLength) > 20;
-    
-    setSyncDirection('code-to-table');
-    
-    if (isLargeChange) {
-      parseLatexMatrix(value);
-    } else {
-      clearTimeout(window.parseTimeout);
-      window.parseTimeout = setTimeout(() => {
-        parseLatexMatrix(value);
-      }, 500);
+  // クリップボードからLaTeXコードをペースト
+  const pasteFromClipboard = async () => {
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      
+      if (clipboardText.trim()) {
+        // LaTeX行列のパターンをチェック
+        const matrixRegex = /\\begin\{(\w+matrix)\}[\s\S]*?\\end\{\1\}/;
+        if (matrixRegex.test(clipboardText)) {
+          parseLatexMatrix(clipboardText);
+          
+          // 成功メッセージを表示
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 2000);
+        } else {
+          setParseError('Clipboard does not contain valid LaTeX matrix code');
+          setTimeout(() => setParseError(''), 3000);
+        }
+      }
+    } catch (error) {
+      setParseError('Failed to read from clipboard. Please check browser permissions.');
+      setTimeout(() => setParseError(''), 3000);
     }
+  };
+
+  // LaTeXコード手動編集（無効化 - 読み取り専用モード）
+  const handleLatexCodeChange = (value: string) => {
+    // 編集不可のため、この関数は何もしない
+    // 行列テーブルからの一方向同期のみ
   };
 
   // セルの値がゼロかどうかを判定
@@ -1309,6 +1320,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                   <p>• <strong>Large Matrices:</strong> Both the table and preview areas support horizontal scrolling when content is wider than the panel</p>
                   <p>• <strong>Color Coding:</strong> Active cell (red in preview), symmetric pairs (lime in preview, green border/background), diagonal cells (yellow background), multi-selection (purple background)</p>
                   <p>• <strong>Symmetric Mode:</strong> Toggle ON for automatic symmetric matrix editing. Priority setting (Upper/Lower) can be set anytime and controls which triangular values are copied when mode is enabled. Works with non-square matrices for the symmetric portion.</p>
+                  <p>• <strong>LaTeX Import:</strong> Use the "Paste" button next to the LaTeX code area to import matrix data from clipboard. The LaTeX code area is read-only and automatically updated from the matrix table.</p>
                 </div>
               </div>
             </div>
@@ -1330,28 +1342,38 @@ const LaTeXMatrixEditor: React.FC = () => {
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                LaTeX Code (Editable)
+                LaTeX Code (Preview)
               </label>
-              <button
-                onClick={copyToClipboard}
-                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                  copySuccess 
-                    ? 'bg-green-500 text-white' 
-                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                }`}
-              >
-                {copySuccess ? 'Copied!' : 'Copy'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={pasteFromClipboard}
+                  className="px-3 py-1 bg-purple-500 text-white rounded text-sm font-medium hover:bg-purple-600 transition-colors"
+                  title="Paste LaTeX matrix code from clipboard"
+                >
+                  📋 Paste
+                </button>
+                <button
+                  onClick={copyToClipboard}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    copySuccess 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
+                >
+                  {copySuccess ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
             </div>
             <textarea
               value={latexCode}
-              onChange={(e) => handleLatexCodeChange(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              placeholder="Paste LaTeX matrix code here or edit generated code..."
+              readOnly
+              className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 cursor-default"
+              placeholder="LaTeX code will be generated automatically from the matrix table..."
               style={{ resize: 'vertical' }}
             />
             <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              <p>You can paste existing LaTeX matrix code here. Supported: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
+              <p>LaTeX code is automatically generated from the matrix table. Use the "Paste" button to import existing LaTeX matrix code from clipboard.</p>
+              <p>Supported formats: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
               {parseError && (
                 <p className="text-red-600 dark:text-red-400 mt-1">Parse error: {parseError}</p>
               )}
