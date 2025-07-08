@@ -918,23 +918,21 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   };
 
-  // LaTeXコード手動編集
-  const handleLatexCodeChange = (value: string) => {
-    setLatexCode(value);
-    
-    const currentLength = latexCode.length;
-    const newLength = value.length;
-    const isLargeChange = Math.abs(newLength - currentLength) > 20;
-    
-    setSyncDirection('code-to-table');
-    
-    if (isLargeChange) {
-      parseLatexMatrix(value);
-    } else {
-      clearTimeout(window.parseTimeout);
-      window.parseTimeout = setTimeout(() => {
-        parseLatexMatrix(value);
-      }, 500);
+  // クリップボードからのペースト機能
+  const pasteFromClipboard = async () => {
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      if (clipboardText.trim()) {
+        // LaTeX行列コードを解析してテーブルにインポート
+        parseLatexMatrix(clipboardText);
+      }
+    } catch (error) {
+      console.error('Failed to read from clipboard:', error);
+      // フォールバック: プロンプトを使用
+      const input = prompt('クリップボードからの読み取りができません。LaTeX行列コードを直接貼り付けてください:');
+      if (input && input.trim()) {
+        parseLatexMatrix(input);
+      }
     }
   };
 
@@ -1330,28 +1328,37 @@ const LaTeXMatrixEditor: React.FC = () => {
           <div>
             <div className="flex justify-between items-center mb-2">
               <label className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                LaTeX Code (Editable)
+                LaTeX Code (Read-Only)
               </label>
-              <button
-                onClick={copyToClipboard}
-                className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                  copySuccess 
-                    ? 'bg-green-500 text-white' 
-                    : 'bg-blue-500 text-white hover:bg-blue-600'
-                }`}
-              >
-                {copySuccess ? 'Copied!' : 'Copy'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={pasteFromClipboard}
+                  className="px-3 py-1 rounded text-sm font-medium transition-colors bg-purple-500 text-white hover:bg-purple-600"
+                  title="クリップボードからLaTeX行列をインポート"
+                >
+                  📋 Paste
+                </button>
+                <button
+                  onClick={copyToClipboard}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    copySuccess 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
+                >
+                  {copySuccess ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
             </div>
             <textarea
               value={latexCode}
-              onChange={(e) => handleLatexCodeChange(e.target.value)}
-              className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              placeholder="Paste LaTeX matrix code here or edit generated code..."
+              readOnly
+              className="w-full h-32 p-3 border border-gray-300 dark:border-gray-600 rounded-md font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-x-auto bg-gray-100 dark:bg-gray-600 text-gray-900 dark:text-gray-100 cursor-text"
+              placeholder="Generated LaTeX code will appear here..."
               style={{ resize: 'vertical' }}
             />
             <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              <p>You can paste existing LaTeX matrix code here. Supported: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
+              <p>このエリアは読み取り専用です。LaTeX行列をインポートするには上の「📋 Paste」ボタンをクリックしてください。対応形式: matrix, pmatrix, bmatrix, vmatrix, Vmatrix, smallmatrix</p>
               {parseError && (
                 <p className="text-red-600 dark:text-red-400 mt-1">Parse error: {parseError}</p>
               )}
