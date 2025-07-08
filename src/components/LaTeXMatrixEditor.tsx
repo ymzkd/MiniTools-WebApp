@@ -1074,6 +1074,11 @@ const LaTeXMatrixEditor: React.FC = () => {
             e.stopPropagation();
             selectAllCells();
             break;
+          case 'x':
+            e.preventDefault();
+            e.stopPropagation();
+            cutSelectedCells();
+            break;
           case 'z':
             e.preventDefault();
             e.stopPropagation();
@@ -1094,7 +1099,7 @@ const LaTeXMatrixEditor: React.FC = () => {
 
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [selectedRange, clipboardData, undo, redo, copySelectedCells, pasteClipboardData, selectAllCells]);
+  }, [selectedRange, clipboardData, undo, redo, copySelectedCells, cutSelectedCells, pasteClipboardData, selectAllCells]);
 
   return (
     <div className="w-full px-4 py-6 bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-200">
@@ -1473,8 +1478,6 @@ const LaTeXMatrixEditor: React.FC = () => {
                 if (!isEscapePressed) {
                   commitCellEdit(currentCellContent);
                 }
-              }}
-              onBlur={() => {
                 if (window.katex) {
                   renderCellContent(activeCell.row, activeCell.col, currentCellContent);
                   generateLatex();
