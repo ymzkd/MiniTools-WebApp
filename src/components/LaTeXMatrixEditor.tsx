@@ -538,52 +538,65 @@ const LaTeXMatrixEditor: React.FC = () => {
       setCurrentCellContent(normalizedCells[0][0] || '');
       setLatexCode(newLatexString);
       
-      // 新しいデータを使って直接レンダリング（状態更新を待たない）
+      // DOM更新を確実に待ってからレンダリング
       setTimeout(() => {
-        if (window.katex) {
-          // 新しい行列データを使って全セルをレンダリング
-          normalizedCells.forEach((row, i) => {
-            row.forEach((cell, j) => {
-              const cellKey = `${i}-${j}`;
-              const cellElement = cellKatexRefs.current[cellKey];
-              
-              if (cellElement) {
-                const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
-                try {
-                  window.katex.render(displayContent, cellElement, {
-                    displayMode: false,
-                    throwOnError: false,
-                    output: 'mathml'
-                  });
-                  setTimeout(() => adjustCellScale(cellElement), 0);
-                } catch (error) {
-                  cellElement.textContent = displayContent;
+        // さらに遅延してDOM要素が確実に更新されるのを待つ
+        setTimeout(() => {
+          if (window.katex) {
+            // cellKatexRefsをクリアして強制的に再取得
+            cellKatexRefs.current = {};
+            
+            // DOM要素を再取得してレンダリング
+            normalizedCells.forEach((row, i) => {
+              row.forEach((cell, j) => {
+                const cellKey = `${i}-${j}`;
+                // DOM要素を直接検索
+                const cellElement = document.querySelector(`[data-row="${i}"][data-col="${j}"] .katex-cell`) as HTMLElement;
+                
+                if (cellElement) {
+                  // 参照を更新
+                  cellKatexRefs.current[cellKey] = cellElement;
+                  
+                  const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
+                  try {
+                    window.katex.render(displayContent, cellElement, {
+                      displayMode: false,
+                      throwOnError: false,
+                      output: 'mathml'
+                    });
+                    setTimeout(() => adjustCellScale(cellElement), 10);
+                  } catch (error) {
+                    cellElement.textContent = displayContent;
+                  }
                 }
-              }
-            });
-          });
-          
-          // プレビューも新しいデータでレンダリング
-          if (previewRef.current) {
-            try {
-              window.katex.render(newLatexString, previewRef.current, {
-                displayMode: true,
-                throwOnError: false,
-                output: 'mathml'
               });
-            } catch (error) {
-              previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
+            });
+            
+            // プレビューも新しいデータでレンダリング
+            if (previewRef.current) {
+              try {
+                window.katex.render(newLatexString, previewRef.current, {
+                  displayMode: true,
+                  throwOnError: false,
+                  output: 'mathml'
+                });
+              } catch (error) {
+                previewRef.current.innerHTML = `<span style="color: red;">Rendering error: ${(error as Error).message}</span>`;
+              }
             }
+            
+                         // 解析完了フラグ（最終段階でのみ設定）
           }
-        }
-        
-        // 解析完了フラグ
-        setIsParsing(false);
-      }, 100);
+        }, 100);
+      }, 50);
       
     } catch (error) {
       setParseError((error as Error).message);
-      setIsParsing(false); // エラー時も解析完了フラグを設定
+    } finally {
+      // 最終的にフラグをリセット（すべての処理完了後）
+      setTimeout(() => {
+        setIsParsing(false);
+      }, 200);
     }
   };
 
@@ -968,6 +981,42 @@ const LaTeXMatrixEditor: React.FC = () => {
     }
   };
 
+  // フォース更新機能
+  const forceUpdateAllCells = () => {
+    if (!window.katex) return;
+    
+    // 少し遅延してDOM要素が確実に存在するのを待つ
+    setTimeout(() => {
+      matrix.cells.forEach((row, i) => {
+        row.forEach((cell, j) => {
+          const cellKey = `${i}-${j}`;
+          // DOM要素を直接検索
+          const cellElement = document.querySelector(`[data-row="${i}"][data-col="${j}"] .katex-cell`) as HTMLElement;
+          
+          if (cellElement) {
+            // 参照を更新
+            cellKatexRefs.current[cellKey] = cellElement;
+            
+            const displayContent = isZeroValue(cell) && !showZeros ? '' : (cell || '0');
+            try {
+              window.katex.render(displayContent, cellElement, {
+                displayMode: false,
+                throwOnError: false,
+                output: 'mathml'
+              });
+              setTimeout(() => adjustCellScale(cellElement), 10);
+            } catch (error) {
+              cellElement.textContent = displayContent;
+            }
+          }
+        });
+      });
+      
+      // プレビューも強制更新
+      generateLatex();
+    }, 200);
+  };
+
   // クリップボードからのペースト機能
   const pasteFromClipboard = async () => {
     try {
@@ -975,6 +1024,11 @@ const LaTeXMatrixEditor: React.FC = () => {
       if (clipboardText.trim()) {
         // LaTeX行列コードを解析してテーブルにインポート
         parseLatexMatrix(clipboardText);
+        
+        // 追加のフォース更新
+        setTimeout(() => {
+          forceUpdateAllCells();
+        }, 300);
       }
     } catch (error) {
       console.error('Failed to read from clipboard:', error);
@@ -982,6 +1036,11 @@ const LaTeXMatrixEditor: React.FC = () => {
       const input = prompt('クリップボードからの読み取りができません。LaTeX行列コードを直接貼り付けてください:');
       if (input && input.trim()) {
         parseLatexMatrix(input);
+        
+        // 追加のフォース更新
+        setTimeout(() => {
+          forceUpdateAllCells();
+        }, 300);
       }
     }
   };
