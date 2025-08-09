@@ -1,4 +1,4 @@
-@import url('https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css');
+@import url('https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.22/katex.min.css');
 
 @tailwind base;
 @tailwind components;
@@ -33,6 +33,16 @@ body {
   display: inline !important;
 }
 
+/* ダークモード時のKaTeX文字色 */
+.dark .katex-mathml {
+  color: #f9fafb !important;
+}
+
+/* ダークモード時のKaTeX要素全体の文字色 */
+.dark .katex {
+  color: #f9fafb !important;
+}
+
 .matrix-table {
   border-collapse: separate;
   border-spacing: 0;
@@ -54,6 +64,13 @@ body {
   color: #6c757d;
   user-select: none;
   position: relative;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.dark .matrix-row-header {
+  background: #374151;
+  border: 1px solid #4b5563;
+  color: #9ca3af;
 }
 
 .matrix-col-header {
@@ -65,6 +82,13 @@ body {
   font-size: 12px;
   color: #6c757d;
   user-select: none;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.dark .matrix-col-header {
+  background: #374151;
+  border: 1px solid #4b5563;
+  color: #9ca3af;
 }
 
 .matrix-cell {
@@ -77,9 +101,19 @@ body {
   border-color: #2196f3 !important;
 }
 
+.dark .matrix-cell.selected {
+  background: #1e3a8a !important;
+  border-color: #3b82f6 !important;
+}
+
 .matrix-cell.in-selection {
   background: #e8f5e8 !important;
   border-color: #4caf50 !important;
+}
+
+.dark .matrix-cell.in-selection {
+  background: #166534 !important;
+  border-color: #22c55e !important;
 }
 
 .row-controls, .col-controls {
@@ -131,6 +165,7 @@ body {
   justify-content: center;
   font-weight: bold;
   pointer-events: auto;
+  transition: background-color 0.2s;
 }
 
 .delete-btn {
@@ -145,6 +180,22 @@ body {
   background: #d32f2f;
 }
 
+.dark .insert-btn {
+  background: #3b82f6;
+}
+
+.dark .insert-btn:hover {
+  background: #2563eb;
+}
+
+.dark .delete-btn {
+  background: #ef4444;
+}
+
+.dark .delete-btn:hover {
+  background: #dc2626;
+}
+
 .context-menu {
   position: fixed;
   background: white;
@@ -153,16 +204,34 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   z-index: 1000;
   min-width: 150px;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.dark .context-menu {
+  background: #374151;
+  border: 1px solid #4b5563;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .context-menu-item {
   padding: 8px 12px;
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
+  color: #374151;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.dark .context-menu-item {
+  border-bottom: 1px solid #4b5563;
+  color: #f9fafb;
 }
 
 .context-menu-item:hover {
   background: #f5f5f5;
+}
+
+.dark .context-menu-item:hover {
+  background: #4b5563;
 }
 
 .context-menu-item:last-child {
@@ -174,6 +243,21 @@ body {
   cursor: not-allowed;
 }
 
+.dark .context-menu-item.disabled {
+  color: #6b7280;
+}
+
 .context-menu-item.disabled:hover {
   background: transparent;
+}
+
+/* 画像書き出し・プリント時のキャプション文字色を黒に固定 */
+.export-caption,
+.export-caption * {
+  color: #000000 !important;
+}
+
+.export-caption .katex,
+.export-caption .katex-mathml {
+  color: #000000 !important;
 }
