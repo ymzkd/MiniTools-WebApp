@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 import FlexibleImageGrid from './FlexibleImageGrid';
 import LayoutControls from './LayoutControls';
 import ExportPanel from './ExportPanel';
-import ImageUploader from './ImageUploader';
 import { useImageManager } from '../../hooks/useImageManager';
 import { useLayout } from '../../hooks/useLayout';
 
@@ -18,7 +17,6 @@ const FigureLayoutApp: React.FC<FigureLayoutAppProps> = ({ onSuccess, onError })
     removeImage,
     updateCaption,
     reorderImages,
-    clearImages,
   } = useImageManager();
 
   const {
