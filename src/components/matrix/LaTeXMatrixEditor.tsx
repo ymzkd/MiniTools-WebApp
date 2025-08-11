@@ -77,12 +77,12 @@ const LaTeXMatrixEditor: React.FC = () => {
   const tableRef = useRef<HTMLTableElement>(null);
   const cellEditorRef = useRef<HTMLInputElement>(null);
 
-  // KaTeX動的ロード
+  // KaTeX動的ロード（バージョンを0.16.22に統一）
   useEffect(() => {
     const loadKaTeX = async () => {
       if (!window.katex) {
         const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.js';
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.22/katex.min.js';
         script.onload = () => {
           generateLatex();
           renderAllCells();

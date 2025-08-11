@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import PDFUploader from './PDFUploader';
 import ConversionProgress from './ConversionProgress';
 import ConversionSettings from './ConversionSettings';
@@ -17,6 +18,7 @@ const PDFConverterApp: React.FC<PDFConverterAppProps> = ({ onSuccess, onError })
     dpiPreset: 350,
     customDPI: 350
   });
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const {
     progress,
@@ -41,13 +43,25 @@ const PDFConverterApp: React.FC<PDFConverterAppProps> = ({ onSuccess, onError })
 
   return (
     <div className="max-w-7xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800 dark:text-gray-100 transition-colors duration-200">
-        PDF Grayscale Converter
-      </h1>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {/* Mobile sidebar toggle on the left of title */}
+          <button
+            className="lg:hidden inline-flex items-center px-3 py-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Open settings"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 transition-colors duration-200">
+            PDF Grayscale Converter
+          </h1>
+        </div>
+      </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Sidebar Controls */}
-        <div className="lg:col-span-1 space-y-6">
+        {/* Sidebar Controls (desktop) */}
+        <div className="hidden lg:block lg:col-span-1 space-y-6">
           <ConversionSettings
             settings={settings}
             onSettingsChange={setSettings}
@@ -138,6 +152,33 @@ const PDFConverterApp: React.FC<PDFConverterAppProps> = ({ onSuccess, onError })
           )}
         </div>
       </div>
+      {/* Mobile Sidebar Drawer */}
+      {isSidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          <div 
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="absolute top-0 left-0 h-full w-80 max-w-[85vw] bg-white dark:bg-gray-800 shadow-xl p-4 overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">設定</h2>
+              <button
+                className="inline-flex items-center p-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                onClick={() => setIsSidebarOpen(false)}
+                aria-label="Close settings"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <ConversionSettings
+              settings={settings}
+              onSettingsChange={setSettings}
+              disabled={isConverting}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
