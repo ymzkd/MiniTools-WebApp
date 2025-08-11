@@ -2,7 +2,7 @@ import React from 'react';
 import Navigation from './Navigation';
 
 interface AppLayoutProps {
-  activeTab: 'matrix' | 'figure';
+  activeTab: 'matrix' | 'figure' | 'pdf';
   children: React.ReactNode;
 }
 

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import AppLayout from './components/common/AppLayout';
 import LaTeXMatrixEditor from './components/matrix/LaTeXMatrixEditor';
 import FigureLayoutApp from './components/figure/FigureLayoutApp';
+import PDFConverterApp from './components/pdf/PDFConverterApp';
 import Toast from './components/common/Toast';
 import { useToast } from './hooks/useToast';
 import { useTheme } from './hooks/useTheme';
@@ -17,6 +18,7 @@ function App() {
   // 現在のパスからアクティブタブを決定
   const getActiveTabFromPath = (pathname: string): AppTab => {
     if (pathname === '/figure') return 'figure';
+    if (pathname === '/pdf') return 'pdf';
     return 'matrix'; // デフォルトは matrix
   };
 
@@ -30,6 +32,12 @@ function App() {
           <Route path="/matrix" element={<LaTeXMatrixEditor />} />
           <Route path="/figure" element={
             <FigureLayoutApp 
+              onSuccess={showSuccess}
+              onError={showError}
+            />
+          } />
+          <Route path="/pdf" element={
+            <PDFConverterApp 
               onSuccess={showSuccess}
               onError={showError}
             />

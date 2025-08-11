@@ -47,5 +47,27 @@ export interface CaptionConfig {
   fontFamily: string;
 }
 
+// PDF Converter Types
+export interface PDFConversionSettings {
+  dpiMode: 'preset' | 'custom';
+  dpiPreset: 200 | 350 | 500;
+  customDPI: number; // 200-800
+}
+
+export interface PDFConversionProgress {
+  currentPage: number;
+  totalPages: number;
+  status: 'loading' | 'processing' | 'completed' | 'error';
+  message?: string;
+  outputFileSize?: number; // 出力ファイルサイズ（バイト）
+}
+
+export interface PDFFileInfo {
+  file: File;
+  name: string;
+  size: number;
+  pages: number;
+}
+
 // Common App Types
-export type AppTab = 'matrix' | 'figure';
+export type AppTab = 'matrix' | 'figure' | 'pdf';
