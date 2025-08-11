@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    // SPAのhistoryルーティング対応
+    historyApiFallback: true
   },
   build: {
     outDir: 'dist',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import AppLayout from './components/common/AppLayout';
 import LaTeXMatrixEditor from './components/matrix/LaTeXMatrixEditor';
 import FigureLayoutApp from './components/figure/FigureLayoutApp';
@@ -8,32 +8,35 @@ import { useTheme } from './hooks/useTheme';
 import type { AppTab } from './types';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<AppTab>('matrix');
+  const location = useLocation();
   const { toasts, removeToast, showSuccess, showError } = useToast();
   
   // テーマフックを初期化（テーマ設定を自動的に適用）
   useTheme();
 
-  const renderActiveTab = () => {
-    switch (activeTab) {
-      case 'matrix':
-        return <LaTeXMatrixEditor />;
-      case 'figure':
-        return (
-          <FigureLayoutApp 
-            onSuccess={showSuccess}
-            onError={showError}
-          />
-        );
-      default:
-        return null;
-    }
+  // 現在のパスからアクティブタブを決定
+  const getActiveTabFromPath = (pathname: string): AppTab => {
+    if (pathname === '/figure') return 'figure';
+    return 'matrix'; // デフォルトは matrix
   };
+
+  const activeTab = getActiveTabFromPath(location.pathname);
 
   return (
     <div>
-      <AppLayout activeTab={activeTab} onTabChange={setActiveTab}>
-        {renderActiveTab()}
+      <AppLayout activeTab={activeTab}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/matrix" replace />} />
+          <Route path="/matrix" element={<LaTeXMatrixEditor />} />
+          <Route path="/figure" element={
+            <FigureLayoutApp 
+              onSuccess={showSuccess}
+              onError={showError}
+            />
+          } />
+          {/* 未定義のパスは /matrix にリダイレクト */}
+          <Route path="*" element={<Navigate to="/matrix" replace />} />
+        </Routes>
       </AppLayout>
       
       {/* Toast Notifications */}
