@@ -54,7 +54,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab }) => {
           
           <div className="flex items-center space-x-4">
             <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 transition-colors duration-200">
-              Math Tools Suite
+              Mini Tools
             </h1>
             <ThemeToggle />
           </div>
