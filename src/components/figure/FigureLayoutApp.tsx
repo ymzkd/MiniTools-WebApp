@@ -31,7 +31,7 @@ const FigureLayoutApp: React.FC<FigureLayoutAppProps> = ({ onSuccess, onError })
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {/* Mobile sidebar toggle on the left of title */}
@@ -48,7 +48,7 @@ const FigureLayoutApp: React.FC<FigureLayoutAppProps> = ({ onSuccess, onError })
         </div>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 3xl:grid-cols-5 4xl:grid-cols-6 gap-8">
         {/* Sidebar Controls (desktop) */}
         <div className="hidden lg:block lg:col-span-1 space-y-6">
           <LayoutControls
@@ -60,7 +60,7 @@ const FigureLayoutApp: React.FC<FigureLayoutAppProps> = ({ onSuccess, onError })
         </div>
 
         {/* Main Content */}
-        <div className="lg:col-span-3 space-y-6">
+        <div className="lg:col-span-3 3xl:col-span-4 4xl:col-span-5 space-y-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
             <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-4 transition-colors duration-200">
               図表レイアウト

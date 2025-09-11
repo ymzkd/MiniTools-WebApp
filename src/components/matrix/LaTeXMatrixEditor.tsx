@@ -58,7 +58,11 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // その他の状態
   const [currentCellContent, setCurrentCellContent] = useState('a_{11}');
-  const [latexCode, setLatexCode] = useState('');
+  const [latexCode, setLatexCode] = useState(`\\begin{pmatrix}
+a_{11} & a_{12} & a_{13} \\\\
+a_{21} & a_{22} & a_{23} \\\\
+a_{31} & a_{32} & a_{33}
+\\end{pmatrix}`);
   const [copySuccess, setCopySuccess] = useState(false);
   const [parseError, setParseError] = useState('');
   const [symmetricMode, setSymmetricMode] = useState(false);
@@ -77,31 +81,6 @@ const LaTeXMatrixEditor: React.FC = () => {
   const tableRef = useRef<HTMLTableElement>(null);
   const cellEditorRef = useRef<HTMLInputElement>(null);
 
-  // KaTeX動的ロード（バージョンを0.16.22に統一）
-  useEffect(() => {
-    const loadKaTeX = async () => {
-      if (!window.katex) {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.22/katex.min.js';
-        script.onload = () => {
-          generateLatex();
-          renderAllCells();
-        };
-        document.head.appendChild(script);
-      } else {
-        generateLatex();
-        renderAllCells();
-      }
-    };
-    loadKaTeX();
-  }, [matrix]);
-
-  // アクティブセル変更時のハイライト更新
-  useEffect(() => {
-    if (window.katex && previewRef.current) {
-      applyHighlight();
-    }
-  }, [activeCell, selectedRange]);
 
   // アクティブセル変更時に編集ボックスの内容を更新
   useEffect(() => {
@@ -481,10 +460,15 @@ const LaTeXMatrixEditor: React.FC = () => {
     const cellKey = `${row}-${col}`;
     const cellElement = cellKatexRefs.current[cellKey];
     
+    
     if (cellElement && window.katex) {
       try {
         // ゼロ成分の表示切り替え
         const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
+        
+        // 既存の内容をクリア
+        cellElement.innerHTML = '';
+        
         
         window.katex.render(displayContent, cellElement, {
           displayMode: false,
@@ -492,12 +476,19 @@ const LaTeXMatrixEditor: React.FC = () => {
           output: 'mathml'
         });
         
+        
         // セルサイズに合わせてスケール調整
         setTimeout(() => adjustCellScale(cellElement), 0);
-      } catch {
+      } catch (error) {
         const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
         cellElement.textContent = displayContent;
       }
+    } else if (cellElement) {
+      // KaTeX未読み込み時はテキストで表示
+      const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
+      cellElement.textContent = displayContent;
+    } else {
+      console.warn(`No element found for [${row}][${col}]`);
     }
   };
 
@@ -531,7 +522,9 @@ const LaTeXMatrixEditor: React.FC = () => {
 
   // 全セルの数式をレンダリング
   const renderAllCells = () => {
-    if (!window.katex) return;
+    if (!window.katex) {
+      return;
+    }
     
     matrix.cells.forEach((row, i) => {
       row.forEach((cell, j) => {
@@ -581,6 +574,34 @@ const LaTeXMatrixEditor: React.FC = () => {
       }
     }
   };
+
+  // KaTeX初期化（CDNから読み込み済みを前提）
+  useEffect(() => {
+    const initKaTeX = () => {
+      if (window.katex) {
+        generateLatex();
+        renderAllCells();
+      } else {
+        setTimeout(initKaTeX, 100);
+      }
+    };
+    initKaTeX();
+  }, []);
+
+  // 行列変更時の更新
+  useEffect(() => {
+    if (window.katex) {
+      generateLatex();
+      renderAllCells();
+    }
+  }, [matrix, showZeros]);
+
+  // アクティブセル変更時のハイライト更新
+  useEffect(() => {
+    if (window.katex && previewRef.current) {
+      applyHighlight();
+    }
+  }, [activeCell, selectedRange]);
 
   // セル値更新
   const updateCell = (row: number, col: number, value: string) => {
@@ -792,7 +813,7 @@ const LaTeXMatrixEditor: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24">
       <h1 className="text-3xl font-bold mb-6 text-center text-gray-800 dark:text-gray-100 transition-colors duration-200">
         LaTeX Matrix Editor
       </h1>
@@ -996,7 +1017,7 @@ const LaTeXMatrixEditor: React.FC = () => {
                         </button>
                       </div>
                     </td>
-                    {row.map((cell, j) => {
+                    {row.map((_, j) => {
                       const isSelected = isCellInSelection(i, j);
                       const isActive = activeCell.row === i && activeCell.col === j;
                       const isSymmetricPair = symmetricMode && 
@@ -1056,13 +1077,12 @@ const LaTeXMatrixEditor: React.FC = () => {
                               ref={(el) => {
                                 if (el) cellKatexRefs.current[`${i}-${j}`] = el;
                               }}
-                              className="katex-cell text-center max-w-full max-h-full"
+                              className="katex-cell text-center max-w-full max-h-full text-gray-900 dark:text-gray-100"
                               style={{ 
                                 fontSize: '14px',
                                 lineHeight: '1.2'
                               }}
                             >
-                              {cell || '0'}
                             </div>
                             {isSymmetricPair && (
                               <div className="absolute top-0 right-0 w-2 h-2 bg-purple-400 rounded-full"></div>
@@ -1128,6 +1148,7 @@ const LaTeXMatrixEditor: React.FC = () => {
         
         {/* Preview Section */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
+          
           
           {/* Rendered Matrix */}
           <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg min-h-24 flex items-center justify-center transition-colors duration-200">
