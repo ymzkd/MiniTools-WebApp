@@ -23,14 +23,23 @@ body {
   margin: 0 !important;
 }
 
-/* KaTeX HTML表示を無効化 */
+/* KaTeX表示設定 */
 .katex-html {
+  display: inline-block !important;
+}
+
+.katex-mathml {
   display: none !important;
 }
 
-/* MathMLのみ表示 */
-.katex-mathml {
-  display: inline !important;
+/* KaTeX括弧の高さ調整 */
+.katex {
+  line-height: normal !important;
+  overflow: visible !important;
+}
+
+.katex-display {
+  overflow: visible !important;
 }
 
 /* ダークモード時のKaTeX文字色 */
@@ -51,7 +60,8 @@ body {
 
 .matrix-table-container {
   padding: 0;
-  overflow: visible;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .matrix-row-header {

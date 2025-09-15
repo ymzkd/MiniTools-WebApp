@@ -66,6 +66,7 @@ a_{31} & a_{32} & a_{33}
   const [copySuccess, setCopySuccess] = useState(false);
   const [parseError, setParseError] = useState('');
   const [symmetricMode, setSymmetricMode] = useState(false);
+  const [trianglePriority, setTrianglePriority] = useState<'upper' | 'lower'>('upper');
   const [showHelp, setShowHelp] = useState(false);
   const [showZeros, setShowZeros] = useState(true);
 
@@ -433,8 +434,8 @@ a_{31} & a_{32} & a_{33}
         }
         return cell || '0'; // ゼロ成分を明示的に表示
       }).join(' & ')
-    ).join(' \\\\ ');
-    
+    ).join(' \\\\\n');
+
     const latexString = `\\begin{${type}}\n${matrixContent}\n\\end{${type}}`;
     setLatexCode(latexString);
     
@@ -444,7 +445,7 @@ a_{31} & a_{32} & a_{33}
         window.katex.render(latexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
-          output: 'mathml'
+          output: 'htmlAndMathml'
         });
         
         // ハイライト適用
@@ -555,13 +556,13 @@ a_{31} & a_{32} & a_{33}
     ).join(' \\\\ ');
     
     const highlightLatexString = `\\begin{${type}}\n${highlightMatrixContent}\n\\end{${type}}`;
-    
+
     if (window.katex && previewRef.current) {
       try {
         window.katex.render(highlightLatexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
-          output: 'mathml'
+          output: 'htmlAndMathml'
         });
       } catch {
         // エラーの場合は通常のレンダリングに戻す
@@ -569,7 +570,7 @@ a_{31} & a_{32} & a_{33}
         window.katex.render(normalLatexString, previewRef.current, {
           displayMode: true,
           throwOnError: false,
-          output: 'mathml'
+          output: 'htmlAndMathml'
         });
       }
     }
@@ -661,14 +662,14 @@ a_{31} & a_{32} & a_{33}
       return;
     }
     
-    const newCells = matrix.cells.map((row, i) => 
+    const newCells = matrix.cells.map((row, i) =>
       row.map((cell, j) => {
         if (i === j) {
           return cell; // 対角成分はそのまま
-        } else if (i < j) {
-          return cell; // 上三角はそのまま
+        } else if (trianglePriority === 'upper') {
+          return i < j ? cell : matrix.cells[j][i]; // 上三角優先：上三角→下三角へコピー
         } else {
-          return matrix.cells[j][i]; // 下三角は上三角からコピー
+          return i > j ? cell : matrix.cells[j][i]; // 下三角優先：下三角→上三角へコピー
         }
       })
     );
@@ -847,6 +848,7 @@ a_{31} & a_{32} & a_{33}
                 <option value="matrix">matrix (no brackets)</option>
                 <option value="pmatrix">pmatrix ( )</option>
                 <option value="bmatrix">bmatrix [ ]</option>
+                <option value="Bmatrix">Bmatrix {'{ }'}</option>
                 <option value="vmatrix">vmatrix | |</option>
                 <option value="Vmatrix">Vmatrix || ||</option>
                 <option value="smallmatrix">smallmatrix</option>
@@ -905,13 +907,22 @@ a_{31} & a_{32} & a_{33}
                 >
                   {symmetricMode ? 'ON' : 'OFF'}
                 </button>
-                <button 
+                <button
                   onClick={makeMatrixSymmetric}
                   className="px-3 py-1 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm"
                   disabled={matrix.rows !== matrix.cols}
                 >
                   Make Symmetric
                 </button>
+                <select
+                  value={trianglePriority}
+                  onChange={(e) => setTrianglePriority(e.target.value as 'upper' | 'lower')}
+                  className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+                  disabled={matrix.rows !== matrix.cols}
+                >
+                  <option value="upper">Upper Triangle Priority</option>
+                  <option value="lower">Lower Triangle Priority</option>
+                </select>
                 {matrix.rows !== matrix.cols && (
                   <span className="text-xs text-red-500">Square matrix required</span>
                 )}
@@ -948,7 +959,7 @@ a_{31} & a_{32} & a_{33}
           </div>
           
           {/* Matrix Table */}
-          <div className="matrix-table-container overflow-visible">
+          <div className="matrix-table-container overflow-x-auto max-w-full">
             <table ref={tableRef} className="matrix-table" style={{ margin: '20px auto' }}>
               <thead>
                 <tr>
@@ -1154,6 +1165,7 @@ a_{31} & a_{32} & a_{33}
           <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg min-h-24 flex items-center justify-center transition-colors duration-200">
             <div ref={previewRef} className="text-center"></div>
           </div>
+
           
           {/* LaTeX Code */}
           <div>
