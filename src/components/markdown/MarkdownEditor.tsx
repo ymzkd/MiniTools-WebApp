@@ -169,15 +169,23 @@ function hello() {
                           prose-pre:text-gray-900 dark:prose-pre:text-gray-100
                           prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300
                           prose-blockquote:border-gray-300 dark:prose-blockquote:border-gray-600
+                          prose-ul:list-disc prose-ul:pl-6 prose-ul:text-gray-800 dark:prose-ul:text-gray-200
+                          prose-ol:list-decimal prose-ol:pl-6 prose-ol:text-gray-800 dark:prose-ol:text-gray-200
+                          prose-table:border-collapse prose-table:border prose-table:border-gray-300 dark:prose-table:border-gray-600
                           prose-th:text-gray-900 dark:prose-th:text-gray-100
                           prose-th:bg-gray-100 dark:prose-th:bg-gray-800
+                          prose-th:border prose-th:border-gray-300 dark:prose-th:border-gray-600 prose-th:px-4 prose-th:py-2
                           prose-td:text-gray-800 dark:prose-td:text-gray-200
+                          prose-td:border prose-td:border-gray-300 dark:prose-td:border-gray-600 prose-td:px-4 prose-td:py-2
                           prose-tr:border-gray-300 dark:prose-tr:border-gray-600
                           prose-thead:border-gray-400 dark:prose-thead:border-gray-500
-                          prose-ul:text-gray-800 dark:prose-ul:text-gray-200
-                          prose-ol:text-gray-800 dark:prose-ol:text-gray-200
                           prose-hr:border-gray-300 dark:prose-hr:border-gray-600
-                          [&>*]:text-gray-800 dark:[&>*]:text-gray-200">
+                          [&>*]:text-gray-800 dark:[&>*]:text-gray-200
+                          [&_ul]:list-disc [&_ul]:pl-6
+                          [&_ol]:list-decimal [&_ol]:pl-6
+                          [&_table]:border-collapse [&_table]:border [&_table]:border-gray-300 dark:[&_table]:border-gray-600 [&_table]:w-full
+                          [&_th]:border [&_th]:border-gray-300 dark:[&_th]:border-gray-600 [&_th]:px-4 [&_th]:py-2 [&_th]:bg-gray-100 dark:[&_th]:bg-gray-800
+                          [&_td]:border [&_td]:border-gray-300 dark:[&_td]:border-gray-600 [&_td]:px-4 [&_td]:py-2">
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
