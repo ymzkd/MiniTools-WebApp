@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -12,6 +12,7 @@ import 'katex/dist/katex.min.css';
 
 const MarkdownEditor: React.FC = () => {
   const { isDark } = useSystemTheme();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [markdown, setMarkdown] = useState<string>(
     `# マークダウンエディタ
 
@@ -83,6 +84,167 @@ function hello() {
     }
   };
 
+  // キーボードショートカットハンドラー
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { selectionStart, selectionEnd, value } = textarea;
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+    // Tab処理
+    if (e.key === 'Tab') {
+      e.preventDefault();
+
+      const hasSelection = selectionStart !== selectionEnd;
+
+      if (hasSelection) {
+        // 複数行選択時の一括インデント/アンインデント
+        const beforeSelection = value.substring(0, selectionStart);
+        const afterSelection = value.substring(selectionEnd);
+
+        // 選択範囲の開始位置が行の途中の場合、行頭から選択を開始
+        const startLine = beforeSelection.lastIndexOf('\n') + 1;
+        const fullLines = value.substring(startLine, selectionEnd).split('\n');
+
+        let newText: string;
+        let newSelectionStart: number;
+        let newSelectionEnd: number;
+
+        if (e.shiftKey) {
+          // Shift+Tab: インデント解除
+          newText = fullLines.map(line => {
+            if (line.startsWith('  ')) return line.substring(2);
+            if (line.startsWith('\t')) return line.substring(1);
+            return line;
+          }).join('\n');
+
+          const removedChars = fullLines.join('\n').length - newText.length;
+          newSelectionStart = startLine;
+          newSelectionEnd = selectionEnd - removedChars;
+        } else {
+          // Tab: インデント追加
+          newText = fullLines.map(line => '  ' + line).join('\n');
+          const addedChars = newText.length - fullLines.join('\n').length;
+          newSelectionStart = startLine;
+          newSelectionEnd = selectionEnd + addedChars;
+        }
+
+        const finalText = value.substring(0, startLine) + newText + afterSelection;
+        setMarkdown(finalText);
+
+        setTimeout(() => {
+          textarea.selectionStart = newSelectionStart;
+          textarea.selectionEnd = newSelectionEnd;
+        }, 0);
+      } else {
+        // 単一カーソル位置にタブ挿入
+        const newText = value.substring(0, selectionStart) + '  ' + value.substring(selectionEnd);
+        setMarkdown(newText);
+
+        setTimeout(() => {
+          textarea.selectionStart = textarea.selectionEnd = selectionStart + 2;
+        }, 0);
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + B: 太字
+    if (modKey && e.key === 'b') {
+      e.preventDefault();
+      wrapSelection('**', '**');
+      return;
+    }
+
+    // Ctrl/Cmd + I: イタリック
+    if (modKey && e.key === 'i') {
+      e.preventDefault();
+      wrapSelection('*', '*');
+      return;
+    }
+
+    // Ctrl/Cmd + K: リンク
+    if (modKey && e.key === 'k') {
+      e.preventDefault();
+      const selectedText = value.substring(selectionStart, selectionEnd);
+      if (selectedText) {
+        wrapSelection('[', '](url)');
+      } else {
+        insertText('[リンクテキスト](url)');
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + E: インラインコード
+    if (modKey && e.key === 'e') {
+      e.preventDefault();
+      wrapSelection('`', '`');
+      return;
+    }
+
+    // Ctrl/Cmd + /: コメント
+    if (modKey && e.key === '/') {
+      e.preventDefault();
+      wrapSelection('<!-- ', ' -->');
+      return;
+    }
+
+    // Ctrl/Cmd + Enter: 現在行の下に新規行を挿入
+    if (modKey && e.key === 'Enter') {
+      e.preventDefault();
+      const afterCursor = value.substring(selectionStart);
+      const currentLineEnd = afterCursor.indexOf('\n');
+      const lineEnd = currentLineEnd === -1 ? value.length : selectionStart + currentLineEnd;
+
+      const newText = value.substring(0, lineEnd) + '\n' + value.substring(lineEnd);
+      setMarkdown(newText);
+
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = lineEnd + 1;
+      }, 0);
+      return;
+    }
+  };
+
+  // 選択テキストを囲む
+  const wrapSelection = (before: string, after: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { selectionStart, selectionEnd, value } = textarea;
+    const selectedText = value.substring(selectionStart, selectionEnd);
+    const newText = value.substring(0, selectionStart) + before + selectedText + after + value.substring(selectionEnd);
+
+    setMarkdown(newText);
+
+    setTimeout(() => {
+      if (selectedText) {
+        textarea.selectionStart = selectionStart + before.length;
+        textarea.selectionEnd = selectionEnd + before.length;
+      } else {
+        textarea.selectionStart = textarea.selectionEnd = selectionStart + before.length;
+      }
+      textarea.focus();
+    }, 0);
+  };
+
+  // テキストを挿入
+  const insertText = (text: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { selectionStart, value } = textarea;
+    const newText = value.substring(0, selectionStart) + text + value.substring(selectionStart);
+
+    setMarkdown(newText);
+
+    setTimeout(() => {
+      textarea.selectionStart = textarea.selectionEnd = selectionStart + text.length;
+      textarea.focus();
+    }, 0);
+  };
+
   return (
     <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24">
       {/* ヘッダー */}
@@ -134,8 +296,10 @@ function hello() {
             </p>
           </div>
           <textarea
+            ref={textareaRef}
             value={markdown}
             onChange={(e) => setMarkdown(e.target.value)}
+            onKeyDown={handleKeyDown}
             className="flex-1 w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
                      bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
@@ -225,16 +389,33 @@ function hello() {
       </div>
 
       {/* ヘルプセクション */}
-      <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-        <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
-          💡 使い方のヒント
-        </h3>
-        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-          <li>• インライン数式: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">$数式$</code></li>
-          <li>• ブロック数式: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">$$数式$$</code></li>
-          <li>• コードブロック: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">```言語名```</code></li>
-          <li>• GitHub Flavored Markdown（GFM）対応: テーブル、タスクリスト、取り消し線など</li>
-        </ul>
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            💡 マークダウン記法
+          </h3>
+          <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+            <li>• インライン数式: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">$数式$</code></li>
+            <li>• ブロック数式: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">$$数式$$</code></li>
+            <li>• コードブロック: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">```言語名```</code></li>
+            <li>• GitHub Flavored Markdown（GFM）対応: テーブル、タスクリスト、取り消し線など</li>
+          </ul>
+        </div>
+
+        <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            ⌨️ キーボードショートカット
+          </h3>
+          <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Tab</kbd> インデント追加 / <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Shift+Tab</kbd> インデント解除</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+B</kbd> 太字</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+I</kbd> イタリック</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+K</kbd> リンク</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+E</kbd> インラインコード</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+/</kbd> コメント</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Enter</kbd> 新規行挿入</li>
+          </ul>
+        </div>
       </div>
     </div>
   );
