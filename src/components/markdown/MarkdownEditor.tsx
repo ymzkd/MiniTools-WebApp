@@ -4,10 +4,14 @@ import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, FileText } from 'lucide-react';
+import { useTheme as useSystemTheme } from '../../hooks/useTheme';
 import 'katex/dist/katex.min.css';
 
 const MarkdownEditor: React.FC = () => {
+  const { isDark } = useSystemTheme();
   const [markdown, setMarkdown] = useState<string>(
     `# マークダウンエディタ
 
@@ -157,12 +161,12 @@ function hello() {
           <div className="flex-1 p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                         bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200">
             <div className="prose prose-sm sm:prose lg:prose-lg max-w-none
-                          [&_h1]:text-4xl [&_h1]:font-extrabold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 [&_h1]:mb-6 [&_h1]:mt-8 [&_h1]:pb-3 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600
-                          [&_h2]:text-3xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 [&_h2]:mb-4 [&_h2]:mt-6 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700
-                          [&_h3]:text-2xl [&_h3]:font-bold [&_h3]:text-gray-900 dark:[&_h3]:text-gray-100 [&_h3]:mb-3 [&_h3]:mt-5
-                          [&_h4]:text-xl [&_h4]:font-semibold [&_h4]:text-gray-900 dark:[&_h4]:text-gray-100 [&_h4]:mb-2 [&_h4]:mt-4
-                          [&_h5]:text-lg [&_h5]:font-semibold [&_h5]:text-gray-900 dark:[&_h5]:text-gray-100 [&_h5]:mb-2 [&_h5]:mt-3
-                          [&_h6]:text-base [&_h6]:font-medium [&_h6]:text-gray-700 dark:[&_h6]:text-gray-300 [&_h6]:mb-2 [&_h6]:mt-3
+                          [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600
+                          [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 [&_h2]:mb-3 [&_h2]:mt-5 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700
+                          [&_h3]:text-xl [&_h3]:font-bold [&_h3]:text-gray-900 dark:[&_h3]:text-gray-100 [&_h3]:mb-3 [&_h3]:mt-4
+                          [&_h4]:text-lg [&_h4]:font-semibold [&_h4]:text-gray-900 dark:[&_h4]:text-gray-100 [&_h4]:mb-2 [&_h4]:mt-3
+                          [&_h5]:text-base [&_h5]:font-semibold [&_h5]:text-gray-900 dark:[&_h5]:text-gray-100 [&_h5]:mb-2 [&_h5]:mt-3
+                          [&_h6]:text-sm [&_h6]:font-medium [&_h6]:text-gray-700 dark:[&_h6]:text-gray-300 [&_h6]:mb-2 [&_h6]:mt-2
                           [&_p]:text-gray-800 dark:[&_p]:text-gray-200 [&_p]:mb-4 [&_p]:leading-relaxed
                           [&_li]:text-gray-800 dark:[&_li]:text-gray-200
                           [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:font-medium
@@ -181,6 +185,27 @@ function hello() {
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
+                components={{
+                  code({ className, children, ...props }: any) {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const language = match ? match[1] : '';
+                    const isInline = !className || !language;
+
+                    return !isInline ? (
+                      <SyntaxHighlighter
+                        style={isDark ? oneDark as any : oneLight as any}
+                        language={language}
+                        PreTag="div"
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    ) : (
+                      <code className={className} {...props}>
+                        {children}
+                      </code>
+                    );
+                  }
+                }}
               >
                 {markdown}
               </ReactMarkdown>
