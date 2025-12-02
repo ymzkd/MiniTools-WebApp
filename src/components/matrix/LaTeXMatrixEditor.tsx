@@ -476,11 +476,11 @@ a_{31} & a_{32} & a_{33}
           throwOnError: false,
           output: 'mathml'
         });
-        
-        
+
+
         // セルサイズに合わせてスケール調整
         setTimeout(() => adjustCellScale(cellElement), 0);
-      } catch (error) {
+      } catch {
         const displayContent = isZeroValue(content) && !showZeros ? '' : (content || '0');
         cellElement.textContent = displayContent;
       }

@@ -1,10 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, Image, FileText } from 'lucide-react';
+import { Calculator, Image, FileText, PenLine } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import type { AppTab } from '../../types';
 
 interface NavigationProps {
-  activeTab: 'matrix' | 'figure' | 'pdf';
+  activeTab: AppTab;
 }
 
 const Navigation: React.FC<NavigationProps> = ({ activeTab }) => {
@@ -48,6 +49,18 @@ const Navigation: React.FC<NavigationProps> = ({ activeTab }) => {
               >
                 <FileText className="w-4 h-4 mr-2" />
                 PDF Converter
+              </Link>
+
+              <Link
+                to="/markdown"
+                className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors duration-200 ${
+                  activeTab === 'markdown'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                <PenLine className="w-4 h-4 mr-2" />
+                Markdown Editor
               </Link>
             </div>
           </div>
