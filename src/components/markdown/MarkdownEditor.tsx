@@ -80,7 +80,10 @@ function hello() {
       // コメント前のテキスト
       if (match.index > lastIndex) {
         parts.push(
-          <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
+          <span
+            key={`text-${lastIndex}`}
+            className="whitespace-pre-wrap break-words text-gray-900 dark:text-gray-100"
+          >
             {text.substring(lastIndex, match.index)}
           </span>
         );
@@ -102,13 +105,20 @@ function hello() {
     // 残りのテキスト
     if (lastIndex < text.length) {
       parts.push(
-        <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
+        <span
+          key={`text-${lastIndex}`}
+          className="whitespace-pre-wrap break-words text-gray-900 dark:text-gray-100"
+        >
           {text.substring(lastIndex)}
         </span>
       );
     }
 
-    return parts.length > 0 ? parts : <span className="whitespace-pre-wrap break-words">{text}</span>;
+    return parts.length > 0 ? parts : (
+      <span className="whitespace-pre-wrap break-words text-gray-900 dark:text-gray-100">
+        {text}
+      </span>
+    );
   };
 
   const handleCopy = async () => {
@@ -127,7 +137,7 @@ function hello() {
     }
   };
 
-  // Undo/Redoスタックを維持しながらテキストを挿入
+  // Undo/Redoスタックを維持しながらテキストを挿入（document.execCommand使用）
   const insertTextWithUndo = (text: string, newCursorPos?: number) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -142,30 +152,6 @@ function hello() {
     }
   };
 
-  // 選択範囲を置き換え（Undo/Redoスタック維持）
-  const replaceSelection = (text: string, newStart?: number, newEnd?: number) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.focus();
-    const { selectionStart, selectionEnd } = textarea;
-
-    // 選択範囲を置き換え
-    textarea.setRangeText(text, selectionStart, selectionEnd, 'end');
-
-    // カスタムイベントを発火してReactの状態を更新
-    const event = new Event('input', { bubbles: true });
-    textarea.dispatchEvent(event);
-
-    // カーソル位置を設定
-    setTimeout(() => {
-      if (newStart !== undefined && newEnd !== undefined) {
-        textarea.selectionStart = newStart;
-        textarea.selectionEnd = newEnd;
-      }
-    }, 0);
-  };
-
   // 選択テキストを囲む（Undo/Redoスタック維持）
   const wrapSelection = (before: string, after: string) => {
     const textarea = textareaRef.current;
@@ -175,11 +161,19 @@ function hello() {
     const selectedText = value.substring(selectionStart, selectionEnd);
     const newText = before + selectedText + after;
 
-    replaceSelection(
-      newText,
-      selectionStart + before.length,
-      selectionEnd + before.length
-    );
+    // 現在の選択範囲を保存
+    const start = selectionStart;
+    const end = selectionEnd;
+
+    // document.execCommandで置き換え
+    textarea.focus();
+    document.execCommand('insertText', false, newText);
+
+    // カーソル位置を調整（選択テキストを維持）
+    setTimeout(() => {
+      textarea.selectionStart = start + before.length;
+      textarea.selectionEnd = end + before.length;
+    }, 0);
   };
 
   // コメントトグル（Undo/Redoスタック維持）
@@ -194,17 +188,26 @@ function hello() {
     const commentStart = '<!-- ';
     const commentEnd = ' -->';
 
+    textarea.focus();
+
     if (selectedText.startsWith(commentStart) && selectedText.endsWith(commentEnd)) {
       // コメントを解除
       const unwrapped = selectedText.substring(commentStart.length, selectedText.length - commentEnd.length);
-      replaceSelection(
-        unwrapped,
-        selectionStart,
-        selectionStart + unwrapped.length
-      );
+      document.execCommand('insertText', false, unwrapped);
+
+      setTimeout(() => {
+        textarea.selectionStart = selectionStart;
+        textarea.selectionEnd = selectionStart + unwrapped.length;
+      }, 0);
     } else {
       // コメントを追加
-      wrapSelection(commentStart, commentEnd);
+      const newText = commentStart + selectedText + commentEnd;
+      document.execCommand('insertText', false, newText);
+
+      setTimeout(() => {
+        textarea.selectionStart = selectionStart + commentStart.length;
+        textarea.selectionEnd = selectionEnd + commentStart.length;
+      }, 0);
     }
   };
 
@@ -254,10 +257,16 @@ function hello() {
           newSelectionEnd = selectionEnd + addedChars;
         }
 
-        // 全体を選択して置き換え
+        // 全体を選択して置き換え（document.execCommand使用）
         textarea.selectionStart = startLine;
         textarea.selectionEnd = selectionEnd;
-        replaceSelection(newText, newSelectionStart, newSelectionEnd);
+        textarea.focus();
+        document.execCommand('insertText', false, newText);
+
+        setTimeout(() => {
+          textarea.selectionStart = newSelectionStart;
+          textarea.selectionEnd = newSelectionEnd;
+        }, 0);
       } else {
         // 単一カーソル位置での処理
         if (e.shiftKey) {
@@ -282,7 +291,12 @@ function hello() {
           if (removedChars > 0) {
             textarea.selectionStart = lineStart;
             textarea.selectionEnd = actualLineEnd;
-            replaceSelection(newLine, selectionStart - removedChars, selectionStart - removedChars);
+            textarea.focus();
+            document.execCommand('insertText', false, newLine);
+
+            setTimeout(() => {
+              textarea.selectionStart = textarea.selectionEnd = selectionStart - removedChars;
+            }, 0);
           }
         } else {
           // Tab: インデント追加
@@ -409,7 +423,7 @@ function hello() {
                 {renderHighlightedText(markdown || ' ')}
               </div>
             </div>
-            {/* 実際のtextarea（背景を透明に） */}
+            {/* 実際のtextarea（テキストをほぼ透明に） */}
             <textarea
               ref={textareaRef}
               value={markdown}
@@ -421,9 +435,11 @@ function hello() {
               placeholder="ここにマークダウンを入力..."
               spellCheck={false}
               style={{
-                // textareaのテキストを半透明にして、背景のハイライトが透けて見えるように
-                color: isDark ? 'rgba(243, 244, 246, 0.85)' : 'rgba(17, 24, 39, 0.85)',
+                // textareaのテキストをほぼ透明にして、背景のハイライトレイヤーの色を完全に表示
+                color: 'rgba(0, 0, 0, 0.01)',
                 caretColor: isDark ? '#f3f4f6' : '#111827',
+                // 選択範囲の色を設定
+                WebkitTextFillColor: 'rgba(0, 0, 0, 0.01)',
               }}
             />
           </div>
