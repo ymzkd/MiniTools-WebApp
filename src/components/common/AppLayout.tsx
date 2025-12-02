@@ -1,8 +1,9 @@
 import React from 'react';
 import Navigation from './Navigation';
+import type { AppTab } from '../../types';
 
 interface AppLayoutProps {
-  activeTab: 'matrix' | 'figure' | 'pdf';
+  activeTab: AppTab;
   children: React.ReactNode;
 }
 

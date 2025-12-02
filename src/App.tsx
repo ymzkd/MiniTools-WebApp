@@ -3,6 +3,7 @@ import AppLayout from './components/common/AppLayout';
 import LaTeXMatrixEditor from './components/matrix/LaTeXMatrixEditor';
 import FigureLayoutApp from './components/figure/FigureLayoutApp';
 import PDFConverterApp from './components/pdf/PDFConverterApp';
+import MarkdownEditor from './components/markdown/MarkdownEditor';
 import Toast from './components/common/Toast';
 import { useToast } from './hooks/useToast';
 import { useTheme } from './hooks/useTheme';
@@ -19,6 +20,7 @@ function App() {
   const getActiveTabFromPath = (pathname: string): AppTab => {
     if (pathname === '/figure') return 'figure';
     if (pathname === '/pdf') return 'pdf';
+    if (pathname === '/markdown') return 'markdown';
     return 'matrix'; // デフォルトは matrix
   };
 
@@ -37,11 +39,12 @@ function App() {
             />
           } />
           <Route path="/pdf" element={
-            <PDFConverterApp 
+            <PDFConverterApp
               onSuccess={showSuccess}
               onError={showError}
             />
           } />
+          <Route path="/markdown" element={<MarkdownEditor />} />
           {/* 未定義のパスは /matrix にリダイレクト */}
           <Route path="*" element={<Navigate to="/matrix" replace />} />
         </Routes>
