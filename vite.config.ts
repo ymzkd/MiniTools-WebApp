@@ -6,10 +6,17 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    // SPA用のフォールバック設定：すべてのルートでindex.htmlを返す
+    historyApiFallback: true
   },
   build: {
     outDir: 'dist',
     sourcemap: true
+  },
+  // プレビューサーバーでもSPAフォールバックを有効化
+  preview: {
+    port: 3000,
+    historyApiFallback: true
   }
 })
