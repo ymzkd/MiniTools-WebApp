@@ -193,9 +193,19 @@ function hello() {
 
                     return !isInline ? (
                       <SyntaxHighlighter
-                        style={isDark ? oneDark as any : oneLight as any}
+                        style={isDark ? oneDark : oneLight}
                         language={language}
                         PreTag="div"
+                        customStyle={{
+                          margin: 0,
+                          borderRadius: '0.5rem',
+                          backgroundColor: isDark ? '#282c34' : '#fafafa',
+                        }}
+                        codeTagProps={{
+                          style: {
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                          }
+                        }}
                       >
                         {String(children).replace(/\n$/, '')}
                       </SyntaxHighlighter>
