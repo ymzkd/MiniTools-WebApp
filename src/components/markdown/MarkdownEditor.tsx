@@ -80,10 +80,10 @@ function hello() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4">
+    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24">
       {/* ヘッダー */}
       <div className="mb-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             <div>
@@ -118,10 +118,10 @@ function hello() {
       </div>
 
       {/* エディタとプレビューの2ペイン */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* 左ペイン: テキストエリア */}
-        <div className="flex flex-col">
-          <div className="mb-2">
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
+          <div className="mb-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               エディタ
             </h2>
@@ -134,8 +134,8 @@ function hello() {
             onChange={(e) => setMarkdown(e.target.value)}
             className="flex-1 w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                     bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
-                     font-mono text-sm resize-none min-h-[600px]"
+                     bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
+                     font-mono text-sm resize-none min-h-[600px] transition-colors duration-200"
             placeholder="ここにマークダウンを入力..."
             spellCheck={false}
           />
@@ -145,8 +145,8 @@ function hello() {
         </div>
 
         {/* 右ペイン: プレビュー */}
-        <div className="flex flex-col">
-          <div className="mb-2">
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
+          <div className="mb-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               プレビュー
             </h2>
@@ -155,17 +155,29 @@ function hello() {
             </p>
           </div>
           <div className="flex-1 p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg
-                        bg-white dark:bg-gray-800 overflow-auto min-h-[600px]">
-            <div className="prose prose-sm sm:prose lg:prose-lg dark:prose-invert max-w-none
+                        bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200">
+            <div className="prose prose-sm sm:prose lg:prose-lg max-w-none
                           prose-headings:text-gray-900 dark:prose-headings:text-gray-100
                           prose-p:text-gray-800 dark:prose-p:text-gray-200
+                          prose-li:text-gray-800 dark:prose-li:text-gray-200
                           prose-a:text-blue-600 dark:prose-a:text-blue-400
                           prose-strong:text-gray-900 dark:prose-strong:text-gray-100
+                          prose-em:text-gray-800 dark:prose-em:text-gray-200
                           prose-code:text-pink-600 dark:prose-code:text-pink-400
+                          prose-code:bg-gray-200 dark:prose-code:bg-gray-800
                           prose-pre:bg-gray-100 dark:prose-pre:bg-gray-900
+                          prose-pre:text-gray-900 dark:prose-pre:text-gray-100
+                          prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300
                           prose-blockquote:border-gray-300 dark:prose-blockquote:border-gray-600
                           prose-th:text-gray-900 dark:prose-th:text-gray-100
-                          prose-td:text-gray-800 dark:prose-td:text-gray-200">
+                          prose-th:bg-gray-100 dark:prose-th:bg-gray-800
+                          prose-td:text-gray-800 dark:prose-td:text-gray-200
+                          prose-tr:border-gray-300 dark:prose-tr:border-gray-600
+                          prose-thead:border-gray-400 dark:prose-thead:border-gray-500
+                          prose-ul:text-gray-800 dark:prose-ul:text-gray-200
+                          prose-ol:text-gray-800 dark:prose-ol:text-gray-200
+                          prose-hr:border-gray-300 dark:prose-hr:border-gray-600
+                          [&>*]:text-gray-800 dark:[&>*]:text-gray-200">
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
