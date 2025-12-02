@@ -157,41 +157,27 @@ function hello() {
           <div className="flex-1 p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                         bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200">
             <div className="prose prose-sm sm:prose lg:prose-lg max-w-none
-                          prose-headings:font-bold prose-headings:text-gray-900 dark:prose-headings:text-gray-100
-                          prose-h1:text-4xl prose-h1:font-extrabold prose-h1:mb-6 prose-h1:mt-8 prose-h1:pb-3 prose-h1:border-b-2 prose-h1:border-gray-300 dark:prose-h1:border-gray-600
-                          prose-h2:text-3xl prose-h2:font-bold prose-h2:mb-4 prose-h2:mt-6 prose-h2:pb-2 prose-h2:border-b prose-h2:border-gray-200 dark:prose-h2:border-gray-700
-                          prose-h3:text-2xl prose-h3:font-bold prose-h3:mb-3 prose-h3:mt-5
-                          prose-h4:text-xl prose-h4:font-semibold prose-h4:mb-2 prose-h4:mt-4
-                          prose-h5:text-lg prose-h5:font-semibold prose-h5:mb-2 prose-h5:mt-3
-                          prose-h6:text-base prose-h6:font-medium prose-h6:mb-2 prose-h6:mt-3 prose-h6:text-gray-700 dark:prose-h6:text-gray-300
-                          prose-p:text-gray-800 dark:prose-p:text-gray-200 prose-p:mb-4 prose-p:leading-relaxed
-                          prose-li:text-gray-800 dark:prose-li:text-gray-200
-                          prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline prose-a:font-medium
-                          prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-strong:font-bold
-                          prose-em:text-gray-800 dark:prose-em:text-gray-200 prose-em:italic
-                          prose-code:text-pink-600 dark:prose-code:text-pink-400
-                          prose-code:bg-gray-200 dark:prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded
-                          prose-pre:bg-gray-100 dark:prose-pre:bg-gray-900
-                          prose-pre:text-gray-900 dark:prose-pre:text-gray-100 prose-pre:p-4 prose-pre:rounded-lg prose-pre:overflow-x-auto
-                          prose-blockquote:text-gray-700 dark:prose-blockquote:text-gray-300 prose-blockquote:italic prose-blockquote:pl-4 prose-blockquote:my-4
-                          prose-blockquote:border-l-4 prose-blockquote:border-gray-300 dark:prose-blockquote:border-gray-600
-                          prose-ul:list-disc prose-ul:pl-6 prose-ul:text-gray-800 dark:prose-ul:text-gray-200 prose-ul:my-4
-                          prose-ol:list-decimal prose-ol:pl-6 prose-ol:text-gray-800 dark:prose-ol:text-gray-200 prose-ol:my-4
-                          prose-table:border-collapse prose-table:border prose-table:border-gray-300 dark:prose-table:border-gray-600 prose-table:my-6
-                          prose-th:text-gray-900 dark:prose-th:text-gray-100 prose-th:font-semibold
-                          prose-th:bg-gray-100 dark:prose-th:bg-gray-800
-                          prose-th:border prose-th:border-gray-300 dark:prose-th:border-gray-600 prose-th:px-4 prose-th:py-2
-                          prose-td:text-gray-800 dark:prose-td:text-gray-200
-                          prose-td:border prose-td:border-gray-300 dark:prose-td:border-gray-600 prose-td:px-4 prose-td:py-2
-                          prose-tr:border-gray-300 dark:prose-tr:border-gray-600
-                          prose-thead:border-gray-400 dark:prose-thead:border-gray-500
-                          prose-hr:border-gray-300 dark:prose-hr:border-gray-600 prose-hr:my-8
-                          [&>*]:text-gray-800 dark:[&>*]:text-gray-200
-                          [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-2
-                          [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-2
+                          [&_h1]:text-4xl [&_h1]:font-extrabold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 [&_h1]:mb-6 [&_h1]:mt-8 [&_h1]:pb-3 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600
+                          [&_h2]:text-3xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 [&_h2]:mb-4 [&_h2]:mt-6 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700
+                          [&_h3]:text-2xl [&_h3]:font-bold [&_h3]:text-gray-900 dark:[&_h3]:text-gray-100 [&_h3]:mb-3 [&_h3]:mt-5
+                          [&_h4]:text-xl [&_h4]:font-semibold [&_h4]:text-gray-900 dark:[&_h4]:text-gray-100 [&_h4]:mb-2 [&_h4]:mt-4
+                          [&_h5]:text-lg [&_h5]:font-semibold [&_h5]:text-gray-900 dark:[&_h5]:text-gray-100 [&_h5]:mb-2 [&_h5]:mt-3
+                          [&_h6]:text-base [&_h6]:font-medium [&_h6]:text-gray-700 dark:[&_h6]:text-gray-300 [&_h6]:mb-2 [&_h6]:mt-3
+                          [&_p]:text-gray-800 dark:[&_p]:text-gray-200 [&_p]:mb-4 [&_p]:leading-relaxed
+                          [&_li]:text-gray-800 dark:[&_li]:text-gray-200
+                          [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:font-medium
+                          [&_strong]:text-gray-900 dark:[&_strong]:text-gray-100 [&_strong]:font-bold
+                          [&_em]:text-gray-800 dark:[&_em]:text-gray-200 [&_em]:italic
+                          [&_code]:text-pink-600 dark:[&_code]:text-pink-400 [&_code]:bg-gray-200 dark:[&_code]:bg-gray-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm
+                          [&_pre]:bg-gray-100 dark:[&_pre]:bg-gray-900 [&_pre]:text-gray-900 dark:[&_pre]:text-gray-100 [&_pre]:p-4 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:my-4
+                          [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit
+                          [&_blockquote]:text-gray-700 dark:[&_blockquote]:text-gray-300 [&_blockquote]:italic [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:border-l-4 [&_blockquote]:border-gray-300 dark:[&_blockquote]:border-gray-600
+                          [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:text-gray-800 dark:[&_ul]:text-gray-200 [&_ul]:my-4
+                          [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:text-gray-800 dark:[&_ol]:text-gray-200 [&_ol]:my-4
                           [&_table]:border-collapse [&_table]:border [&_table]:border-gray-300 dark:[&_table]:border-gray-600 [&_table]:w-full [&_table]:my-6
-                          [&_th]:border [&_th]:border-gray-300 dark:[&_th]:border-gray-600 [&_th]:px-4 [&_th]:py-2 [&_th]:bg-gray-100 dark:[&_th]:bg-gray-800
-                          [&_td]:border [&_td]:border-gray-300 dark:[&_td]:border-gray-600 [&_td]:px-4 [&_td]:py-2">
+                          [&_th]:border [&_th]:border-gray-300 dark:[&_th]:border-gray-600 [&_th]:px-4 [&_th]:py-2 [&_th]:bg-gray-100 dark:[&_th]:bg-gray-800 [&_th]:text-gray-900 dark:[&_th]:text-gray-100 [&_th]:font-semibold
+                          [&_td]:border [&_td]:border-gray-300 dark:[&_td]:border-gray-600 [&_td]:px-4 [&_td]:py-2 [&_td]:text-gray-800 dark:[&_td]:text-gray-200
+                          [&_hr]:border-gray-300 dark:[&_hr]:border-gray-600 [&_hr]:my-8">
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
