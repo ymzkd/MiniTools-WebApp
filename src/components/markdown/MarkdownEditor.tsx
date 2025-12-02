@@ -204,9 +204,10 @@ function hello() {
       const newText = commentStart + selectedText + commentEnd;
       document.execCommand('insertText', false, newText);
 
+      // コメント記号全体を含めて選択範囲を設定（トグルで即座に解除できるように）
       setTimeout(() => {
-        textarea.selectionStart = selectionStart + commentStart.length;
-        textarea.selectionEnd = selectionEnd + commentStart.length;
+        textarea.selectionStart = selectionStart;
+        textarea.selectionEnd = selectionStart + newText.length;
       }, 0);
     }
   };
