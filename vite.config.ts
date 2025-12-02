@@ -6,17 +6,16 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true,
-    // SPA用のフォールバック設定：すべてのルートでindex.htmlを返す
-    historyApiFallback: true
+    open: true
+    // Note: Viteはデフォルトでindex.htmlへのフォールバックを行うため、
+    // SPAルーティング用の追加設定は不要です
   },
   build: {
     outDir: 'dist',
     sourcemap: true
   },
-  // プレビューサーバーでもSPAフォールバックを有効化
   preview: {
-    port: 3000,
-    historyApiFallback: true
+    port: 3000
+    // Note: プレビューサーバーもデフォルトでindex.htmlへのフォールバックを行います
   }
 })
