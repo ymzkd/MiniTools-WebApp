@@ -68,6 +68,49 @@ function hello() {
   );
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
 
+  // コメント部分をハイライト表示するためのマークアップを生成
+  const renderHighlightedText = (text: string) => {
+    // HTMLコメントの正規表現（<!-- ... -->）
+    const commentRegex = /(<!--[\s\S]*?-->)/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = commentRegex.exec(text)) !== null) {
+      // コメント前のテキスト
+      if (match.index > lastIndex) {
+        parts.push(
+          <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
+            {text.substring(lastIndex, match.index)}
+          </span>
+        );
+      }
+
+      // コメント部分（グレー表示）
+      parts.push(
+        <span
+          key={`comment-${match.index}`}
+          className="whitespace-pre-wrap break-words text-gray-400 dark:text-gray-500"
+        >
+          {match[0]}
+        </span>
+      );
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    // 残りのテキスト
+    if (lastIndex < text.length) {
+      parts.push(
+        <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
+          {text.substring(lastIndex)}
+        </span>
+      );
+    }
+
+    return parts.length > 0 ? parts : <span className="whitespace-pre-wrap break-words">{text}</span>;
+  };
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(markdown);
@@ -81,6 +124,87 @@ function hello() {
   const handleClear = () => {
     if (confirm('テキストをクリアしますか？')) {
       setMarkdown('');
+    }
+  };
+
+  // Undo/Redoスタックを維持しながらテキストを挿入
+  const insertTextWithUndo = (text: string, newCursorPos?: number) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.focus();
+    document.execCommand('insertText', false, text);
+
+    if (newCursorPos !== undefined) {
+      setTimeout(() => {
+        textarea.selectionStart = textarea.selectionEnd = newCursorPos;
+      }, 0);
+    }
+  };
+
+  // 選択範囲を置き換え（Undo/Redoスタック維持）
+  const replaceSelection = (text: string, newStart?: number, newEnd?: number) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.focus();
+    const { selectionStart, selectionEnd } = textarea;
+
+    // 選択範囲を置き換え
+    textarea.setRangeText(text, selectionStart, selectionEnd, 'end');
+
+    // カスタムイベントを発火してReactの状態を更新
+    const event = new Event('input', { bubbles: true });
+    textarea.dispatchEvent(event);
+
+    // カーソル位置を設定
+    setTimeout(() => {
+      if (newStart !== undefined && newEnd !== undefined) {
+        textarea.selectionStart = newStart;
+        textarea.selectionEnd = newEnd;
+      }
+    }, 0);
+  };
+
+  // 選択テキストを囲む（Undo/Redoスタック維持）
+  const wrapSelection = (before: string, after: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { selectionStart, selectionEnd, value } = textarea;
+    const selectedText = value.substring(selectionStart, selectionEnd);
+    const newText = before + selectedText + after;
+
+    replaceSelection(
+      newText,
+      selectionStart + before.length,
+      selectionEnd + before.length
+    );
+  };
+
+  // コメントトグル（Undo/Redoスタック維持）
+  const toggleComment = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { selectionStart, selectionEnd, value } = textarea;
+    const selectedText = value.substring(selectionStart, selectionEnd);
+
+    // 選択テキストが既にコメントで囲まれているかチェック
+    const commentStart = '<!-- ';
+    const commentEnd = ' -->';
+
+    if (selectedText.startsWith(commentStart) && selectedText.endsWith(commentEnd)) {
+      // コメントを解除
+      const unwrapped = selectedText.substring(commentStart.length, selectedText.length - commentEnd.length);
+      replaceSelection(
+        unwrapped,
+        selectionStart,
+        selectionStart + unwrapped.length
+      );
+    } else {
+      // コメントを追加
+      wrapSelection(commentStart, commentEnd);
     }
   };
 
@@ -102,7 +226,6 @@ function hello() {
       if (hasSelection) {
         // 複数行選択時の一括インデント/アンインデント
         const beforeSelection = value.substring(0, selectionStart);
-        const afterSelection = value.substring(selectionEnd);
 
         // 選択範囲の開始位置が行の途中の場合、行頭から選択を開始
         const startLine = beforeSelection.lastIndexOf('\n') + 1;
@@ -131,21 +254,40 @@ function hello() {
           newSelectionEnd = selectionEnd + addedChars;
         }
 
-        const finalText = value.substring(0, startLine) + newText + afterSelection;
-        setMarkdown(finalText);
-
-        setTimeout(() => {
-          textarea.selectionStart = newSelectionStart;
-          textarea.selectionEnd = newSelectionEnd;
-        }, 0);
+        // 全体を選択して置き換え
+        textarea.selectionStart = startLine;
+        textarea.selectionEnd = selectionEnd;
+        replaceSelection(newText, newSelectionStart, newSelectionEnd);
       } else {
-        // 単一カーソル位置にタブ挿入
-        const newText = value.substring(0, selectionStart) + '  ' + value.substring(selectionEnd);
-        setMarkdown(newText);
+        // 単一カーソル位置での処理
+        if (e.shiftKey) {
+          // Shift+Tab: 現在行のインデント解除
+          const beforeCursor = value.substring(0, selectionStart);
+          const lineStart = beforeCursor.lastIndexOf('\n') + 1;
+          const lineEnd = value.indexOf('\n', selectionStart);
+          const actualLineEnd = lineEnd === -1 ? value.length : lineEnd;
+          const currentLine = value.substring(lineStart, actualLineEnd);
 
-        setTimeout(() => {
-          textarea.selectionStart = textarea.selectionEnd = selectionStart + 2;
-        }, 0);
+          let newLine = currentLine;
+          let removedChars = 0;
+
+          if (currentLine.startsWith('  ')) {
+            newLine = currentLine.substring(2);
+            removedChars = 2;
+          } else if (currentLine.startsWith('\t')) {
+            newLine = currentLine.substring(1);
+            removedChars = 1;
+          }
+
+          if (removedChars > 0) {
+            textarea.selectionStart = lineStart;
+            textarea.selectionEnd = actualLineEnd;
+            replaceSelection(newLine, selectionStart - removedChars, selectionStart - removedChars);
+          }
+        } else {
+          // Tab: インデント追加
+          insertTextWithUndo('  ');
+        }
       }
       return;
     }
@@ -171,7 +313,7 @@ function hello() {
       if (selectedText) {
         wrapSelection('[', '](url)');
       } else {
-        insertText('[リンクテキスト](url)');
+        insertTextWithUndo('[リンクテキスト](url)');
       }
       return;
     }
@@ -183,10 +325,10 @@ function hello() {
       return;
     }
 
-    // Ctrl/Cmd + /: コメント
+    // Ctrl/Cmd + /: コメントトグル
     if (modKey && e.key === '/') {
       e.preventDefault();
-      wrapSelection('<!-- ', ' -->');
+      toggleComment();
       return;
     }
 
@@ -197,52 +339,10 @@ function hello() {
       const currentLineEnd = afterCursor.indexOf('\n');
       const lineEnd = currentLineEnd === -1 ? value.length : selectionStart + currentLineEnd;
 
-      const newText = value.substring(0, lineEnd) + '\n' + value.substring(lineEnd);
-      setMarkdown(newText);
-
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = lineEnd + 1;
-      }, 0);
+      textarea.selectionStart = textarea.selectionEnd = lineEnd;
+      insertTextWithUndo('\n', lineEnd + 1);
       return;
     }
-  };
-
-  // 選択テキストを囲む
-  const wrapSelection = (before: string, after: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const { selectionStart, selectionEnd, value } = textarea;
-    const selectedText = value.substring(selectionStart, selectionEnd);
-    const newText = value.substring(0, selectionStart) + before + selectedText + after + value.substring(selectionEnd);
-
-    setMarkdown(newText);
-
-    setTimeout(() => {
-      if (selectedText) {
-        textarea.selectionStart = selectionStart + before.length;
-        textarea.selectionEnd = selectionEnd + before.length;
-      } else {
-        textarea.selectionStart = textarea.selectionEnd = selectionStart + before.length;
-      }
-      textarea.focus();
-    }, 0);
-  };
-
-  // テキストを挿入
-  const insertText = (text: string) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const { selectionStart, value } = textarea;
-    const newText = value.substring(0, selectionStart) + text + value.substring(selectionStart);
-
-    setMarkdown(newText);
-
-    setTimeout(() => {
-      textarea.selectionStart = textarea.selectionEnd = selectionStart + text.length;
-      textarea.focus();
-    }, 0);
   };
 
   return (
@@ -295,18 +395,38 @@ function hello() {
               マークダウンテキストを入力してください
             </p>
           </div>
-          <textarea
-            ref={textareaRef}
-            value={markdown}
-            onChange={(e) => setMarkdown(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 w-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                     bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100
-                     font-mono text-sm resize-none min-h-[600px] transition-colors duration-200"
-            placeholder="ここにマークダウンを入力..."
-            spellCheck={false}
-          />
+          {/* エディタコンテナ（ハイライトoverlayとtextareaを重ねて表示） */}
+          <div className="relative flex-1">
+            {/* 背景のハイライト表示レイヤー */}
+            <div
+              className="absolute inset-0 p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
+                         bg-white dark:bg-gray-700 font-mono text-sm overflow-auto
+                         pointer-events-none whitespace-pre-wrap break-words
+                         transition-colors duration-200"
+              style={{ color: 'transparent' }}
+            >
+              <div className="min-h-[600px]">
+                {renderHighlightedText(markdown || ' ')}
+              </div>
+            </div>
+            {/* 実際のtextarea（背景を透明に） */}
+            <textarea
+              ref={textareaRef}
+              value={markdown}
+              onChange={(e) => setMarkdown(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="relative w-full h-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                       bg-transparent font-mono text-sm resize-none min-h-[600px]"
+              placeholder="ここにマークダウンを入力..."
+              spellCheck={false}
+              style={{
+                // textareaのテキストを半透明にして、背景のハイライトが透けて見えるように
+                color: isDark ? 'rgba(243, 244, 246, 0.85)' : 'rgba(17, 24, 39, 0.85)',
+                caretColor: isDark ? '#f3f4f6' : '#111827',
+              }}
+            />
+          </div>
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
             文字数: {markdown.length}
           </div>
@@ -412,9 +532,13 @@ function hello() {
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+I</kbd> イタリック</li>
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+K</kbd> リンク</li>
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+E</kbd> インラインコード</li>
-            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+/</kbd> コメント</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+/</kbd> コメントトグル（追加/解除）</li>
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Enter</kbd> 新規行挿入</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Z</kbd> 元に戻す / <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Shift+Z</kbd> やり直す</li>
           </ul>
+          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+            ※ コメント部分はエディタ内でグレー表示されます
+          </p>
         </div>
       </div>
     </div>
