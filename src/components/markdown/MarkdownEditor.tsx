@@ -13,6 +13,7 @@ import 'katex/dist/katex.min.css';
 const MarkdownEditor: React.FC = () => {
   const { isDark } = useSystemTheme();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const [markdown, setMarkdown] = useState<string>(
     `# マークダウンエディタ
 
@@ -134,6 +135,14 @@ function hello() {
   const handleClear = () => {
     if (confirm('テキストをクリアしますか？')) {
       setMarkdown('');
+    }
+  };
+
+  // スクロール同期ハンドラー
+  const handleScroll = () => {
+    if (highlightRef.current && textareaRef.current) {
+      highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+      highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
     }
   };
 
@@ -414,6 +423,7 @@ function hello() {
           <div className="relative flex-1">
             {/* 背景のハイライト表示レイヤー */}
             <div
+              ref={highlightRef}
               className="absolute inset-0 p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                          bg-white dark:bg-gray-700 font-mono text-sm overflow-auto
                          pointer-events-none whitespace-pre-wrap break-words
@@ -430,6 +440,7 @@ function hello() {
               value={markdown}
               onChange={(e) => setMarkdown(e.target.value)}
               onKeyDown={handleKeyDown}
+              onScroll={handleScroll}
               className="relative w-full h-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
                        bg-transparent font-mono text-sm resize-none min-h-[600px]"
@@ -487,7 +498,7 @@ function hello() {
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
                 components={{
-                  code({ className, children, ...props }: any) {
+                  code({ className, children, ...props }: { className?: string; children?: React.ReactNode; [key: string]: unknown }) {
                     const match = /language-(\w+)/.exec(className || '');
                     const language = match ? match[1] : '';
                     const isInline = !className || !language;
