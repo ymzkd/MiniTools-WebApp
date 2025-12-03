@@ -507,14 +507,13 @@ function hello() {
 
                     return !isInline ? (
                       <SyntaxHighlighter
-                        key={isDark ? 'dark' : 'light'}
+                        key={`${isDark ? 'dark' : 'light'}-${language}`}
                         style={isDark ? oneDark : oneLight}
                         language={language}
                         PreTag="div"
                         customStyle={{
                           margin: 0,
                           borderRadius: '0.5rem',
-                          backgroundColor: isDark ? '#282c34' : '#fafafa',
                         }}
                         codeTagProps={{
                           style: {
