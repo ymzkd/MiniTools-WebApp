@@ -9,9 +9,9 @@ interface AppLayoutProps {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ activeTab, children }) => {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 print:bg-white transition-colors duration-200">
       <Navigation activeTab={activeTab} />
-      <main className="py-8">
+      <main className="py-8 print:py-0">
         {children}
       </main>
     </div>
