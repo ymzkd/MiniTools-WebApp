@@ -506,31 +506,25 @@ function hello() {
                     const isInline = !className || !language;
 
                     return !isInline ? (
-                      <SyntaxHighlighter
-                        key={`${isDark ? 'dark' : 'light'}-${language}`}
-                        style={isDark ? oneDark : oneLight}
-                        language={language}
-                        PreTag={({ children, ...props }) => (
-                          <div
-                            {...props}
-                            style={{
-                              ...props.style,
-                              margin: 0,
-                              borderRadius: '0.5rem',
-                              backgroundColor: isDark ? '#282c34' : '#fafafa',
-                            }}
-                          >
-                            {children}
-                          </div>
-                        )}
-                        codeTagProps={{
-                          style: {
-                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                          }
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
+                      <div className={`rounded-lg my-4 ${isDark ? 'bg-[#282c34]' : 'bg-[#fafafa]'}`}>
+                        <SyntaxHighlighter
+                          key={`${isDark ? 'dark' : 'light'}-${language}`}
+                          style={isDark ? oneDark : oneLight}
+                          language={language}
+                          PreTag="div"
+                          customStyle={{
+                            margin: 0,
+                            background: 'transparent',
+                          }}
+                          codeTagProps={{
+                            style: {
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                            }
+                          }}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      </div>
                     ) : (
                       <code className={className} {...props}>
                         {children}
