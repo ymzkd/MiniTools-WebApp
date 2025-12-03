@@ -370,9 +370,9 @@ function hello() {
   };
 
   return (
-    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24">
+    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24 print:px-0">
       {/* ヘッダー */}
-      <div className="mb-6">
+      <div className="mb-6 print:hidden">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
@@ -408,9 +408,9 @@ function hello() {
       </div>
 
       {/* エディタとプレビューの2ペイン */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 print:grid-cols-1 print:gap-0">
         {/* 左ペイン: テキストエリア */}
-        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200 print:hidden">
           <div className="mb-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               エディタ
@@ -461,8 +461,8 @@ function hello() {
         </div>
 
         {/* 右ペイン: プレビュー */}
-        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
-          <div className="mb-3">
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200 print:shadow-none print:rounded-none print:p-0">
+          <div className="mb-3 print:hidden">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               プレビュー
             </h2>
@@ -471,29 +471,31 @@ function hello() {
             </p>
           </div>
           <div className="flex-1 p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg
-                        bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200">
-            <div className="prose prose-sm sm:prose lg:prose-lg max-w-none
-                          [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600
-                          [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 [&_h2]:mb-3 [&_h2]:mt-5 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700
-                          [&_h3]:text-xl [&_h3]:font-bold [&_h3]:text-gray-900 dark:[&_h3]:text-gray-100 [&_h3]:mb-3 [&_h3]:mt-4
-                          [&_h4]:text-lg [&_h4]:font-semibold [&_h4]:text-gray-900 dark:[&_h4]:text-gray-100 [&_h4]:mb-2 [&_h4]:mt-3
-                          [&_h5]:text-base [&_h5]:font-semibold [&_h5]:text-gray-900 dark:[&_h5]:text-gray-100 [&_h5]:mb-2 [&_h5]:mt-3
-                          [&_h6]:text-sm [&_h6]:font-medium [&_h6]:text-gray-700 dark:[&_h6]:text-gray-300 [&_h6]:mb-2 [&_h6]:mt-2
-                          [&_p]:text-gray-800 dark:[&_p]:text-gray-200 [&_p]:mb-4 [&_p]:leading-relaxed
-                          [&_li]:text-gray-800 dark:[&_li]:text-gray-200
-                          [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:font-medium
-                          [&_strong]:text-gray-900 dark:[&_strong]:text-gray-100 [&_strong]:font-bold
-                          [&_em]:text-gray-800 dark:[&_em]:text-gray-200 [&_em]:italic
-                          [&_code]:text-pink-600 dark:[&_code]:text-pink-400 [&_code]:bg-gray-200 dark:[&_code]:bg-gray-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm
-                          [&_pre]:bg-gray-100 dark:[&_pre]:bg-gray-900 [&_pre]:text-gray-900 dark:[&_pre]:text-gray-100 [&_pre]:p-4 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:my-4
+                        bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200
+                        print:border-0 print:rounded-none print:min-h-0 print:overflow-visible print:bg-white print:p-8">
+            <div className="prose prose-sm sm:prose lg:prose-lg max-w-none print:text-sm
+                          print:[&_.katex]:!text-black print:[&_.katex_*]:!text-black
+                          [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 print:[&_h1]:!text-black print:[&_h1]:!text-xl [&_h1]:mb-4 [&_h1]:mt-6 print:[&_h1]:mb-3 print:[&_h1]:mt-4 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600 print:[&_h1]:border-gray-400
+                          [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 print:[&_h2]:!text-black print:[&_h2]:!text-lg [&_h2]:mb-3 [&_h2]:mt-5 print:[&_h2]:mb-2 print:[&_h2]:mt-3 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700 print:[&_h2]:border-gray-400
+                          [&_h3]:text-xl [&_h3]:font-bold [&_h3]:text-gray-900 dark:[&_h3]:text-gray-100 print:[&_h3]:!text-black print:[&_h3]:!text-base [&_h3]:mb-3 [&_h3]:mt-4 print:[&_h3]:mb-2 print:[&_h3]:mt-3
+                          [&_h4]:text-lg [&_h4]:font-semibold [&_h4]:text-gray-900 dark:[&_h4]:text-gray-100 print:[&_h4]:!text-black print:[&_h4]:!text-base [&_h4]:mb-2 [&_h4]:mt-3 print:[&_h4]:mb-1.5 print:[&_h4]:mt-2
+                          [&_h5]:text-base [&_h5]:font-semibold [&_h5]:text-gray-900 dark:[&_h5]:text-gray-100 print:[&_h5]:!text-black print:[&_h5]:!text-sm [&_h5]:mb-2 [&_h5]:mt-3 print:[&_h5]:mb-1.5 print:[&_h5]:mt-2
+                          [&_h6]:text-sm [&_h6]:font-medium [&_h6]:text-gray-700 dark:[&_h6]:text-gray-300 print:[&_h6]:!text-black print:[&_h6]:!text-xs [&_h6]:mb-2 [&_h6]:mt-2 print:[&_h6]:mb-1 print:[&_h6]:mt-1.5
+                          [&_p]:text-gray-800 dark:[&_p]:text-gray-200 print:[&_p]:!text-black [&_p]:mb-4 print:[&_p]:mb-3 [&_p]:leading-relaxed
+                          [&_li]:text-gray-800 dark:[&_li]:text-gray-200 print:[&_li]:!text-black
+                          [&_a]:text-blue-600 dark:[&_a]:text-blue-400 print:[&_a]:!text-blue-700 [&_a]:underline [&_a]:font-medium
+                          [&_strong]:text-gray-900 dark:[&_strong]:text-gray-100 print:[&_strong]:!text-black [&_strong]:font-bold
+                          [&_em]:text-gray-800 dark:[&_em]:text-gray-200 print:[&_em]:!text-black [&_em]:italic
+                          [&_code]:text-pink-600 dark:[&_code]:text-pink-400 print:[&_code]:!text-pink-700 [&_code]:bg-gray-200 dark:[&_code]:bg-gray-800 print:[&_code]:!bg-gray-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm
+                          [&_pre]:bg-gray-100 dark:[&_pre]:bg-gray-900 print:[&_pre]:!bg-gray-50 [&_pre]:text-gray-900 dark:[&_pre]:text-gray-100 print:[&_pre]:!text-black [&_pre]:p-4 print:[&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:my-4 print:[&_pre]:my-3
                           [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit
-                          [&_blockquote]:text-gray-700 dark:[&_blockquote]:text-gray-300 [&_blockquote]:italic [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:border-l-4 [&_blockquote]:border-gray-300 dark:[&_blockquote]:border-gray-600
-                          [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:text-gray-800 dark:[&_ul]:text-gray-200 [&_ul]:my-4
-                          [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:text-gray-800 dark:[&_ol]:text-gray-200 [&_ol]:my-4
-                          [&_table]:border-collapse [&_table]:border [&_table]:border-gray-300 dark:[&_table]:border-gray-600 [&_table]:w-full [&_table]:my-6
-                          [&_th]:border [&_th]:border-gray-300 dark:[&_th]:border-gray-600 [&_th]:px-4 [&_th]:py-2 [&_th]:bg-gray-100 dark:[&_th]:bg-gray-800 [&_th]:text-gray-900 dark:[&_th]:text-gray-100 [&_th]:font-semibold
-                          [&_td]:border [&_td]:border-gray-300 dark:[&_td]:border-gray-600 [&_td]:px-4 [&_td]:py-2 [&_td]:text-gray-800 dark:[&_td]:text-gray-200
-                          [&_hr]:border-gray-300 dark:[&_hr]:border-gray-600 [&_hr]:my-8">
+                          [&_blockquote]:text-gray-700 dark:[&_blockquote]:text-gray-300 print:[&_blockquote]:!text-gray-800 [&_blockquote]:italic [&_blockquote]:pl-4 print:[&_blockquote]:pl-3 [&_blockquote]:my-4 print:[&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-gray-300 dark:[&_blockquote]:border-gray-600 print:[&_blockquote]:border-gray-400
+                          [&_ul]:list-disc [&_ul]:pl-6 print:[&_ul]:pl-5 [&_ul]:text-gray-800 dark:[&_ul]:text-gray-200 print:[&_ul]:!text-black [&_ul]:my-4 print:[&_ul]:my-3
+                          [&_ol]:list-decimal [&_ol]:pl-6 print:[&_ol]:pl-5 [&_ol]:text-gray-800 dark:[&_ol]:text-gray-200 print:[&_ol]:!text-black [&_ol]:my-4 print:[&_ol]:my-3
+                          [&_table]:border-collapse [&_table]:border [&_table]:border-gray-300 dark:[&_table]:border-gray-600 print:[&_table]:border-black [&_table]:w-full [&_table]:my-6 print:[&_table]:my-4
+                          [&_th]:border [&_th]:border-gray-300 dark:[&_th]:border-gray-600 print:[&_th]:border-black [&_th]:px-4 [&_th]:py-2 print:[&_th]:px-3 print:[&_th]:py-1.5 [&_th]:bg-gray-100 dark:[&_th]:bg-gray-800 print:[&_th]:!bg-gray-100 [&_th]:text-gray-900 dark:[&_th]:text-gray-100 print:[&_th]:!text-black [&_th]:font-semibold
+                          [&_td]:border [&_td]:border-gray-300 dark:[&_td]:border-gray-600 print:[&_td]:border-black [&_td]:px-4 [&_td]:py-2 print:[&_td]:px-3 print:[&_td]:py-1.5 [&_td]:text-gray-800 dark:[&_td]:text-gray-200 print:[&_td]:!text-black
+                          [&_hr]:border-gray-300 dark:[&_hr]:border-gray-600 print:[&_hr]:border-gray-400 [&_hr]:my-8 print:[&_hr]:my-5">
               <ReactMarkdown
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
@@ -504,23 +506,25 @@ function hello() {
                     const isInline = !className || !language;
 
                     return !isInline ? (
-                      <SyntaxHighlighter
-                        style={isDark ? oneDark : oneLight}
-                        language={language}
-                        PreTag="div"
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: '0.5rem',
-                          backgroundColor: isDark ? '#282c34' : '#fafafa',
-                        }}
-                        codeTagProps={{
-                          style: {
-                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                          }
-                        }}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
+                      <div className={`rounded-lg my-4 ${isDark ? 'bg-[#282c34]' : 'bg-[#fafafa]'}`}>
+                        <SyntaxHighlighter
+                          key={`${isDark ? 'dark' : 'light'}-${language}`}
+                          style={isDark ? oneDark : oneLight}
+                          language={language}
+                          PreTag="div"
+                          customStyle={{
+                            margin: 0,
+                            background: 'transparent',
+                          }}
+                          codeTagProps={{
+                            style: {
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                            }
+                          }}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      </div>
                     ) : (
                       <code className={className} {...props}>
                         {children}
@@ -537,7 +541,7 @@ function hello() {
       </div>
 
       {/* ヘルプセクション */}
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 print:hidden">
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
             💡 マークダウン記法

@@ -10,7 +10,7 @@ interface NavigationProps {
 
 const Navigation: React.FC<NavigationProps> = ({ activeTab }) => {
   return (
-    <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
+    <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-200 print:hidden">
       <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 3xl:px-12 4xl:px-16">
         <div className="flex justify-between h-16">
           <div className="flex">
