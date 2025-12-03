@@ -474,6 +474,7 @@ function hello() {
                         bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200
                         print:border-0 print:rounded-none print:min-h-0 print:overflow-visible print:bg-white print:p-8">
             <div className="prose prose-sm sm:prose lg:prose-lg max-w-none print:text-sm
+                          print:[&_.katex]:!text-black print:[&_.katex_*]:!text-black
                           [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 print:[&_h1]:!text-black print:[&_h1]:!text-xl [&_h1]:mb-4 [&_h1]:mt-6 print:[&_h1]:mb-3 print:[&_h1]:mt-4 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600 print:[&_h1]:border-gray-400
                           [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 print:[&_h2]:!text-black print:[&_h2]:!text-lg [&_h2]:mb-3 [&_h2]:mt-5 print:[&_h2]:mb-2 print:[&_h2]:mt-3 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700 print:[&_h2]:border-gray-400
                           [&_h3]:text-xl [&_h3]:font-bold [&_h3]:text-gray-900 dark:[&_h3]:text-gray-100 print:[&_h3]:!text-black print:[&_h3]:!text-base [&_h3]:mb-3 [&_h3]:mt-4 print:[&_h3]:mb-2 print:[&_h3]:mt-3
