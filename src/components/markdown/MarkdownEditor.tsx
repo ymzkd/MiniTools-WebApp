@@ -498,7 +498,7 @@ function hello() {
                 remarkPlugins={[remarkMath, remarkGfm]}
                 rehypePlugins={[rehypeKatex, rehypeRaw]}
                 components={{
-                  code({ className, children, ...props }: { className?: string; children?: React.ReactNode; [key: string]: unknown }) {
+                  code({ className, children, ...props }) {
                     const match = /language-(\w+)/.exec(className || '');
                     const language = match ? match[1] : '';
                     const isInline = !className || !language;
