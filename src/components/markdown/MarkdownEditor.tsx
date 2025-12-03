@@ -370,9 +370,9 @@ function hello() {
   };
 
   return (
-    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24">
+    <div className="w-full px-6 xl:px-12 3xl:px-16 4xl:px-20 5xl:px-24 print:px-0">
       {/* ヘッダー */}
-      <div className="mb-6">
+      <div className="mb-6 print:hidden">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
@@ -408,9 +408,9 @@ function hello() {
       </div>
 
       {/* エディタとプレビューの2ペイン */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 print:grid-cols-1 print:gap-0">
         {/* 左ペイン: テキストエリア */}
-        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200 print:hidden">
           <div className="mb-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               エディタ
@@ -461,8 +461,8 @@ function hello() {
         </div>
 
         {/* 右ペイン: プレビュー */}
-        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200">
-          <div className="mb-3">
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 transition-colors duration-200 print:shadow-none print:rounded-none print:p-0">
+          <div className="mb-3 print:hidden">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               プレビュー
             </h2>
@@ -471,7 +471,8 @@ function hello() {
             </p>
           </div>
           <div className="flex-1 p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg
-                        bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200">
+                        bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200
+                        print:border-0 print:rounded-none print:min-h-0 print:overflow-visible print:bg-white print:p-8">
             <div className="prose prose-sm sm:prose lg:prose-lg max-w-none
                           [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 [&_h1]:mb-4 [&_h1]:mt-6 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600
                           [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:text-gray-900 dark:[&_h2]:text-gray-100 [&_h2]:mb-3 [&_h2]:mt-5 [&_h2]:pb-2 [&_h2]:border-b [&_h2]:border-gray-200 dark:[&_h2]:border-gray-700
@@ -505,6 +506,7 @@ function hello() {
 
                     return !isInline ? (
                       <SyntaxHighlighter
+                        key={isDark ? 'dark' : 'light'}
                         style={isDark ? oneDark : oneLight}
                         language={language}
                         PreTag="div"
@@ -537,7 +539,7 @@ function hello() {
       </div>
 
       {/* ヘルプセクション */}
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 print:hidden">
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
             💡 マークダウン記法
