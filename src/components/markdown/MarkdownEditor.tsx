@@ -426,13 +426,11 @@ function hello() {
               ref={highlightRef}
               className="absolute inset-0 p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                          bg-white dark:bg-gray-700 font-mono text-sm overflow-auto
-                         pointer-events-none whitespace-pre-wrap break-words
+                         pointer-events-none whitespace-pre-wrap break-words min-h-[600px]
                          transition-colors duration-200"
-              style={{ color: 'transparent' }}
+              style={{ color: 'transparent', lineHeight: '1.25rem' }}
             >
-              <div className="min-h-[600px]">
-                {renderHighlightedText(markdown || ' ')}
-              </div>
+              {renderHighlightedText(markdown || ' ')}
             </div>
             {/* 実際のtextarea（テキストをほぼ透明に） */}
             <textarea
@@ -443,7 +441,8 @@ function hello() {
               onScroll={handleScroll}
               className="relative w-full h-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                       bg-transparent font-mono text-sm resize-none min-h-[600px]"
+                       bg-transparent font-mono text-sm resize-none min-h-[600px]
+                       whitespace-pre-wrap break-words"
               placeholder="ここにマークダウンを入力..."
               spellCheck={false}
               style={{
@@ -452,6 +451,8 @@ function hello() {
                 caretColor: isDark ? '#f3f4f6' : '#111827',
                 // 選択範囲の色を設定
                 WebkitTextFillColor: 'rgba(0, 0, 0, 0.01)',
+                // 背景レイヤーと行の高さを完全に一致させる（Tailwind text-smのデフォルト）
+                lineHeight: '1.25rem',
               }}
             />
           </div>
