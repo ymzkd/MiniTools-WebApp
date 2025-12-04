@@ -443,15 +443,21 @@ function hello() {
               onScroll={handleScroll}
               className="relative w-full h-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                       bg-transparent font-mono text-sm resize-none min-h-[600px]"
+                       bg-transparent font-mono text-sm resize-none min-h-[600px]
+                       whitespace-pre-wrap break-words"
               placeholder="ここにマークダウンを入力..."
               spellCheck={false}
+              wrap="soft"
               style={{
                 // textareaのテキストをほぼ透明にして、背景のハイライトレイヤーの色を完全に表示
                 color: 'rgba(0, 0, 0, 0.01)',
                 caretColor: isDark ? '#f3f4f6' : '#111827',
                 // 選択範囲の色を設定
                 WebkitTextFillColor: 'rgba(0, 0, 0, 0.01)',
+                // 折り返しの挙動を背景レイヤーと完全に一致させる
+                whiteSpace: 'pre-wrap',
+                wordWrap: 'break-word',
+                overflowWrap: 'break-word',
               }}
             />
           </div>
