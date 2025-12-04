@@ -69,5 +69,21 @@ export interface PDFFileInfo {
   pages: number;
 }
 
+// Accelerometer Types
+export interface AccelerometerData {
+  x: number;
+  y: number;
+  z: number;
+  timestamp: number;
+}
+
+export interface AccelerometerState {
+  isSupported: boolean;
+  isActive: boolean;
+  hasPermission: boolean;
+  data: AccelerometerData | null;
+  history: AccelerometerData[];
+}
+
 // Common App Types
-export type AppTab = 'matrix' | 'figure' | 'pdf' | 'markdown';
+export type AppTab = 'matrix' | 'figure' | 'pdf' | 'markdown' | 'accelerometer';
