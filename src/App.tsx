@@ -4,6 +4,7 @@ import LaTeXMatrixEditor from './components/matrix/LaTeXMatrixEditor';
 import FigureLayoutApp from './components/figure/FigureLayoutApp';
 import PDFConverterApp from './components/pdf/PDFConverterApp';
 import MarkdownEditor from './components/markdown/MarkdownEditor';
+import AudioSpectrumAnalyzer from './components/audio/AudioSpectrumAnalyzer';
 import Toast from './components/common/Toast';
 import { useToast } from './hooks/useToast';
 import { useTheme } from './hooks/useTheme';
@@ -21,6 +22,7 @@ function App() {
     if (pathname === '/figure') return 'figure';
     if (pathname === '/pdf') return 'pdf';
     if (pathname === '/markdown') return 'markdown';
+    if (pathname === '/audio') return 'audio';
     return 'matrix'; // デフォルトは matrix
   };
 
@@ -45,6 +47,7 @@ function App() {
             />
           } />
           <Route path="/markdown" element={<MarkdownEditor />} />
+          <Route path="/audio" element={<AudioSpectrumAnalyzer />} />
           {/* 未定義のパスは /matrix にリダイレクト */}
           <Route path="*" element={<Navigate to="/matrix" replace />} />
         </Routes>
