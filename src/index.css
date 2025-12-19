@@ -271,3 +271,20 @@ body {
 .export-caption .katex-mathml {
   color: #000000 !important;
 }
+
+/* 印刷時のコードブロックスタイル */
+@media print {
+  /* コードブロック内のtext-shadowを削除し、フォントサイズを小さく */
+  pre,
+  pre code,
+  pre code *,
+  pre code span,
+  .prism-code,
+  .prism-code *,
+  [class*="language-"],
+  [class*="language-"] * {
+    text-shadow: none !important;
+    font-size: 0.75rem !important;
+    line-height: 1.4 !important;
+  }
+}
