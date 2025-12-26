@@ -23,6 +23,9 @@ const DEFAULT_CENTER: GeoLocation = {
   lng: 139.7671,
 };
 
+// 環境変数からAPIキーを取得
+const MLIT_API_KEY = import.meta.env.VITE_MLIT_API_KEY as string | undefined;
+
 interface BoringDataAppProps {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
@@ -37,7 +40,8 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
   const [selectedResult, setSelectedResult] = useState<MLITSearchResult | null>(null);
   const [boringData, setBoringData] = useState<BoringData | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [useDemoMode, setUseDemoMode] = useState(true);
+  // APIキーがない場合はデモモードをデフォルトに
+  const [useDemoMode, setUseDemoMode] = useState(!MLIT_API_KEY);
   const [error, setError] = useState<string | null>(null);
 
   // 地図クリックハンドラー
@@ -93,7 +97,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         results = generateMockSearchResults(area.center, 8);
       } else {
         // 本番モード: MLIT API を使用
-        results = await searchByLocation(area, keyword);
+        results = await searchByLocation(area, keyword, 50, MLIT_API_KEY);
       }
 
       setSearchResults(results);
@@ -174,10 +178,20 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
               />
               デモモード
             </label>
-            {useDemoMode && (
+            {useDemoMode ? (
               <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs text-yellow-700 dark:text-yellow-300">
                 <Info className="w-3 h-3" />
                 モックデータを使用中
+              </div>
+            ) : !MLIT_API_KEY ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded text-xs text-red-700 dark:text-red-300">
+                <AlertCircle className="w-3 h-3" />
+                APIキー未設定
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
+                <Info className="w-3 h-3" />
+                本番API接続中
               </div>
             )}
           </div>
