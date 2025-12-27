@@ -1,6 +1,6 @@
-# Math Tools Suite
+# MiniTools Suite
 
-数学文書作成のための統合Webアプリケーションスイート。LaTeX行列エディター、図表レイアウトツール、PDFグレースケール変換ツールを一つのモダンなインターフェースで提供します。学術論文、教材作成、数学的文書の準備に最適化されています。
+数学文書作成とデータ分析のための統合Webアプリケーションスイート。LaTeX行列エディター、図表レイアウトツール、PDFグレースケール変換ツール、ボーリングデータ検索ツールを一つのモダンなインターフェースで提供します。学術論文、教材作成、数学的文書の準備、地盤調査データの可視化に最適化されています。
 
 ## ✨ 統合機能
 
@@ -28,6 +28,16 @@
 - **ファイルサイズ最適化**: 品質とファイルサイズのバランス調整
 - **高品質グレースケール変換**: ITU-R BT.709標準に基づく輝度計算
 
+### 🗺️ Boring Data検索ツール
+- **地図ベース検索**: Leaflet地図上での直感的な検索地点指定
+- **住所検索**: 日本国内の住所・地名から検索地点への移動
+- **半径指定検索**: 1km〜5kmの範囲でボーリングデータを検索
+- **リアルタイムAPI連携**: 国土交通データプラットフォーム（MLIT DPF）との連携
+- **ボーリング柱状図表示**: 土質層、N値グラフのビジュアル表示
+- **詳細メタデータ**: ボーリングID、調査日、孔口標高、XMLバージョンなどの情報表示
+- **外部リンク**: 外部ビューアー表示、XMLファイルへの直接アクセス
+- **デモモード**: APIキーなしでモックデータを使用した動作確認
+
 ### 🎮 統合UI機能
 - **タブベースナビゲーション**: ツール間のシームレスな切り替え
 - **ダーク/ライトモード**: システム設定自動検出とマニュアル切り替え
@@ -39,6 +49,52 @@
 ### 必要な環境
 - Node.js 18以上
 - npm または yarn
+
+### APIキーの設定（Boring Data検索ツール使用時）
+
+Boring Data検索ツールを使用するには、国土交通データプラットフォーム（MLIT DPF）のAPIキーが必要です。
+
+#### APIキーの取得方法
+1. **アカウント作成**: [国土交通データプラットフォーム](https://www.mlit-data.jp/)でユーザー登録を行います。
+2. **APIキーの発行**: ログイン後、マイページの「アプリケーション管理」から新しいアプリケーションを登録することで、APIキーが発行されます。
+
+#### ローカル開発環境での設定
+プロジェクトルートに `.env` ファイルを作成し、以下のように設定します：
+
+```bash
+MLIT_API_KEY=your_api_key_here
+```
+
+**セキュリティ**: APIキーはVercelサーバーレス関数内でのみ使用され、クライアント側には露呈しません。
+
+#### Vercelでの環境変数設定
+
+本番環境（Vercel）では、以下の手順でAPIキーを設定します：
+
+1. **Vercelダッシュボードから設定**（推奨）
+   - [Vercel Dashboard](https://vercel.com/dashboard)にログイン
+   - 対象のプロジェクトを選択
+   - `Settings` → `Environment Variables` に移動
+   - 以下の情報を入力：
+     - **Name**: `MLIT_API_KEY`
+     - **Value**: 取得したAPIキー
+     - **Environment**: `Production`, `Preview`, `Development` を全て選択
+   - `Save` をクリック後、`Deployments` → `Redeploy` を実行
+
+2. **Vercel CLIから設定**
+   ```bash
+   # Vercel CLIをインストール（未インストールの場合）
+   npm i -g vercel
+
+   # 環境変数を追加
+   vercel env add MLIT_API_KEY
+
+   # プロンプトに従ってAPIキーを入力
+   # 再デプロイ
+   vercel --prod
+   ```
+
+**注意**: デモモード（モックデータ）も利用可能です。開発環境では画面上部でデモモードと本番モードを切り替えることができます。
 
 ### インストール
 ```bash
@@ -71,6 +127,8 @@ npm run preview
 - **数式レンダリング**: KaTeX v0.16.22（MathML出力対応）
 - **PDF処理**: PDF.js v5.4.54（Mozilla製）
 - **画像処理**: html2canvas、jsPDF
+- **地図表示**: Leaflet + React-Leaflet
+- **外部API**: 国土交通データプラットフォーム（MLIT DPF）GraphQL API
 - **アイコン**: Lucide React
 - **スタイリング**: Tailwind CSS
 - **コード品質**: ESLint 9 + TypeScript
@@ -100,6 +158,19 @@ npm run preview
    - 解像度設定: カスタム解像度指定
    - クリップボード: 直接コピー機能
 
+### 🗺️ Boring Data検索ツール
+1. **検索地点の指定**:
+   - 地図クリック: 地図上をクリックして検索地点を指定
+   - 住所検索: 住所・地名を入力して検索地点に移動
+   - 検索半径調整: スライダーで1km〜5kmの範囲を設定
+2. **データ検索**:
+   - 検索実行: 「周辺を検索」ボタンで周辺のボーリングデータを取得
+   - 結果表示: 地図上にマーカーとして表示、リストから選択可能
+3. **詳細表示**:
+   - ボーリング柱状図: 土質層とN値グラフの可視化
+   - メタデータ: ボーリングID、調査日、孔口標高などの詳細情報
+   - 外部リンク: 外部ビューアーでの表示、XMLファイルへの直接アクセス
+
 ## 🏗 プロジェクト構造
 
 ```
@@ -107,7 +178,9 @@ src/
 ├── components/
 │   ├── common/           # 共通コンポーネント（ナビゲーション、レイアウト、トースト）
 │   ├── matrix/           # LaTeX Matrix Editor コンポーネント
-│   └── figure/           # Figure Layout Tool コンポーネント
+│   ├── figure/           # Figure Layout Tool コンポーネント
+│   ├── boring/           # Boring Data検索ツール コンポーネント
+│   └── pdf/              # PDF Grayscale Converter コンポーネント
 ├── hooks/                # カスタム React フック
 ├── types/                # TypeScript 型定義
 ├── App.tsx              # タブルーティング付きメインアプリケーション
@@ -176,9 +249,16 @@ MITライセンス - 学術または商用目的での使用は自由です。
 
 ## 🔗 リンク
 
+### ツール・ライブラリ
 - [KaTeX ドキュメント](https://katex.org/) - 数式レンダリング
 - [React 19 ドキュメント](https://react.dev/) - UI フレームワーク
 - [Vite ドキュメント](https://vite.dev/) - ビルドツール
 - [Tailwind CSS](https://tailwindcss.com/) - スタイリング
+- [Leaflet](https://leafletjs.com/) - 地図表示ライブラリ
+- [React-Leaflet](https://react-leaflet.js.org/) - React用Leafletラッパー
 - [html2canvas](https://html2canvas.hertzen.com/) - 画像エクスポート
 - [jsPDF](https://github.com/parallax/jsPDF) - PDF生成
+
+### データソース
+- [国土交通データプラットフォーム（MLIT DPF）](https://www.mlit-data.jp/) - ボーリングデータAPI
+- [国土地盤情報検索サイト（KuniJiban）](https://www.kunijiban.pwri.go.jp/) - ボーリングデータ閲覧

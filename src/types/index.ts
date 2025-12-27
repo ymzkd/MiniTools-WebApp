@@ -70,4 +70,4 @@ export interface PDFFileInfo {
 }
 
 // Common App Types
-export type AppTab = 'matrix' | 'figure' | 'pdf' | 'markdown';
+export type AppTab = 'matrix' | 'figure' | 'pdf' | 'markdown' | 'boring';
