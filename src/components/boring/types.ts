@@ -32,6 +32,7 @@ export interface MLITSearchResult {
     [key: string]: string | undefined;  // 他のメタデータフィールド
   };
   location?: GeoLocation;
+  distance?: number; // 検索中心地点からの距離（メートル）
   // 以下は後方互換性のため残すがoptional
   description?: string;
   datasetName?: string;

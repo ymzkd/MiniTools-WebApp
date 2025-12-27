@@ -10,6 +10,19 @@ import type {
 } from './types';
 import { SOIL_COLORS } from './types';
 
+// ハーバーサイン公式による2点間の距離計算（メートル）
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // 地球の半径（メートル）
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 // API設定
 // Vercelサーバーレス関数経由でAPIを呼び出す
 // APIキーはサーバー側で管理され、クライアントには露呈しない
@@ -178,7 +191,7 @@ export async function searchByLocation(
     variables
   );
 
-  return data.search.searchResults.map(item => {
+  const results = data.search.searchResults.map(item => {
     // metadataから緯度経度を取得
     const lat = item.metadata?.['NGI:latitude']
       ? parseFloat(item.metadata['NGI:latitude'])
@@ -193,6 +206,11 @@ export async function searchByLocation(
       xmlUrl = xmlUrl.replace('publicweb.ngic.or.jp', 'www.kunijiban.pwri.go.jp');
     }
 
+    // 検索中心地点からの距離を計算
+    const distance = lat && lng
+      ? calculateDistance(area.center.lat, area.center.lng, lat, lng)
+      : undefined;
+
     return {
       id: item.id,
       title: item.title,
@@ -201,7 +219,16 @@ export async function searchByLocation(
         'NGI:link_boring_xml': xmlUrl,  // 置き換え後のURLを格納
       },
       location: lat && lng ? { lat, lng } : undefined,
+      distance,
     };
+  });
+
+  // 距離順でソート（距離が近い順、距離が不明なものは最後）
+  return results.sort((a, b) => {
+    if (a.distance === undefined && b.distance === undefined) return 0;
+    if (a.distance === undefined) return 1;
+    if (b.distance === undefined) return -1;
+    return a.distance - b.distance;
   });
 }
 
@@ -455,6 +482,13 @@ export function generateMockSearchResults(
     // 中心から500m以内のランダムな位置を生成
     const latOffset = (Math.random() - 0.5) * 0.01;
     const lngOffset = (Math.random() - 0.5) * 0.01;
+    const location = {
+      lat: center.lat + latOffset,
+      lng: center.lng + lngOffset,
+    };
+
+    // 距離を計算
+    const distance = calculateDistance(center.lat, center.lng, location.lat, location.lng);
 
     results.push({
       id: `boring-${i + 1}`,
@@ -462,10 +496,8 @@ export function generateMockSearchResults(
       description: `調査地点 ${i + 1}`,
       datasetName: 'KuniJiban',
       catalogName: '国土地盤情報',
-      location: {
-        lat: center.lat + latOffset,
-        lng: center.lng + lngOffset,
-      },
+      location,
+      distance,
       resources: [
         {
           id: `xml-${i + 1}`,
@@ -483,5 +515,11 @@ export function generateMockSearchResults(
     });
   }
 
-  return results;
+  // 距離順でソート（距離が近い順）
+  return results.sort((a, b) => {
+    if (a.distance === undefined && b.distance === undefined) return 0;
+    if (a.distance === undefined) return 1;
+    if (b.distance === undefined) return -1;
+    return a.distance - b.distance;
+  });
 }
