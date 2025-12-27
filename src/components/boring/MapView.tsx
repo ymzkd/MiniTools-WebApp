@@ -82,6 +82,30 @@ function MapCenterHandler({ center }: { center: GeoLocation }) {
   return null;
 }
 
+// 地図サイズ更新ハンドラー
+function MapResizeHandler() {
+  const map = useMap();
+
+  useEffect(() => {
+    // ResizeObserverで地図コンテナのサイズ変更を監視
+    const container = map.getContainer();
+
+    const resizeObserver = new ResizeObserver(() => {
+      // サイズ変更を検出したら地図を更新
+      map.invalidateSize();
+    });
+
+    resizeObserver.observe(container);
+
+    // クリーンアップ
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [map]);
+
+  return null;
+}
+
 const MapView: React.FC<MapViewProps> = ({
   center,
   searchArea,
@@ -109,6 +133,9 @@ const MapView: React.FC<MapViewProps> = ({
 
         {/* 中心位置追従 */}
         <MapCenterHandler center={center} />
+
+        {/* 地図サイズ自動更新 */}
+        <MapResizeHandler />
 
         {/* 検索範囲の円 */}
         {searchArea && (

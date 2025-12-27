@@ -16,10 +16,26 @@ export interface SearchArea {
 export interface MLITSearchResult {
   id: string;
   title: string;
+  metadata?: {
+    'NGI:id'?: string;
+    'NGI:code'?: string;
+    'DPF:year'?: string;
+    'NGI:latitude'?: string;
+    'NGI:longitude'?: string;
+    'NGI:client_name'?: string;
+    'NGI:source_name'?: string;
+    'NGI:address'?: string;
+    'NGI:survey_finish'?: string;
+    'NGI:link_boring_xml'?: string;
+    'NGI:boring_xml_version'?: string;
+    'NGI:boring_elevation'?: string;
+    [key: string]: string | undefined;  // 他のメタデータフィールド
+  };
+  location?: GeoLocation;
+  // 以下は後方互換性のため残すがoptional
   description?: string;
   datasetName?: string;
   catalogName?: string;
-  location?: GeoLocation;
   attributes?: Record<string, unknown>;
   resources?: MLITResource[];
 }

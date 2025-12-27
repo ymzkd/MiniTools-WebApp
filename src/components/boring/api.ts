@@ -11,21 +11,33 @@ import type {
 import { SOIL_COLORS } from './types';
 
 // API設定
-const MLIT_API_ENDPOINT = 'https://www.mlit-data.jp/api/v1/graphql';
+// 開発環境ではプロキシ経由、本番環境では直接APIを呼び出す
+const MLIT_API_ENDPOINT = import.meta.env.DEV
+  ? '/api/mlit/'
+  : 'https://www.mlit-data.jp/api/v1/';
 
 // GraphQL クエリ: 位置情報による検索
 const SEARCH_BY_LOCATION_QUERY = `
-  query SearchByLocation($lat: Float!, $lon: Float!, $distance: String!, $term: String, $size: Int!) {
+  query SearchByLocation($topLat: Float!, $topLon: Float!, $bottomLat: Float!, $bottomLon: Float!, $size: Int!) {
     search(
-      term: $term
-      phraseMatch: true
       first: 0
       size: $size
+      attributeFilter: {
+        AND: [
+          { attributeName: "DPF:catalog_id", is: "ngi" }
+          { attributeName: "DPF:dataset_id", is: "ngi" }
+        ]
+      }
       locationFilter: {
-        geoDistance: {
-          lat: $lat
-          lon: $lon
-          distance: $distance
+        rectangle: {
+          topLeft: {
+            lat: $topLat
+            lon: $topLon
+          }
+          bottomRight: {
+            lat: $bottomLat
+            lon: $bottomLon
+          }
         }
       }
     ) {
@@ -33,19 +45,7 @@ const SEARCH_BY_LOCATION_QUERY = `
       searchResults {
         id
         title
-        description
-        datasetName
-        catalogName
-        location {
-          lat
-          lon
-        }
-        resources {
-          id
-          name
-          url
-          format
-        }
+        metadata
       }
     }
   }
@@ -56,27 +56,20 @@ const SEARCH_BY_KEYWORD_QUERY = `
   query SearchByKeyword($term: String!, $size: Int!) {
     search(
       term: $term
-      phraseMatch: true
       first: 0
       size: $size
+      attributeFilter: {
+        AND: [
+          { attributeName: "DPF:catalog_id", is: "ngi" }
+          { attributeName: "DPF:dataset_id", is: "ngi" }
+        ]
+      }
     ) {
       totalNumber
       searchResults {
         id
         title
-        description
-        datasetName
-        catalogName
-        location {
-          lat
-          lon
-        }
-        resources {
-          id
-          name
-          url
-          format
-        }
+        metadata
       }
     }
   }
@@ -118,26 +111,43 @@ async function callMLITAPI<T>(
   };
 
   if (apiKey) {
-    headers['X-API-Key'] = apiKey;
+    headers['apikey'] = apiKey;
   }
 
-  const response = await fetch(MLIT_API_ENDPOINT, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ query, variables }),
-  });
+  try {
+    const response = await fetch(MLIT_API_ENDPOINT, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, variables }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText.substring(0, 500),
+      });
+      throw new Error(
+        `MLIT API エラー: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+
+    if (result.errors) {
+      console.error('GraphQL Errors:', result.errors);
+      const messages = result.errors.map((e: { message: string }) => e.message).join(', ');
+      throw new Error(`GraphQL エラー: ${messages}`);
+    }
+
+    return result.data;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('APIリクエストに失敗しました');
   }
-
-  const result = await response.json();
-
-  if (result.errors) {
-    throw new Error(`GraphQL error: ${result.errors.map((e: { message: string }) => e.message).join(', ')}`);
-  }
-
-  return result.data;
 }
 
 // 位置情報による検索
@@ -147,11 +157,14 @@ export async function searchByLocation(
   size: number = 50,
   apiKey?: string
 ): Promise<MLITSearchResult[]> {
+  // メートルを度に変換（概算: 1度 ≈ 111.32km）
+  const rangeDeg = area.radius / 111320;
+
   const variables = {
-    lat: area.center.lat,
-    lon: area.center.lng,
-    distance: `${area.radius}m`,
-    term: keyword || 'ボーリング',
+    topLat: area.center.lat + rangeDeg,
+    topLon: area.center.lng - rangeDeg,
+    bottomLat: area.center.lat - rangeDeg,
+    bottomLon: area.center.lng + rangeDeg,
     size,
   };
 
@@ -161,16 +174,7 @@ export async function searchByLocation(
       searchResults: Array<{
         id: string;
         title: string;
-        description?: string;
-        datasetName?: string;
-        catalogName?: string;
-        location?: { lat: number; lon: number };
-        resources?: Array<{
-          id: string;
-          name: string;
-          url: string;
-          format: string;
-        }>;
+        metadata?: Record<string, string>;
       }>;
     };
   }
@@ -181,20 +185,31 @@ export async function searchByLocation(
     apiKey
   );
 
-  return data.search.searchResults.map(item => ({
-    id: item.id,
-    title: item.title,
-    description: item.description,
-    datasetName: item.datasetName,
-    catalogName: item.catalogName,
-    location: item.location ? { lat: item.location.lat, lng: item.location.lon } : undefined,
-    resources: item.resources?.map(r => ({
-      id: r.id,
-      name: r.name,
-      url: r.url,
-      format: r.format,
-    })),
-  }));
+  return data.search.searchResults.map(item => {
+    // metadataから緯度経度を取得
+    const lat = item.metadata?.['NGI:latitude']
+      ? parseFloat(item.metadata['NGI:latitude'])
+      : undefined;
+    const lng = item.metadata?.['NGI:longitude']
+      ? parseFloat(item.metadata['NGI:longitude'])
+      : undefined;
+
+    // XMLリンクのドメイン置き換え
+    let xmlUrl = item.metadata?.['NGI:link_boring_xml'];
+    if (xmlUrl) {
+      xmlUrl = xmlUrl.replace('publicweb.ngic.or.jp', 'www.kunijiban.pwri.go.jp');
+    }
+
+    return {
+      id: item.id,
+      title: item.title,
+      metadata: {
+        ...item.metadata,
+        'NGI:link_boring_xml': xmlUrl,  // 置き換え後のURLを格納
+      },
+      location: lat && lng ? { lat, lng } : undefined,
+    };
+  });
 }
 
 // キーワード検索
@@ -214,16 +229,7 @@ export async function searchByKeyword(
       searchResults: Array<{
         id: string;
         title: string;
-        description?: string;
-        datasetName?: string;
-        catalogName?: string;
-        location?: { lat: number; lon: number };
-        resources?: Array<{
-          id: string;
-          name: string;
-          url: string;
-          format: string;
-        }>;
+        metadata?: Record<string, string>;
       }>;
     };
   }
@@ -234,88 +240,85 @@ export async function searchByKeyword(
     apiKey
   );
 
-  return data.search.searchResults.map(item => ({
-    id: item.id,
-    title: item.title,
-    description: item.description,
-    datasetName: item.datasetName,
-    catalogName: item.catalogName,
-    location: item.location ? { lat: item.location.lat, lng: item.location.lon } : undefined,
-    resources: item.resources?.map(r => ({
-      id: r.id,
-      name: r.name,
-      url: r.url,
-      format: r.format,
-    })),
-  }));
+  return data.search.searchResults.map(item => {
+    // metadataから緯度経度を取得
+    const lat = item.metadata?.['NGI:latitude']
+      ? parseFloat(item.metadata['NGI:latitude'])
+      : undefined;
+    const lng = item.metadata?.['NGI:longitude']
+      ? parseFloat(item.metadata['NGI:longitude'])
+      : undefined;
+
+    // XMLリンクのドメイン置き換え
+    let xmlUrl = item.metadata?.['NGI:link_boring_xml'];
+    if (xmlUrl) {
+      xmlUrl = xmlUrl.replace('publicweb.ngic.or.jp', 'www.kunijiban.pwri.go.jp');
+    }
+
+    return {
+      id: item.id,
+      title: item.title,
+      metadata: {
+        ...item.metadata,
+        'NGI:link_boring_xml': xmlUrl,  // 置き換え後のURLを格納
+      },
+      location: lat && lng ? { lat, lng } : undefined,
+    };
+  });
 }
 
-// XMLパーサー: ボーリングデータを解析
+// XMLパーサー: ボーリングデータを解析（DTD version 4.00形式対応）
 export function parseBoringXML(xmlString: string, id: string, location: GeoLocation): BoringData {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
 
-  // 基本情報の取得
-  const getTextContent = (tagName: string): string | undefined => {
-    const element = xmlDoc.getElementsByTagName(tagName)[0];
+  // パースエラーチェック
+  const parserError = xmlDoc.querySelector('parsererror');
+  if (parserError) {
+    console.error('XML parse error:', parserError.textContent);
+    throw new Error('XMLの解析に失敗しました');
+  }
+
+  // ヘルパー関数: テキスト取得
+  const getText = (tagName: string, parent?: Element): string | undefined => {
+    const element = parent
+      ? parent.getElementsByTagName(tagName)[0]
+      : xmlDoc.getElementsByTagName(tagName)[0];
     return element?.textContent?.trim() || undefined;
   };
 
-  const getNumberContent = (tagName: string): number | undefined => {
-    const text = getTextContent(tagName);
+  // ヘルパー関数: 数値取得
+  const getNumber = (tagName: string, parent?: Element): number | undefined => {
+    const text = getText(tagName, parent);
     return text ? parseFloat(text) : undefined;
   };
 
-  // タイトル取得
-  const title = getTextContent('調査名') ||
-                getTextContent('件名') ||
-                getTextContent('工事名') ||
-                `ボーリングデータ ${id}`;
+  // 基本情報の取得（標題情報セクション）
+  const title = getText('調査名') || getText('工事名') || `ボーリング ${id}`;
+  const depth = getNumber('総掘進長') || getNumber('孔底深度') || 0;
+  const surveyEnd = getText('調査期間_終了年月日');
+  const surveyStart = getText('調査期間_開始年月日');
+  const date = surveyEnd || surveyStart;
+  const organization = getText('調査会社_名称') || getText('発注機関_名称');
 
-  // 掘削深度
-  const depth = getNumberContent('掘削深度') ||
-                getNumberContent('最大深度') ||
-                getNumberContent('孔底深度') ||
-                0;
-
-  // 調査日
-  const date = getTextContent('調査開始日') ||
-               getTextContent('調査年月日') ||
-               getTextContent('調査日');
-
-  // 調査機関
-  const organization = getTextContent('調査者') ||
-                       getTextContent('調査機関') ||
-                       getTextContent('会社名');
-
-  // 地下水位
-  const waterLevel = getNumberContent('地下水位') ||
-                     getNumberContent('初期水位');
-
-  // 土質層データの取得
+  // 土質層データの取得（DTD 4.00形式）
   const layers: SoilLayer[] = [];
-  const layerElements = xmlDoc.getElementsByTagName('地層');
+  const layerElements = xmlDoc.getElementsByTagName('工学的地盤分類による地層');
 
   for (let i = 0; i < layerElements.length; i++) {
     const layer = layerElements[i];
-    const getLayerText = (tagName: string): string | undefined => {
-      const element = layer.getElementsByTagName(tagName)[0];
-      return element?.textContent?.trim() || undefined;
-    };
-    const getLayerNumber = (tagName: string): number | undefined => {
-      const text = getLayerText(tagName);
-      return text ? parseFloat(text) : undefined;
-    };
 
-    const topDepth = getLayerNumber('上端深度') || getLayerNumber('深度自') || 0;
-    const bottomDepth = getLayerNumber('下端深度') || getLayerNumber('深度至') || 0;
-    const soilType = getLayerText('土質区分') || getLayerText('地質区分') || '';
-    const soilName = getLayerText('土質名') || getLayerText('地質名') || soilType;
+    const bottomDepth = getNumber('工学的地盤分類による地層_下限深度', layer) || 0;
+    const soilName = getText('工学的地盤分類による地層_工学的地盤分類', layer) || '';
+    const soilSymbol = getText('工学的地盤分類による地層_工学的地盤分類記号', layer) || '';
 
-    // 土質から色を決定
+    // 前の層の下端を上端とする（最初は0）
+    const topDepth = i > 0 ? layers[i - 1].bottomDepth : 0;
+
+    // 土質記号から色を判定
     let color = SOIL_COLORS['デフォルト'];
     for (const [key, c] of Object.entries(SOIL_COLORS)) {
-      if (soilName.includes(key) || soilType.includes(key)) {
+      if (soilName.includes(key) || soilSymbol.includes(key)) {
         color = c;
         break;
       }
@@ -325,37 +328,47 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
       id: `layer-${i}`,
       topDepth,
       bottomDepth,
-      soilType,
+      soilType: soilSymbol,
       soilName,
-      description: getLayerText('土質説明') || getLayerText('備考'),
       color,
-      nValue: getLayerNumber('N値'),
     });
   }
 
-  // 標準貫入試験データの取得
+  // 標準貫入試験データの取得（DTD 4.00形式）
   const sptTests: SPTData[] = [];
   const sptElements = xmlDoc.getElementsByTagName('標準貫入試験');
 
   for (let i = 0; i < sptElements.length; i++) {
     const spt = sptElements[i];
-    const getSptNumber = (tagName: string): number => {
-      const element = spt.getElementsByTagName(tagName)[0];
-      return element?.textContent ? parseFloat(element.textContent) : 0;
-    };
 
-    const testDepth = getSptNumber('試験深度') || getSptNumber('深度');
-    const nValue = getSptNumber('N値') || getSptNumber('標準貫入試験_合計打撃回数');
-    const penetration = getSptNumber('貫入量');
-    const blowCount = getSptNumber('打撃回数') || nValue;
+    const testDepth = getNumber('標準貫入試験_開始深度', spt) || 0;
+    const totalBlowCount = getNumber('標準貫入試験_合計打撃回数', spt) || 0;
+    const totalPenetration = getNumber('標準貫入試験_合計貫入量', spt) || 30;
 
-    if (testDepth > 0) {
+    if (testDepth > 0 && totalBlowCount > 0) {
       sptTests.push({
         depth: testDepth,
-        nValue,
-        penetration,
-        blowCount,
+        nValue: totalBlowCount,
+        penetration: totalPenetration,
+        blowCount: totalBlowCount,
       });
+    }
+  }
+
+  // 地下水位の取得（複数のタグ形式に対応）
+  let waterLevel: number | undefined;
+
+  // 形式1: <孔内水位> タグ
+  const waterLevelElement1 = xmlDoc.getElementsByTagName('孔内水位')[0];
+  if (waterLevelElement1) {
+    waterLevel = getNumber('孔内水位_孔内水位', waterLevelElement1);
+  }
+
+  // 形式2: <孔内水位記録> タグ（フォールバック）
+  if (waterLevel === undefined) {
+    const waterLevelElement2 = xmlDoc.getElementsByTagName('孔内水位記録')[0];
+    if (waterLevelElement2) {
+      waterLevel = getNumber('孔内水位記録_孔内水位', waterLevelElement2);
     }
   }
 
@@ -367,7 +380,7 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
     date,
     organization,
     layers,
-    standardPenetrationTests: sptTests,
+    standardPenetrationTests: sptTests.length > 0 ? sptTests : undefined,
     waterLevel,
   };
 }
@@ -378,12 +391,28 @@ export async function fetchAndParseBoringData(
   id: string,
   location: GeoLocation
 ): Promise<BoringData> {
-  const response = await fetch(xmlUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch XML: ${response.status}`);
+  try {
+    // 開発環境ではプロキシ経由でフェッチ
+    const fetchUrl = import.meta.env.DEV
+      ? xmlUrl.replace('https://www.kunijiban.pwri.go.jp', '/api/kunijiban')
+      : xmlUrl;
+
+    const response = await fetch(fetchUrl);
+
+    if (!response.ok) {
+      throw new Error(`XMLファイルの取得に失敗: ${response.status} ${response.statusText}`);
+    }
+
+    // Shift_JIS エンコーディングで読み込み
+    const arrayBuffer = await response.arrayBuffer();
+    const decoder = new TextDecoder('shift-jis');
+    const xmlString = decoder.decode(arrayBuffer);
+
+    return parseBoringXML(xmlString, id, location);
+  } catch (error) {
+    console.error('XML fetch error:', error);
+    throw error;
   }
-  const xmlString = await response.text();
-  return parseBoringXML(xmlString, id, location);
 }
 
 // デモ用のモックデータ生成

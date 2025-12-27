@@ -8,6 +8,7 @@ import {
   searchByLocation,
   generateMockSearchResults,
   generateMockBoringData,
+  fetchAndParseBoringData,
 } from './api';
 import type {
   GeoLocation,
@@ -48,7 +49,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
   const handleMapClick = useCallback((location: GeoLocation) => {
     setSearchArea({
       center: location,
-      radius: 500,
+      radius: 1000,
     });
     setError(null);
   }, []);
@@ -69,7 +70,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         setMapCenter(location);
         setSearchArea({
           center: location,
-          radius: 500,
+          radius: 1000,
         });
         onSuccess?.(`「${address}」に移動しました`);
       } else {
@@ -79,6 +80,11 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
       onError?.('住所検索に失敗しました');
     }
   }, [onSuccess, onError]);
+
+  // 検索半径更新ハンドラー
+  const handleRadiusChange = useCallback((radius: number) => {
+    setSearchArea(prev => prev ? { ...prev, radius } : null);
+  }, []);
 
   // 検索実行ハンドラー
   const handleSearch = useCallback(async (area: SearchArea, keyword?: string) => {
@@ -128,14 +134,20 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         const mockData = generateMockBoringData(result.id, result.location, result.title);
         setBoringData(mockData);
       } else {
-        // 本番モード: XMLリソースがあれば解析
-        const xmlResource = result.resources?.find(r => r.format.toUpperCase() === 'XML');
-        if (xmlResource && result.location) {
-          // XMLを取得して解析（CORSの問題があるため実際には直接取得できない場合がある）
-          // 現時点ではモックデータを返す
-          const mockData = generateMockBoringData(result.id, result.location, result.title);
-          setBoringData(mockData);
+        // 本番モード: metadataからXMLリンクを取得
+        const xmlUrl = result.metadata?.['NGI:link_boring_xml'];
+
+        if (xmlUrl && result.location) {
+          try {
+            const data = await fetchAndParseBoringData(xmlUrl, result.id, result.location);
+            setBoringData(data);
+          } catch (error) {
+            console.error('Failed to fetch boring data:', error);
+            onError?.('ボーリングデータの取得に失敗しました');
+            setBoringData(null);
+          }
         } else {
+          onError?.('XMLリンクが見つかりません');
           setBoringData(null);
         }
       }
@@ -145,7 +157,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
     } finally {
       setLoadingDetail(false);
     }
-  }, [useDemoMode]);
+  }, [useDemoMode, onError]);
 
   // 詳細パネルを閉じる
   const handleCloseDetail = useCallback(() => {
@@ -167,34 +179,36 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             </p>
           </div>
 
-          {/* デモモード切り替え */}
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-              <input
-                type="checkbox"
-                checked={useDemoMode}
-                onChange={(e) => setUseDemoMode(e.target.checked)}
-                className="rounded border-gray-300 text-blue-500 focus:ring-blue-500"
-              />
-              デモモード
-            </label>
-            {useDemoMode ? (
-              <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs text-yellow-700 dark:text-yellow-300">
-                <Info className="w-3 h-3" />
-                モックデータを使用中
-              </div>
-            ) : !MLIT_API_KEY ? (
-              <div className="flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded text-xs text-red-700 dark:text-red-300">
-                <AlertCircle className="w-3 h-3" />
-                APIキー未設定
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
-                <Info className="w-3 h-3" />
-                本番API接続中
-              </div>
-            )}
-          </div>
+          {/* デモモード切り替え（開発環境のみ表示） */}
+          {import.meta.env.DEV && (
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <input
+                  type="checkbox"
+                  checked={useDemoMode}
+                  onChange={(e) => setUseDemoMode(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                />
+                デモモード
+              </label>
+              {useDemoMode ? (
+                <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs text-yellow-700 dark:text-yellow-300">
+                  <Info className="w-3 h-3" />
+                  モックデータを使用中
+                </div>
+              ) : !MLIT_API_KEY ? (
+                <div className="flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded text-xs text-red-700 dark:text-red-300">
+                  <AlertCircle className="w-3 h-3" />
+                  APIキー未設定
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">
+                  <Info className="w-3 h-3" />
+                  本番API接続中
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -208,6 +222,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
               searchStatus={searchStatus}
               onSearch={handleSearch}
               onLocationSearch={handleLocationSearch}
+              onRadiusChange={handleRadiusChange}
             />
 
             {error && (

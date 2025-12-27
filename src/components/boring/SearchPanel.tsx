@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, MapPin, Loader2, Settings } from 'lucide-react';
+import { Search, MapPin, Loader2 } from 'lucide-react';
 import type { SearchArea, SearchStatus } from './types';
 
 interface SearchPanelProps {
@@ -7,6 +7,7 @@ interface SearchPanelProps {
   searchStatus: SearchStatus;
   onSearch: (area: SearchArea, keyword?: string) => void;
   onLocationSearch: (address: string) => void;
+  onRadiusChange?: (radius: number) => void;
 }
 
 const SearchPanel: React.FC<SearchPanelProps> = ({
@@ -14,16 +15,20 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
   searchStatus,
   onSearch,
   onLocationSearch,
+  onRadiusChange,
 }) => {
-  const [keyword, setKeyword] = useState('ボーリング');
   const [address, setAddress] = useState('');
-  const [radius, setRadius] = useState(500);
-  const [showSettings, setShowSettings] = useState(false);
+  const [radius, setRadius] = useState(1000);
 
   const handleSearch = () => {
     if (searchArea) {
-      onSearch({ ...searchArea, radius }, keyword || undefined);
+      onSearch({ ...searchArea, radius });
     }
+  };
+
+  const handleRadiusChange = (newRadius: number) => {
+    setRadius(newRadius);
+    onRadiusChange?.(newRadius);
   };
 
   const handleAddressSearch = (e: React.FormEvent) => {
@@ -76,52 +81,25 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
         </p>
       </div>
 
-      {/* 検索設定 */}
-      <button
-        onClick={() => setShowSettings(!showSettings)}
-        className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-      >
-        <Settings className="w-4 h-4" />
-        検索設定 {showSettings ? '▼' : '▶'}
-      </button>
-
-      {showSettings && (
-        <div className="space-y-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-          {/* キーワード */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              キーワード
-            </label>
-            <input
-              type="text"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="ボーリング"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          {/* 検索半径 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              検索半径: {radius}m
-            </label>
-            <input
-              type="range"
-              min={100}
-              max={5000}
-              step={100}
-              value={radius}
-              onChange={(e) => setRadius(Number(e.target.value))}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-              <span>100m</span>
-              <span>5km</span>
-            </div>
-          </div>
+      {/* 検索半径 */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          検索半径: {radius}m ({(radius / 1000).toFixed(1)}km)
+        </label>
+        <input
+          type="range"
+          min={1000}
+          max={5000}
+          step={100}
+          value={radius}
+          onChange={(e) => handleRadiusChange(Number(e.target.value))}
+          className="w-full"
+        />
+        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <span>1km</span>
+          <span>5km</span>
         </div>
-      )}
+      </div>
 
       {/* 検索ボタン */}
       <button
@@ -141,15 +119,6 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
           </>
         )}
       </button>
-
-      {/* 選択中の地点 */}
-      {searchArea && (
-        <div className="text-sm text-gray-600 dark:text-gray-400 p-2 bg-gray-100 dark:bg-gray-700 rounded">
-          <p className="font-medium text-gray-900 dark:text-gray-100">選択中の地点</p>
-          <p>緯度: {searchArea.center.lat.toFixed(6)}</p>
-          <p>経度: {searchArea.center.lng.toFixed(6)}</p>
-        </div>
-      )}
     </div>
   );
 };
