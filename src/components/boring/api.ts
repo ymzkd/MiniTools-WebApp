@@ -383,10 +383,8 @@ export async function fetchAndParseBoringData(
   location: GeoLocation
 ): Promise<BoringData> {
   try {
-    // 開発環境ではプロキシ経由でフェッチ
-    const fetchUrl = import.meta.env.DEV
-      ? xmlUrl.replace('https://www.kunijiban.pwri.go.jp', '/api/kunijiban')
-      : xmlUrl;
+    // CORS問題を回避するため、サーバーレス関数経由でXMLを取得
+    const fetchUrl = `/api/kunijiban?url=${encodeURIComponent(xmlUrl)}`;
 
     const response = await fetch(fetchUrl);
 
