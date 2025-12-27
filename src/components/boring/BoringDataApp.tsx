@@ -41,15 +41,17 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
   // デモモード（開発環境でのみ切り替え可能）
   const [useDemoMode, setUseDemoMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 検索半径（SearchPanelと共有）
+  const [searchRadius, setSearchRadius] = useState(1000);
 
   // 地図クリックハンドラー
   const handleMapClick = useCallback((location: GeoLocation) => {
     setSearchArea({
       center: location,
-      radius: 1000,
+      radius: searchRadius, // 現在の半径を保持
     });
     setError(null);
-  }, []);
+  }, [searchRadius]);
 
   // 住所検索ハンドラー（Nominatim APIを使用）
   const handleLocationSearch = useCallback(async (address: string) => {
@@ -67,7 +69,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         setMapCenter(location);
         setSearchArea({
           center: location,
-          radius: 1000,
+          radius: searchRadius, // 現在の半径を保持
         });
         onSuccess?.(`「${address}」に移動しました`);
       } else {
@@ -80,6 +82,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
 
   // 検索半径更新ハンドラー
   const handleRadiusChange = useCallback((radius: number) => {
+    setSearchRadius(radius);
     setSearchArea(prev => prev ? { ...prev, radius } : null);
   }, []);
 
@@ -212,6 +215,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             <SearchPanel
               searchArea={searchArea}
               searchStatus={searchStatus}
+              searchRadius={searchRadius}
               onSearch={handleSearch}
               onLocationSearch={handleLocationSearch}
               onRadiusChange={handleRadiusChange}

@@ -5,6 +5,7 @@ import type { SearchArea, SearchStatus } from './types';
 interface SearchPanelProps {
   searchArea: SearchArea | null;
   searchStatus: SearchStatus;
+  searchRadius: number;
   onSearch: (area: SearchArea, keyword?: string) => void;
   onLocationSearch: (address: string) => void;
   onRadiusChange?: (radius: number) => void;
@@ -13,21 +14,20 @@ interface SearchPanelProps {
 const SearchPanel: React.FC<SearchPanelProps> = ({
   searchArea,
   searchStatus,
+  searchRadius,
   onSearch,
   onLocationSearch,
   onRadiusChange,
 }) => {
   const [address, setAddress] = useState('');
-  const [radius, setRadius] = useState(1000);
 
   const handleSearch = () => {
     if (searchArea) {
-      onSearch({ ...searchArea, radius });
+      onSearch({ ...searchArea, radius: searchRadius });
     }
   };
 
   const handleRadiusChange = (newRadius: number) => {
-    setRadius(newRadius);
     onRadiusChange?.(newRadius);
   };
 
@@ -84,14 +84,14 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
       {/* 検索半径 */}
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          検索半径: {radius}m ({(radius / 1000).toFixed(1)}km)
+          検索半径: {searchRadius}m ({(searchRadius / 1000).toFixed(1)}km)
         </label>
         <input
           type="range"
           min={1000}
           max={5000}
           step={100}
-          value={radius}
+          value={searchRadius}
           onChange={(e) => handleRadiusChange(Number(e.target.value))}
           className="w-full"
         />

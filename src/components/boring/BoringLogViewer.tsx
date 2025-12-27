@@ -282,7 +282,7 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                   {data.standardPenetrationTests?.map((test, i) => (
                     <div
                       key={i}
-                      className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full bg-red-500 cursor-pointer group pointer-events-auto"
+                      className="absolute w-2 h-2 -ml-1 -mt-1 rounded-full bg-red-500 cursor-pointer group pointer-events-auto"
                       style={{
                         left: `${(Math.max(test.nValue, 0) / maxNValue) * 100}%`,
                         top: `${test.depth * 15 + 30}px`,
