@@ -11,10 +11,9 @@ import type {
 import { SOIL_COLORS } from './types';
 
 // API設定
-// 開発環境ではプロキシ経由、本番環境では直接APIを呼び出す
-const MLIT_API_ENDPOINT = import.meta.env.DEV
-  ? '/api/mlit/'
-  : 'https://www.mlit-data.jp/api/v1/';
+// Vercelサーバーレス関数経由でAPIを呼び出す
+// APIキーはサーバー側で管理され、クライアントには露呈しない
+const MLIT_API_ENDPOINT = '/api/mlit';
 
 // GraphQL クエリ: 位置情報による検索
 const SEARCH_BY_LOCATION_QUERY = `
@@ -101,18 +100,14 @@ const SEARCH_BY_KEYWORD_QUERY = `
 // `;
 
 // API呼び出しのラッパー
+// サーバーレス関数経由でAPIを呼び出すため、APIキーは不要
 async function callMLITAPI<T>(
   query: string,
-  variables: Record<string, unknown>,
-  apiKey?: string
+  variables: Record<string, unknown>
 ): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-
-  if (apiKey) {
-    headers['apikey'] = apiKey;
-  }
 
   try {
     const response = await fetch(MLIT_API_ENDPOINT, {
@@ -154,8 +149,7 @@ async function callMLITAPI<T>(
 export async function searchByLocation(
   area: SearchArea,
   keyword?: string,
-  size: number = 50,
-  apiKey?: string
+  size: number = 50
 ): Promise<MLITSearchResult[]> {
   // メートルを度に変換（概算: 1度 ≈ 111.32km）
   const rangeDeg = area.radius / 111320;
@@ -181,8 +175,7 @@ export async function searchByLocation(
 
   const data = await callMLITAPI<SearchResponse>(
     SEARCH_BY_LOCATION_QUERY,
-    variables,
-    apiKey
+    variables
   );
 
   return data.search.searchResults.map(item => {
@@ -215,8 +208,7 @@ export async function searchByLocation(
 // キーワード検索
 export async function searchByKeyword(
   keyword: string,
-  size: number = 50,
-  apiKey?: string
+  size: number = 50
 ): Promise<MLITSearchResult[]> {
   const variables = {
     term: keyword,
@@ -236,8 +228,7 @@ export async function searchByKeyword(
 
   const data = await callMLITAPI<SearchResponse>(
     SEARCH_BY_KEYWORD_QUERY,
-    variables,
-    apiKey
+    variables
   );
 
   return data.search.searchResults.map(item => {

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Info, AlertCircle } from 'lucide-react';
+import { Info } from 'lucide-react';
 import MapView from './MapView';
 import SearchPanel from './SearchPanel';
 import ResultsList from './ResultsList';
@@ -24,9 +24,6 @@ const DEFAULT_CENTER: GeoLocation = {
   lng: 139.7671,
 };
 
-// 環境変数からAPIキーを取得
-const MLIT_API_KEY = import.meta.env.VITE_MLIT_API_KEY as string | undefined;
-
 interface BoringDataAppProps {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
@@ -41,8 +38,8 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
   const [selectedResult, setSelectedResult] = useState<MLITSearchResult | null>(null);
   const [boringData, setBoringData] = useState<BoringData | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  // APIキーがない場合はデモモードをデフォルトに
-  const [useDemoMode, setUseDemoMode] = useState(!MLIT_API_KEY);
+  // デモモード（開発環境でのみ切り替え可能）
+  const [useDemoMode, setUseDemoMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 地図クリックハンドラー
@@ -102,8 +99,8 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         await new Promise(resolve => setTimeout(resolve, 500)); // 擬似的な遅延
         results = generateMockSearchResults(area.center, 8);
       } else {
-        // 本番モード: MLIT API を使用
-        results = await searchByLocation(area, keyword, 50, MLIT_API_KEY);
+        // 本番モード: サーバーレス関数経由でMLIT APIを使用
+        results = await searchByLocation(area, keyword, 50);
       }
 
       setSearchResults(results);
@@ -195,11 +192,6 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
                 <div className="flex items-center gap-1 px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs text-yellow-700 dark:text-yellow-300">
                   <Info className="w-3 h-3" />
                   モックデータを使用中
-                </div>
-              ) : !MLIT_API_KEY ? (
-                <div className="flex items-center gap-1 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded text-xs text-red-700 dark:text-red-300">
-                  <AlertCircle className="w-3 h-3" />
-                  APIキー未設定
                 </div>
               ) : (
                 <div className="flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded text-xs text-green-700 dark:text-green-300">

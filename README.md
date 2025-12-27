@@ -58,14 +58,43 @@ Boring Data検索ツールを使用するには、国土交通データプラッ
 1. **アカウント作成**: [国土交通データプラットフォーム](https://www.mlit-data.jp/)でユーザー登録を行います。
 2. **APIキーの発行**: ログイン後、マイページの「アプリケーション管理」から新しいアプリケーションを登録することで、APIキーが発行されます。
 
-#### APIキーの設定
+#### ローカル開発環境での設定
 プロジェクトルートに `.env` ファイルを作成し、以下のように設定します：
 
 ```bash
-VITE_MLIT_API_KEY=your_api_key_here
+MLIT_API_KEY=your_api_key_here
 ```
 
-**注意**: APIキーが設定されていない場合、デモモード（モックデータ）で動作確認が可能です。開発環境では画面上部でデモモードと本番モードを切り替えることができます。
+**セキュリティ**: APIキーはVercelサーバーレス関数内でのみ使用され、クライアント側には露呈しません。
+
+#### Vercelでの環境変数設定
+
+本番環境（Vercel）では、以下の手順でAPIキーを設定します：
+
+1. **Vercelダッシュボードから設定**（推奨）
+   - [Vercel Dashboard](https://vercel.com/dashboard)にログイン
+   - 対象のプロジェクトを選択
+   - `Settings` → `Environment Variables` に移動
+   - 以下の情報を入力：
+     - **Name**: `MLIT_API_KEY`
+     - **Value**: 取得したAPIキー
+     - **Environment**: `Production`, `Preview`, `Development` を全て選択
+   - `Save` をクリック後、`Deployments` → `Redeploy` を実行
+
+2. **Vercel CLIから設定**
+   ```bash
+   # Vercel CLIをインストール（未インストールの場合）
+   npm i -g vercel
+
+   # 環境変数を追加
+   vercel env add MLIT_API_KEY
+
+   # プロンプトに従ってAPIキーを入力
+   # 再デプロイ
+   vercel --prod
+   ```
+
+**注意**: デモモード（モックデータ）も利用可能です。開発環境では画面上部でデモモードと本番モードを切り替えることができます。
 
 ### インストール
 ```bash
