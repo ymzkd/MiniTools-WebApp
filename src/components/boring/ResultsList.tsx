@@ -108,6 +108,13 @@ const ResultsList: React.FC<ResultsListProps> = ({
                     <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
                       <MapPin className="w-3 h-3 inline mr-1" />
                       {result.location.lat.toFixed(5)}, {result.location.lng.toFixed(5)}
+                      {result.distance !== undefined && (
+                        <span className="ml-2 text-blue-600 dark:text-blue-400 font-medium">
+                          ({result.distance < 1000
+                            ? `${Math.round(result.distance)}m`
+                            : `${(result.distance / 1000).toFixed(2)}km`})
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>
