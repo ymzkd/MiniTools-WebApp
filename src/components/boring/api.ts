@@ -148,7 +148,7 @@ async function callMLITAPI<T>(
 // 位置情報による検索
 export async function searchByLocation(
   area: SearchArea,
-  keyword?: string,
+  _keyword?: string,
   size: number = 50
 ): Promise<MLITSearchResult[]> {
   // メートルを度に変換（概算: 1度 ≈ 111.32km）

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Info } from 'lucide-react';
+import { Info, AlertCircle } from 'lucide-react';
 import MapView from './MapView';
 import SearchPanel from './SearchPanel';
 import ResultsList from './ResultsList';
