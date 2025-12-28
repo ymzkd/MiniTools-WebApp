@@ -1,5 +1,8 @@
 // ボーリングデータ関連の型定義
 
+// DTDバージョン
+export type DTDVersion = '2.10' | '3.00' | '4.00';
+
 // 地点座標
 export interface GeoLocation {
   lat: number;
@@ -32,7 +35,6 @@ export interface MLITSearchResult {
     [key: string]: string | undefined;  // 他のメタデータフィールド
   };
   location?: GeoLocation;
-  distance?: number; // 検索中心地点からの距離（メートル）
   // 以下は後方互換性のため残すがoptional
   description?: string;
   datasetName?: string;
@@ -63,6 +65,7 @@ export interface BoringData {
   waterLevel?: number; // 地下水位
   pdfUrl?: string; // PDF柱状図のURL
   xmlUrl?: string; // XMLデータのURL
+  dtdVersion?: DTDVersion; // DTDバージョン
 }
 
 // 土質層データ

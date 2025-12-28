@@ -177,7 +177,7 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
               ボーリング柱状図
             </div>
             <div className="p-4 max-h-[600px] overflow-auto">
-              <div className="flex min-w-[500px] relative" style={{ height: `${depthScale * 15 + 60}px` }}>
+              <div className="flex min-w-[400px] relative" style={{ height: `${depthScale * 15 + 60}px` }}>
                 {/* 深度目盛り線（全体を横断） */}
                 {depthTicks.map((depth) => (
                   <div

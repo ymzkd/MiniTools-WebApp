@@ -9,19 +9,7 @@ import type {
   SPTData,
 } from './types';
 import { SOIL_COLORS } from './types';
-
-// ハーバーサイン公式による2点間の距離計算（メートル）
-function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000; // 地球の半径（メートル）
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+import { detectDTDVersion, getParserForVersion, getText, getNumber } from './parsers';
 
 // API設定
 // Vercelサーバーレス関数経由でAPIを呼び出す
@@ -191,7 +179,7 @@ export async function searchByLocation(
     variables
   );
 
-  const results = data.search.searchResults.map(item => {
+  return data.search.searchResults.map(item => {
     // metadataから緯度経度を取得
     const lat = item.metadata?.['NGI:latitude']
       ? parseFloat(item.metadata['NGI:latitude'])
@@ -206,11 +194,6 @@ export async function searchByLocation(
       xmlUrl = xmlUrl.replace('publicweb.ngic.or.jp', 'www.kunijiban.pwri.go.jp');
     }
 
-    // 検索中心地点からの距離を計算
-    const distance = lat && lng
-      ? calculateDistance(area.center.lat, area.center.lng, lat, lng)
-      : undefined;
-
     return {
       id: item.id,
       title: item.title,
@@ -219,16 +202,7 @@ export async function searchByLocation(
         'NGI:link_boring_xml': xmlUrl,  // 置き換え後のURLを格納
       },
       location: lat && lng ? { lat, lng } : undefined,
-      distance,
     };
-  });
-
-  // 距離順でソート（距離が近い順、距離が不明なものは最後）
-  return results.sort((a, b) => {
-    if (a.distance === undefined && b.distance === undefined) return 0;
-    if (a.distance === undefined) return 1;
-    if (b.distance === undefined) return -1;
-    return a.distance - b.distance;
   });
 }
 
@@ -285,7 +259,7 @@ export async function searchByKeyword(
   });
 }
 
-// XMLパーサー: ボーリングデータを解析（DTD version 4.00形式対応）
+// XMLパーサー: ボーリングデータを解析（DTD version 2.10/3.00/4.00対応）
 export function parseBoringXML(xmlString: string, id: string, location: GeoLocation): BoringData {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
@@ -297,62 +271,28 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
     throw new Error('XMLの解析に失敗しました');
   }
 
-  // ヘルパー関数: テキスト取得
-  const getText = (tagName: string, parent?: Element): string | undefined => {
-    const element = parent
-      ? parent.getElementsByTagName(tagName)[0]
-      : xmlDoc.getElementsByTagName(tagName)[0];
-    return element?.textContent?.trim() || undefined;
-  };
-
-  // ヘルパー関数: 数値取得
-  const getNumber = (tagName: string, parent?: Element): number | undefined => {
-    const text = getText(tagName, parent);
-    return text ? parseFloat(text) : undefined;
-  };
-
-  // 基本情報の取得（標題情報セクション）
-  const title = getText('調査名') || getText('工事名') || `ボーリング ${id}`;
-  const depth = getNumber('総掘進長') || getNumber('孔底深度') || 0;
-  const surveyEnd = getText('調査期間_終了年月日');
-  const surveyStart = getText('調査期間_開始年月日');
-  const date = surveyEnd || surveyStart;
-  const organization = getText('調査会社_名称') || getText('発注機関_名称');
-
-  // 土質層データの取得（DTD 4.00形式）
-  const layers: SoilLayer[] = [];
-  const layerElements = xmlDoc.getElementsByTagName('工学的地盤分類による地層');
-
-  for (let i = 0; i < layerElements.length; i++) {
-    const layer = layerElements[i];
-
-    const bottomDepth = getNumber('工学的地盤分類による地層_下限深度', layer) || 0;
-    const soilName = getText('工学的地盤分類による地層_工学的地盤分類', layer) || '';
-    const soilSymbol = getText('工学的地盤分類による地層_工学的地盤分類記号', layer) || '';
-
-    // 前の層の下端を上端とする（最初は0）
-    const topDepth = i > 0 ? layers[i - 1].bottomDepth : 0;
-
-    // 土質記号から色を判定
-    let color = SOIL_COLORS['デフォルト'];
-    for (const [key, c] of Object.entries(SOIL_COLORS)) {
-      if (soilName.includes(key) || soilSymbol.includes(key)) {
-        color = c;
-        break;
-      }
-    }
-
-    layers.push({
-      id: `layer-${i}`,
-      topDepth,
-      bottomDepth,
-      soilType: soilSymbol,
-      soilName,
-      color,
-    });
+  // DTDバージョン検出
+  const dtdVersion = detectDTDVersion(xmlDoc);
+  if (!dtdVersion) {
+    console.error('Unsupported or missing DTD version');
+    throw new Error('サポートされていないDTDバージョンです');
   }
 
-  // 標準貫入試験データの取得（DTD 4.00形式）
+  // バージョンに応じたパーサーを取得
+  const soilLayerParser = getParserForVersion(dtdVersion);
+
+  // 基本情報の取得（標題情報セクション - 全バージョン共通）
+  const title = getText('調査名', undefined, xmlDoc) || getText('工事名', undefined, xmlDoc) || `ボーリング ${id}`;
+  const depth = getNumber('総掘進長', undefined, xmlDoc) || getNumber('孔底深度', undefined, xmlDoc) || 0;
+  const surveyEnd = getText('調査期間_終了年月日', undefined, xmlDoc);
+  const surveyStart = getText('調査期間_開始年月日', undefined, xmlDoc);
+  const date = surveyEnd || surveyStart;
+  const organization = getText('調査会社_名称', undefined, xmlDoc) || getText('発注機関_名称', undefined, xmlDoc);
+
+  // 土質層データの取得（バージョン別パーサーを使用）
+  const layers = soilLayerParser.parseSoilLayers(xmlDoc);
+
+  // 標準貫入試験データの取得（全バージョン共通）
   const sptTests: SPTData[] = [];
   const sptElements = xmlDoc.getElementsByTagName('標準貫入試験');
 
@@ -373,7 +313,7 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
     }
   }
 
-  // 地下水位の取得（複数のタグ形式に対応）
+  // 地下水位の取得（複数のタグ形式に対応 - 全バージョン共通）
   let waterLevel: number | undefined;
 
   // 形式1: <孔内水位> タグ
@@ -400,6 +340,7 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
     layers,
     standardPenetrationTests: sptTests.length > 0 ? sptTests : undefined,
     waterLevel,
+    dtdVersion,
   };
 }
 
@@ -482,13 +423,6 @@ export function generateMockSearchResults(
     // 中心から500m以内のランダムな位置を生成
     const latOffset = (Math.random() - 0.5) * 0.01;
     const lngOffset = (Math.random() - 0.5) * 0.01;
-    const location = {
-      lat: center.lat + latOffset,
-      lng: center.lng + lngOffset,
-    };
-
-    // 距離を計算
-    const distance = calculateDistance(center.lat, center.lng, location.lat, location.lng);
 
     results.push({
       id: `boring-${i + 1}`,
@@ -496,8 +430,10 @@ export function generateMockSearchResults(
       description: `調査地点 ${i + 1}`,
       datasetName: 'KuniJiban',
       catalogName: '国土地盤情報',
-      location,
-      distance,
+      location: {
+        lat: center.lat + latOffset,
+        lng: center.lng + lngOffset,
+      },
       resources: [
         {
           id: `xml-${i + 1}`,
@@ -515,11 +451,5 @@ export function generateMockSearchResults(
     });
   }
 
-  // 距離順でソート（距離が近い順）
-  return results.sort((a, b) => {
-    if (a.distance === undefined && b.distance === undefined) return 0;
-    if (a.distance === undefined) return 1;
-    if (b.distance === undefined) return -1;
-    return a.distance - b.distance;
-  });
+  return results;
 }
