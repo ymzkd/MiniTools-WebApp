@@ -14,9 +14,10 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // MLIT API プロキシ（ローカル開発用）
         '/api/mlit': {
-          target: 'https://www.mlit-data.jp/api/v1',
+          target: 'https://www.mlit-data.jp/api/v1/',
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/mlit/, ''),
+          secure: true,
+          rewrite: () => '/',
           configure: (proxy, _options) => {
             proxy.on('proxyReq', (proxyReq, _req, _res) => {
               // 環境変数からAPIキーを取得してヘッダーに追加
