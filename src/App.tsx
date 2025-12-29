@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import AppLayout from './components/common/AppLayout';
 import LaTeXMatrixEditor from './components/matrix/LaTeXMatrixEditor';
 import FigureLayoutApp from './components/figure/FigureLayoutApp';
@@ -12,8 +13,9 @@ import type { AppTab } from './types';
 
 function App() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { toasts, removeToast, showSuccess, showError } = useToast();
-  
+
   // テーマフックを初期化（テーマ設定を自動的に適用）
   useTheme();
 
@@ -28,36 +30,49 @@ function App() {
 
   const activeTab = getActiveTabFromPath(location.pathname);
 
+  // ルートパスまたは未定義パスの場合は /matrix にリダイレクト
+  useEffect(() => {
+    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring'];
+    if (!validPaths.includes(location.pathname)) {
+      navigate('/matrix', { replace: true });
+    } else if (location.pathname === '/') {
+      navigate('/matrix', { replace: true });
+    }
+  }, [location.pathname, navigate]);
+
   return (
     <div>
       <AppLayout activeTab={activeTab}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/matrix" replace />} />
-          <Route path="/matrix" element={<LaTeXMatrixEditor />} />
-          <Route path="/figure" element={
-            <FigureLayoutApp 
-              onSuccess={showSuccess}
-              onError={showError}
-            />
-          } />
-          <Route path="/pdf" element={
-            <PDFConverterApp
-              onSuccess={showSuccess}
-              onError={showError}
-            />
-          } />
-          <Route path="/markdown" element={<MarkdownEditor />} />
-          <Route path="/boring" element={
-            <BoringDataApp
-              onSuccess={showSuccess}
-              onError={showError}
-            />
-          } />
-          {/* 未定義のパスは /matrix にリダイレクト */}
-          <Route path="*" element={<Navigate to="/matrix" replace />} />
-        </Routes>
+        {/*
+          すべてのコンポーネントを常にマウントしておき、CSSで表示/非表示を切り替える。
+          これにより、タブ切り替え時に状態が保持される。
+        */}
+        <div style={{ display: activeTab === 'matrix' ? 'block' : 'none' }}>
+          <LaTeXMatrixEditor />
+        </div>
+        <div style={{ display: activeTab === 'figure' ? 'block' : 'none' }}>
+          <FigureLayoutApp
+            onSuccess={showSuccess}
+            onError={showError}
+          />
+        </div>
+        <div style={{ display: activeTab === 'pdf' ? 'block' : 'none' }}>
+          <PDFConverterApp
+            onSuccess={showSuccess}
+            onError={showError}
+          />
+        </div>
+        <div style={{ display: activeTab === 'markdown' ? 'block' : 'none' }}>
+          <MarkdownEditor />
+        </div>
+        <div style={{ display: activeTab === 'boring' ? 'block' : 'none' }}>
+          <BoringDataApp
+            onSuccess={showSuccess}
+            onError={showError}
+          />
+        </div>
       </AppLayout>
-      
+
       {/* Toast Notifications */}
       {toasts.map(toast => (
         <Toast
