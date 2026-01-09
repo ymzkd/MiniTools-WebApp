@@ -6,6 +6,7 @@ import FigureLayoutApp from './components/figure/FigureLayoutApp';
 import PDFConverterApp from './components/pdf/PDFConverterApp';
 import MarkdownEditor from './components/markdown/MarkdownEditor';
 import BoringDataApp from './components/boring/BoringDataApp';
+import SectionPropertyCalculator from './components/section/SectionPropertyCalculator';
 import Toast from './components/common/Toast';
 import { useToast } from './hooks/useToast';
 import { useTheme } from './hooks/useTheme';
@@ -25,6 +26,7 @@ function App() {
     if (pathname === '/pdf') return 'pdf';
     if (pathname === '/markdown') return 'markdown';
     if (pathname === '/boring') return 'boring';
+    if (pathname === '/section') return 'section';
     return 'matrix'; // デフォルトは matrix
   };
 
@@ -32,7 +34,7 @@ function App() {
 
   // ルートパスまたは未定義パスの場合は /matrix にリダイレクト
   useEffect(() => {
-    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring'];
+    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/section'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/matrix', { replace: true });
     } else if (location.pathname === '/') {
@@ -70,6 +72,9 @@ function App() {
             onSuccess={showSuccess}
             onError={showError}
           />
+        </div>
+        <div style={{ display: activeTab === 'section' ? 'block' : 'none' }}>
+          <SectionPropertyCalculator />
         </div>
       </AppLayout>
 
