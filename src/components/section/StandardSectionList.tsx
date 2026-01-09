@@ -37,6 +37,9 @@ const StandardSectionList: React.FC<StandardSectionListProps> = ({ shapeType, on
     onSelect(section.dimensions);
   };
 
+  // 回転対称断面かどうか（丸と丸パイプは回転対称）
+  const isAxisymmetric = shapeType === 'circle' || shapeType === 'pipe';
+
   if (sections.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -82,14 +85,29 @@ const StandardSectionList: React.FC<StandardSectionListProps> = ({ shapeType, on
                 A (mm²)
               </th>
               <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">
-                Ix (mm⁴)
+                {isAxisymmetric ? 'I (mm⁴)' : 'Ix (mm⁴)'}
               </th>
+              {!isAxisymmetric && (
+                <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">
+                  Iy (mm⁴)
+                </th>
+              )}
               <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">
-                Zx (mm³)
+                {isAxisymmetric ? 'Z (mm³)' : 'Zx (mm³)'}
               </th>
+              {!isAxisymmetric && (
+                <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">
+                  Zy (mm³)
+                </th>
+              )}
               <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">
-                ix (mm)
+                {isAxisymmetric ? 'i (mm)' : 'ix (mm)'}
               </th>
+              {!isAxisymmetric && (
+                <th className="px-3 py-2 text-right font-medium text-gray-700 dark:text-gray-300">
+                  iy (mm)
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -112,12 +130,27 @@ const StandardSectionList: React.FC<StandardSectionListProps> = ({ shapeType, on
                 <td className="px-3 py-2 text-right font-mono text-gray-700 dark:text-gray-300">
                   {formatNumber(section.properties.momentOfInertiaX)}
                 </td>
+                {!isAxisymmetric && (
+                  <td className="px-3 py-2 text-right font-mono text-gray-700 dark:text-gray-300">
+                    {formatNumber(section.properties.momentOfInertiaY)}
+                  </td>
+                )}
                 <td className="px-3 py-2 text-right font-mono text-gray-700 dark:text-gray-300">
                   {formatNumber(section.properties.sectionModulusX)}
                 </td>
+                {!isAxisymmetric && (
+                  <td className="px-3 py-2 text-right font-mono text-gray-700 dark:text-gray-300">
+                    {formatNumber(section.properties.sectionModulusY)}
+                  </td>
+                )}
                 <td className="px-3 py-2 text-right font-mono text-gray-700 dark:text-gray-300">
                   {formatNumber(section.properties.radiusOfGyrationX)}
                 </td>
+                {!isAxisymmetric && (
+                  <td className="px-3 py-2 text-right font-mono text-gray-700 dark:text-gray-300">
+                    {formatNumber(section.properties.radiusOfGyrationY)}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

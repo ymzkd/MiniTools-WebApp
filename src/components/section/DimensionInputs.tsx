@@ -24,20 +24,28 @@ const InputField: React.FC<InputFieldProps> = ({
   unit = 'mm',
   min = 0,
   step = 1,
-}) => (
-  <div className="flex items-center gap-2">
-    <label className="w-24 text-sm text-gray-700 dark:text-gray-300">{label}</label>
-    <input
-      type="number"
-      value={value ?? ''}
-      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-      min={min}
-      step={step}
-      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
-    />
-    <span className="w-8 text-sm text-gray-500 dark:text-gray-400">{unit}</span>
-  </div>
-);
+}) => {
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    // フォーカス時に全選択（新しい入力で上書きできるように）
+    e.target.select();
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <label className="w-24 text-sm text-gray-700 dark:text-gray-300">{label}</label>
+      <input
+        type="number"
+        value={value ?? ''}
+        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        onFocus={handleFocus}
+        min={min}
+        step={step}
+        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200"
+      />
+      <span className="w-8 text-sm text-gray-500 dark:text-gray-400">{unit}</span>
+    </div>
+  );
+};
 
 const DimensionInputs: React.FC<DimensionInputsProps> = ({
   shapeType,
