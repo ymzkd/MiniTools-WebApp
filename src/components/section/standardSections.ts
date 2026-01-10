@@ -95,35 +95,70 @@ export const boxStandards: StandardSection[] = [
   dims
 )).filter((s): s is StandardSection => s !== null);
 
-// H形鋼（JIS G 3192相当）
+// H形鋼（JIS G 3192 熱間圧延H形鋼）
+// 表記: H × B × t1 × t2 (高さ × フランジ幅 × ウェブ厚 × フランジ厚)
 export const hBeamStandards: StandardSection[] = [
-  // 細幅H形鋼
-  { flangeWidth: 100, webHeight: 100, flangeThickness: 6, webThickness: 6 },
-  { flangeWidth: 100, webHeight: 200, flangeThickness: 8, webThickness: 5.5 },
-  { flangeWidth: 125, webHeight: 250, flangeThickness: 9, webThickness: 6 },
-  { flangeWidth: 150, webHeight: 300, flangeThickness: 9, webThickness: 6.5 },
-  { flangeWidth: 150, webHeight: 350, flangeThickness: 12, webThickness: 7 },
-  { flangeWidth: 175, webHeight: 400, flangeThickness: 11, webThickness: 8 },
-  { flangeWidth: 175, webHeight: 450, flangeThickness: 11, webThickness: 9 },
-  { flangeWidth: 200, webHeight: 500, flangeThickness: 14, webThickness: 10 },
-  { flangeWidth: 200, webHeight: 600, flangeThickness: 15, webThickness: 11 },
-  // 中幅H形鋼
-  { flangeWidth: 150, webHeight: 150, flangeThickness: 7, webThickness: 7 },
-  { flangeWidth: 175, webHeight: 175, flangeThickness: 7.5, webThickness: 7.5 },
-  { flangeWidth: 200, webHeight: 200, flangeThickness: 8, webThickness: 8 },
-  { flangeWidth: 200, webHeight: 200, flangeThickness: 12, webThickness: 12 },
-  { flangeWidth: 250, webHeight: 250, flangeThickness: 9, webThickness: 9 },
-  { flangeWidth: 250, webHeight: 250, flangeThickness: 14, webThickness: 14 },
-  { flangeWidth: 300, webHeight: 300, flangeThickness: 10, webThickness: 10 },
-  { flangeWidth: 300, webHeight: 300, flangeThickness: 15, webThickness: 15 },
-  { flangeWidth: 350, webHeight: 350, flangeThickness: 12, webThickness: 12 },
-  { flangeWidth: 400, webHeight: 400, flangeThickness: 13, webThickness: 13 },
-  // 広幅H形鋼
-  { flangeWidth: 200, webHeight: 100, flangeThickness: 10, webThickness: 6 },
-  { flangeWidth: 300, webHeight: 150, flangeThickness: 12, webThickness: 6.5 },
-  { flangeWidth: 300, webHeight: 200, flangeThickness: 16, webThickness: 10 },
-  { flangeWidth: 300, webHeight: 300, flangeThickness: 20, webThickness: 12 },
-  { flangeWidth: 400, webHeight: 200, flangeThickness: 16, webThickness: 10 },
+  // 細幅系列 (H x B where B is narrow)
+  { webHeight: 100, flangeWidth: 50, webThickness: 5, flangeThickness: 7 },
+  { webHeight: 100, flangeWidth: 100, webThickness: 6, flangeThickness: 8 },
+  { webHeight: 125, flangeWidth: 60, webThickness: 6, flangeThickness: 8 },
+  { webHeight: 125, flangeWidth: 125, webThickness: 6.5, flangeThickness: 9 },
+  { webHeight: 150, flangeWidth: 75, webThickness: 5, flangeThickness: 7 },
+  { webHeight: 150, flangeWidth: 100, webThickness: 6, flangeThickness: 9 },
+  { webHeight: 150, flangeWidth: 150, webThickness: 7, flangeThickness: 10 },
+  { webHeight: 175, flangeWidth: 90, webThickness: 5, flangeThickness: 8 },
+  { webHeight: 175, flangeWidth: 175, webThickness: 7.5, flangeThickness: 11 },
+  { webHeight: 198, flangeWidth: 99, webThickness: 4.5, flangeThickness: 7 },
+  { webHeight: 200, flangeWidth: 100, webThickness: 5.5, flangeThickness: 8 },
+  { webHeight: 194, flangeWidth: 150, webThickness: 6, flangeThickness: 9 },
+  { webHeight: 200, flangeWidth: 200, webThickness: 8, flangeThickness: 12 },
+  { webHeight: 248, flangeWidth: 124, webThickness: 5, flangeThickness: 8 },
+  { webHeight: 250, flangeWidth: 125, webThickness: 6, flangeThickness: 9 },
+  { webHeight: 244, flangeWidth: 175, webThickness: 7, flangeThickness: 11 },
+  { webHeight: 250, flangeWidth: 250, webThickness: 9, flangeThickness: 14 },
+  { webHeight: 298, flangeWidth: 149, webThickness: 5.5, flangeThickness: 8 },
+  { webHeight: 300, flangeWidth: 150, webThickness: 6.5, flangeThickness: 9 },
+  { webHeight: 294, flangeWidth: 200, webThickness: 8, flangeThickness: 12 },
+  { webHeight: 300, flangeWidth: 300, webThickness: 10, flangeThickness: 15 },
+  { webHeight: 346, flangeWidth: 174, webThickness: 6, flangeThickness: 9 },
+  { webHeight: 350, flangeWidth: 175, webThickness: 7, flangeThickness: 11 },
+  { webHeight: 340, flangeWidth: 250, webThickness: 9, flangeThickness: 14 },
+  { webHeight: 350, flangeWidth: 350, webThickness: 12, flangeThickness: 19 },
+  // 400シリーズ
+  { webHeight: 396, flangeWidth: 199, webThickness: 7, flangeThickness: 11 },
+  { webHeight: 400, flangeWidth: 200, webThickness: 8, flangeThickness: 13 },
+  { webHeight: 390, flangeWidth: 300, webThickness: 10, flangeThickness: 16 },
+  { webHeight: 400, flangeWidth: 400, webThickness: 13, flangeThickness: 21 },
+  { webHeight: 414, flangeWidth: 405, webThickness: 18, flangeThickness: 28 },
+  { webHeight: 428, flangeWidth: 407, webThickness: 20, flangeThickness: 35 },
+  { webHeight: 458, flangeWidth: 417, webThickness: 30, flangeThickness: 50 },
+  { webHeight: 498, flangeWidth: 432, webThickness: 45, flangeThickness: 70 },
+  // 450シリーズ
+  { webHeight: 446, flangeWidth: 199, webThickness: 8, flangeThickness: 12 },
+  { webHeight: 450, flangeWidth: 200, webThickness: 9, flangeThickness: 14 },
+  { webHeight: 440, flangeWidth: 300, webThickness: 11, flangeThickness: 18 },
+  // 500シリーズ
+  { webHeight: 496, flangeWidth: 199, webThickness: 9, flangeThickness: 14 },
+  { webHeight: 500, flangeWidth: 200, webThickness: 10, flangeThickness: 16 },
+  { webHeight: 482, flangeWidth: 300, webThickness: 11, flangeThickness: 15 },
+  { webHeight: 488, flangeWidth: 300, webThickness: 11, flangeThickness: 18 },
+  // 600シリーズ
+  { webHeight: 596, flangeWidth: 199, webThickness: 10, flangeThickness: 15 },
+  { webHeight: 600, flangeWidth: 200, webThickness: 11, flangeThickness: 17 },
+  { webHeight: 582, flangeWidth: 300, webThickness: 12, flangeThickness: 17 },
+  { webHeight: 588, flangeWidth: 300, webThickness: 12, flangeThickness: 20 },
+  // 700シリーズ
+  { webHeight: 594, flangeWidth: 302, webThickness: 14, flangeThickness: 23 },
+  { webHeight: 692, flangeWidth: 300, webThickness: 13, flangeThickness: 20 },
+  { webHeight: 700, flangeWidth: 300, webThickness: 13, flangeThickness: 24 },
+  // 800シリーズ
+  { webHeight: 792, flangeWidth: 300, webThickness: 14, flangeThickness: 22 },
+  { webHeight: 800, flangeWidth: 300, webThickness: 14, flangeThickness: 26 },
+  // 900シリーズ
+  { webHeight: 890, flangeWidth: 299, webThickness: 15, flangeThickness: 23 },
+  { webHeight: 900, flangeWidth: 300, webThickness: 16, flangeThickness: 28 },
+  { webHeight: 912, flangeWidth: 302, webThickness: 18, flangeThickness: 34 },
+  { webHeight: 918, flangeWidth: 303, webThickness: 19, flangeThickness: 37 },
 ].map((dims, i) => createStandardSection(
   `h-beam-${i}`,
   `H${dims.webHeight}×${dims.flangeWidth}×${dims.webThickness}×${dims.flangeThickness}`,
