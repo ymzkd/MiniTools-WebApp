@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Calculator, Image, FileText, PenLine, MapPin, Menu, X } from 'lucide-react';
+import { Calculator, Image, FileText, PenLine, MapPin, Menu, X, Ruler } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import type { AppTab } from '../../types';
 
@@ -14,6 +14,7 @@ const navItems: { tab: AppTab; path: string; icon: React.ComponentType<{ classNa
   { tab: 'pdf', path: '/pdf', icon: FileText, label: 'PDF Converter' },
   { tab: 'markdown', path: '/markdown', icon: PenLine, label: 'Markdown Editor' },
   { tab: 'boring', path: '/boring', icon: MapPin, label: 'Boring Data' },
+  { tab: 'section', path: '/section', icon: Ruler, label: 'Section Calc' },
 ];
 
 const Navigation: React.FC<NavigationProps> = ({ activeTab }) => {
