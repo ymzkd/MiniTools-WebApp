@@ -280,7 +280,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
           データ提供:
           <a
-            href="https://www.mlit-data.jp/"
+            href="https://data-platform.mlit.go.jp/"
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-500 hover:underline ml-1"
