@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // MLIT DPF API エンドポイント
-const MLIT_API_ENDPOINT = 'https://www.mlit-data.jp/api/v1/';
+const MLIT_API_ENDPOINT = 'https://data-platform.mlit.go.jp/api/v1/';
 
 export default async function handler(
   req: VercelRequest,

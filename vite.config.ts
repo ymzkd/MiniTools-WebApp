@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // MLIT API プロキシ（ローカル開発用）
         '/api/mlit': {
-          target: 'https://www.mlit-data.jp/api/v1',
+          target: 'https://data-platform.mlit.go.jp/api/v1',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/mlit/, ''),
           configure: (proxy, _options) => {
