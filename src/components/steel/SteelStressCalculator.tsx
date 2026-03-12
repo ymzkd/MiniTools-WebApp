@@ -27,6 +27,7 @@ import {
   calcWidthThicknessRatio,
   calcEffectiveSection,
   calcCombinedStressRatio,
+  calcSectionProperties,
 } from './steelCalculations';
 import ResultPanel from './ResultPanel';
 
@@ -47,12 +48,6 @@ const defaultDims: SteelDimensions = {
   H: 250, B: 125, tw: 6, tf: 9, r: 13, D: 100, t: 6, C: 20,
 };
 
-const defaultProps: SectionPropertiesInput = {
-  A: 4991, Ix: 40200000, Iy: 2940000,
-  Zx: 321600, Zy: 47000,
-  ix: 89.7, iy: 24.3,
-};
-
 type CalcTarget = 'bending' | 'shear' | 'compression' | 'widthThickness' | 'combined';
 
 const SteelStressCalculator: React.FC = () => {
@@ -70,8 +65,22 @@ const SteelStressCalculator: React.FC = () => {
   // 断面寸法
   const [dims, setDims] = useState<SteelDimensions>(defaultDims);
 
-  // 断面性能
-  const [props, setProps] = useState<SectionPropertiesInput>(defaultProps);
+  // 断面性能（手動入力用、自動計算不可の場合）
+  const [manualProps, setManualProps] = useState<SectionPropertiesInput>({
+    A: 0, Ix: 0, Iy: 0, Zx: 0, Zy: 0, ix: 0, iy: 0,
+  });
+
+  // 自動計算された断面性能
+  const autoProps = useMemo(
+    () => calcSectionProperties(sectionType, dims),
+    [sectionType, dims],
+  );
+
+  // 自動計算が可能かどうか
+  const isAutoCalc = autoProps !== null;
+
+  // 実際に使用する断面性能
+  const props: SectionPropertiesInput = isAutoCalc ? autoProps : manualProps;
 
   // 曲げ関連
   const [bendingMethod, setBendingMethod] = useState<BendingMethod>('aij-standard');
@@ -157,8 +166,8 @@ const SteelStressCalculator: React.FC = () => {
     setDims(prev => ({ ...prev, [key]: value }));
   }, []);
 
-  const updateProp = useCallback((key: keyof SectionPropertiesInput, value: number) => {
-    setProps(prev => ({ ...prev, [key]: value }));
+  const updateManualProp = useCallback((key: keyof SectionPropertiesInput, value: number) => {
+    setManualProps(prev => ({ ...prev, [key]: value }));
   }, []);
 
   // 必要な断面寸法フィールド
@@ -174,6 +183,11 @@ const SteelStressCalculator: React.FC = () => {
           { key: 'r' as const, label: 'r (フィレットR)', unit: 'mm' },
         ];
       case 'l-angle':
+        return [
+          { key: 'H' as const, label: 'H (脚A長)', unit: 'mm' },
+          { key: 'B' as const, label: 'B (脚B長)', unit: 'mm' },
+          { key: 'tw' as const, label: 't (厚さ)', unit: 'mm' },
+        ];
       case 't-shape':
         return [
           { key: 'H' as const, label: 'H (高さ)', unit: 'mm' },
@@ -215,7 +229,7 @@ const SteelStressCalculator: React.FC = () => {
     }
   }, [sectionType]);
 
-  // 断面性能の必要フィールド
+  // 断面性能の表示フィールド
   const propFields: { key: keyof SectionPropertiesInput; label: string; unit: string }[] = [
     { key: 'A', label: 'A (断面積)', unit: 'mm²' },
     { key: 'Ix', label: 'Ix (強軸断面二次モーメント)', unit: 'mm⁴' },
@@ -227,9 +241,18 @@ const SteelStressCalculator: React.FC = () => {
   ];
 
   const inputClass = "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors duration-200";
+  const readonlyInputClass = "w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm transition-colors duration-200 cursor-default";
   const labelClass = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
   const cardClass = "bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 shadow-sm transition-colors duration-200";
   const sectionHeaderClass = "text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3";
+
+  // 数値のフォーマット
+  const formatValue = (v: number): string => {
+    if (Math.abs(v) >= 1e7) return v.toExponential(3);
+    if (Math.abs(v) >= 100) return v.toFixed(0);
+    if (Math.abs(v) >= 1) return v.toFixed(2);
+    return v.toFixed(4);
+  };
 
   return (
     <div className="w-full px-4 sm:px-6 xl:px-12 3xl:px-16 py-6">
@@ -355,14 +378,14 @@ const SteelStressCalculator: React.FC = () => {
               {dimFields.map(f => (
                 <div key={f.key}>
                   <label className={labelClass}>{f.label}</label>
-                  <div className="relative">
+                  <div className="flex items-center gap-1">
                     <input
                       type="number"
                       value={dims[f.key]}
                       onChange={e => updateDim(f.key, Number(e.target.value))}
-                      className={inputClass}
+                      className={inputClass + " min-w-0"}
                     />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{f.unit}</span>
+                    <span className="text-xs text-gray-400 shrink-0 w-8">{f.unit}</span>
                   </div>
                 </div>
               ))}
@@ -371,19 +394,45 @@ const SteelStressCalculator: React.FC = () => {
 
           {/* 断面性能 */}
           <div className={cardClass}>
-            <h2 className={sectionHeaderClass}>断面性能</h2>
+            <h2 className={sectionHeaderClass}>
+              断面性能
+              {isAutoCalc ? (
+                <span className="ml-2 text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 font-medium">
+                  自動計算
+                </span>
+              ) : (
+                <span className="ml-2 text-xs px-2 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 font-medium">
+                  手動入力
+                </span>
+              )}
+            </h2>
+            {!isAutoCalc && (
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 mb-3">
+                この断面形状は自動計算に対応していません。断面性能を直接入力してください。
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               {propFields.map(f => (
                 <div key={f.key}>
                   <label className={labelClass}>{f.label}</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      value={props[f.key]}
-                      onChange={e => updateProp(f.key, Number(e.target.value))}
-                      className={inputClass}
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">{f.unit}</span>
+                  <div className="flex items-center gap-1">
+                    {isAutoCalc ? (
+                      <input
+                        type="text"
+                        value={formatValue(props[f.key])}
+                        readOnly
+                        className={readonlyInputClass + " min-w-0"}
+                        tabIndex={-1}
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        value={manualProps[f.key]}
+                        onChange={e => updateManualProp(f.key, Number(e.target.value))}
+                        className={inputClass + " min-w-0"}
+                      />
+                    )}
+                    <span className="text-xs text-gray-400 shrink-0 w-8">{f.unit}</span>
                   </div>
                 </div>
               ))}
@@ -497,7 +546,7 @@ const SteelStressCalculator: React.FC = () => {
                             : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300'
                         }`}
                       >
-                        {axis}軸 (i={axis === 'x' ? props.ix : props.iy} mm)
+                        {axis}軸 (i={formatValue(axis === 'x' ? props.ix : props.iy)} mm)
                       </button>
                     ))}
                   </div>
@@ -535,7 +584,6 @@ const SteelStressCalculator: React.FC = () => {
             effectiveSection={effectiveSection}
             combinedRatio={combinedRatio}
             F={F}
-
           />
         </div>
       </div>

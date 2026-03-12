@@ -608,6 +608,152 @@ export function calcCombinedStressRatio(
   return Math.sqrt(sigmaX ** 2 + sigmaY ** 2 - sigmaX * sigmaY + 3 * tauXY ** 2) / F;
 }
 
+// ========== 断面性能の自動計算 ==========
+export function calcSectionProperties(
+  sectionType: SteelSectionType,
+  dims: SteelDimensions,
+): SectionPropertiesInput | null {
+  const { H, B, tw, tf, D, t } = dims;
+
+  switch (sectionType) {
+    case 'h-beam': {
+      if (H <= 0 || B <= 0 || tw <= 0 || tf <= 0 || 2 * tf >= H || tw >= B) return null;
+      const webH = H - 2 * tf;
+      const A = 2 * B * tf + webH * tw;
+      const Ix = (B * H ** 3 - (B - tw) * webH ** 3) / 12;
+      const Iy = (2 * tf * B ** 3 + webH * tw ** 3) / 12;
+      const Zx = Ix / (H / 2);
+      const Zy = Iy / (B / 2);
+      const ix = Math.sqrt(Ix / A);
+      const iy = Math.sqrt(Iy / A);
+      return { A, Ix, Iy, Zx, Zy, ix, iy };
+    }
+
+    case 'channel': {
+      if (H <= 0 || B <= 0 || tw <= 0 || tf <= 0 || 2 * tf >= H || tw >= B) return null;
+      const webH = H - 2 * tf;
+      const A = 2 * B * tf + webH * tw;
+      const Ix = (tw * H ** 3 + 2 * (B - tw) * tf ** 3) / 12
+               + 2 * (B - tw) * tf * ((H - tf) / 2) ** 2;
+      // 重心位置（ウェブ面から）
+      const Cx = (2 * B * tf * (B / 2) + webH * tw * (tw / 2)) / A;
+      const IyFlanges = 2 * ((tf * B ** 3) / 12 + B * tf * (B / 2 - Cx) ** 2);
+      const IyWeb = (webH * tw ** 3) / 12 + webH * tw * (Cx - tw / 2) ** 2;
+      const Iy = IyFlanges + IyWeb;
+      const Zx = Ix / (H / 2);
+      const ZyInner = Iy / Cx;
+      const ZyOuter = Iy / (B - Cx);
+      const Zy = Math.min(ZyInner, ZyOuter);
+      const ix = Math.sqrt(Ix / A);
+      const iy = Math.sqrt(Iy / A);
+      return { A, Ix, Iy, Zx, Zy, ix, iy };
+    }
+
+    case 'l-angle': {
+      // L型: H=脚A長, B=脚B長, tw=厚さ（tw=tfと仮定）
+      const tl = tw; // 等厚
+      if (H <= 0 || B <= 0 || tl <= 0 || tl >= H || tl >= B) return null;
+      const A = tl * (H + B - tl);
+      // 重心位置（コーナーから）
+      const CxNum = H * tl * (H / 2) + (B - tl) * tl * (tl / 2);
+      const CyNum = B * tl * (B / 2) + (H - tl) * tl * (tl / 2);
+      const Cx = CxNum / A;
+      const Cy = CyNum / A;
+      // Ix: 脚A（水平, 厚さtl, 幅H）+ 脚B縦（高さB-tl, 厚さtl）
+      const IxA = (H * tl ** 3) / 12 + H * tl * (Cy - tl / 2) ** 2;
+      const IxB = (tl * (B - tl) ** 3) / 12 + tl * (B - tl) * ((B + tl) / 2 - Cy) ** 2;
+      const Ix = IxA + IxB;
+      const IyA = (tl * H ** 3) / 12 + H * tl * (H / 2 - Cx) ** 2;
+      const IyB = ((B - tl) * tl ** 3) / 12 + (B - tl) * tl * (Cx - tl / 2) ** 2;
+      const Iy = IyA + IyB;
+      const exTop = B - Cy;
+      const exBottom = Cy;
+      const eyRight = H - Cx;
+      const eyLeft = Cx;
+      const Zx = Ix / Math.max(exTop, exBottom);
+      const Zy = Iy / Math.max(eyRight, eyLeft);
+      const ix = Math.sqrt(Ix / A);
+      const iy = Math.sqrt(Iy / A);
+      return { A, Ix, Iy, Zx, Zy, ix, iy };
+    }
+
+    case 't-shape': {
+      // T型: H=全高, B=フランジ幅, tw=ウェブ厚, tf=フランジ厚
+      if (H <= 0 || B <= 0 || tw <= 0 || tf <= 0 || tf >= H) return null;
+      const webH = H - tf;
+      const A = B * tf + tw * webH;
+      // 重心（フランジ上面から）
+      const Cy = (B * tf * (tf / 2) + tw * webH * (tf + webH / 2)) / A;
+      // Ix
+      const IxFlange = (B * tf ** 3) / 12 + B * tf * (Cy - tf / 2) ** 2;
+      const IxWeb = (tw * webH ** 3) / 12 + tw * webH * (tf + webH / 2 - Cy) ** 2;
+      const Ix = IxFlange + IxWeb;
+      // Iy
+      const Iy = (tf * B ** 3 + webH * tw ** 3) / 12;
+      const exTop = Cy;
+      const exBottom = H - Cy;
+      const Zx = Ix / Math.max(exTop, exBottom);
+      const Zy = Iy / (B / 2);
+      const ix = Math.sqrt(Ix / A);
+      const iy = Math.sqrt(Iy / A);
+      return { A, Ix, Iy, Zx, Zy, ix, iy };
+    }
+
+    case 'box': {
+      if (H <= 0 || B <= 0 || t <= 0 || 2 * t >= H || 2 * t >= B) return null;
+      const b = B - 2 * t;
+      const h = H - 2 * t;
+      const A = B * H - b * h;
+      const Ix = (B * H ** 3 - b * h ** 3) / 12;
+      const Iy = (H * B ** 3 - h * b ** 3) / 12;
+      const Zx = Ix / (H / 2);
+      const Zy = Iy / (B / 2);
+      const ix = Math.sqrt(Ix / A);
+      const iy = Math.sqrt(Iy / A);
+      return { A, Ix, Iy, Zx, Zy, ix, iy };
+    }
+
+    case 'pipe': {
+      if (D <= 0 || t <= 0 || 2 * t >= D) return null;
+      const d = D - 2 * t;
+      const A = (Math.PI / 4) * (D ** 2 - d ** 2);
+      const I = (Math.PI / 64) * (D ** 4 - d ** 4);
+      const Z = I / (D / 2);
+      const i = Math.sqrt(I / A);
+      return { A, Ix: I, Iy: I, Zx: Z, Zy: Z, ix: i, iy: i };
+    }
+
+    case 'circle': {
+      if (D <= 0) return null;
+      const A = Math.PI * (D / 2) ** 2;
+      const I = (Math.PI * D ** 4) / 64;
+      const Z = (Math.PI * D ** 3) / 32;
+      const i = Math.sqrt(I / A);
+      return { A, Ix: I, Iy: I, Zx: Z, Zy: Z, ix: i, iy: i };
+    }
+
+    case 'rectangle': {
+      if (H <= 0 || B <= 0) return null;
+      const A = B * H;
+      const Ix = (B * H ** 3) / 12;
+      const Iy = (H * B ** 3) / 12;
+      const Zx = (B * H ** 2) / 6;
+      const Zy = (H * B ** 2) / 6;
+      const ix = Math.sqrt(Ix / A);
+      const iy = Math.sqrt(Iy / A);
+      return { A, Ix, Iy, Zx, Zy, ix, iy };
+    }
+
+    case 'lip-channel': {
+      // リップみぞ形は形状が複雑なため自動計算しない
+      return null;
+    }
+
+    default:
+      return null;
+  }
+}
+
 // ========== メイン計算関数 ==========
 export function calcBendingStress(
   method: BendingMethod,
