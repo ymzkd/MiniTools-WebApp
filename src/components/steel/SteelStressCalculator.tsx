@@ -30,6 +30,10 @@ import {
   calcSectionProperties,
 } from './steelCalculations';
 import ResultPanel from './ResultPanel';
+import NumberInput from './NumberInput';
+
+// 鉄骨の単位体積重量 (kN/m³)
+const STEEL_UNIT_WEIGHT = 78;
 
 // 断面形状オプション
 const sectionOptions: { type: SteelSectionType; label: string }[] = [
@@ -92,7 +96,6 @@ const SteelStressCalculator: React.FC = () => {
 
   // 圧縮関連
   const [lk, setLk] = useState(5000);
-  const [bucklingAxis, setBucklingAxis] = useState<'x' | 'y'>('y');
 
   // 応力度入力（組み合わせ検定用）
   const [sigmaB, setSigmaB] = useState(0);
@@ -130,12 +133,14 @@ const SteelStressCalculator: React.FC = () => {
     return { ...shearProps, fs_long, fs_short };
   }, [calcTargets, sectionType, dims, props, material]);
 
-  // 圧縮
+  // 圧縮: 自動的に断面二次半径が小さい方の軸を選択
+  const bucklingAxis: 'x' | 'y' = props.ix <= props.iy ? 'x' : 'y';
+  const bucklingI = Math.min(props.ix, props.iy);
+
   const compressionResult: CompressionResult | null = useMemo(() => {
     if (!calcTargets.includes('compression')) return null;
-    const i = bucklingAxis === 'x' ? props.ix : props.iy;
-    return calcCompressionStress(material, lk, i);
-  }, [calcTargets, material, lk, bucklingAxis, props.ix, props.iy]);
+    return calcCompressionStress(material, lk, bucklingI);
+  }, [calcTargets, material, lk, bucklingI]);
 
   // 幅厚比
   const widthThicknessResult: WidthThicknessResult | null = useMemo(() => {
@@ -155,6 +160,12 @@ const SteelStressCalculator: React.FC = () => {
     if (!calcTargets.includes('combined')) return null;
     return calcCombinedStressRatio(sigmaB, 0, tauY, F);
   }, [calcTargets, sigmaB, tauY, F]);
+
+  // 単位長さあたりの重量 (kN/m)
+  // A [mm²] → m² に変換: A * 1e-6, × 78 kN/m³ = kN/m
+  const unitWeight = useMemo(() => {
+    return props.A * 1e-6 * STEEL_UNIT_WEIGHT;
+  }, [props.A]);
 
   const toggleTarget = useCallback((target: CalcTarget) => {
     setCalcTargets(prev =>
@@ -357,15 +368,15 @@ const SteelStressCalculator: React.FC = () => {
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className={labelClass}>F (N/mm²)</label>
-                  <input type="number" value={F} onChange={e => setF(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={F} onChange={setF} className={inputClass} />
                 </div>
                 <div>
                   <label className={labelClass}>E (N/mm²)</label>
-                  <input type="number" value={E} onChange={e => setE(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={E} onChange={setE} className={inputClass} />
                 </div>
                 <div>
                   <label className={labelClass}>G (N/mm²)</label>
-                  <input type="number" value={G} onChange={e => setG(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={G} onChange={setG} className={inputClass} />
                 </div>
               </div>
             </div>
@@ -379,10 +390,9 @@ const SteelStressCalculator: React.FC = () => {
                 <div key={f.key}>
                   <label className={labelClass}>{f.label}</label>
                   <div className="flex items-center gap-1">
-                    <input
-                      type="number"
+                    <NumberInput
                       value={dims[f.key]}
-                      onChange={e => updateDim(f.key, Number(e.target.value))}
+                      onChange={v => updateDim(f.key, v)}
                       className={inputClass + " min-w-0"}
                     />
                     <span className="text-xs text-gray-400 shrink-0 w-8">{f.unit}</span>
@@ -425,10 +435,9 @@ const SteelStressCalculator: React.FC = () => {
                         tabIndex={-1}
                       />
                     ) : (
-                      <input
-                        type="number"
+                      <NumberInput
                         value={manualProps[f.key]}
-                        onChange={e => updateManualProp(f.key, Number(e.target.value))}
+                        onChange={v => updateManualProp(f.key, v)}
                         className={inputClass + " min-w-0"}
                       />
                     )}
@@ -436,6 +445,50 @@ const SteelStressCalculator: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* ねじり定数 */}
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>J (サンブナンねじり)</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={formatValue(torsionConstants.J)}
+                      readOnly
+                      className={readonlyInputClass + " min-w-0"}
+                      tabIndex={-1}
+                    />
+                    <span className="text-xs text-gray-400 shrink-0 w-8">mm⁴</span>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Iw (曲げねじり)</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={formatValue(torsionConstants.Iw)}
+                      readOnly
+                      className={readonlyInputClass + " min-w-0"}
+                      tabIndex={-1}
+                    />
+                    <span className="text-xs text-gray-400 shrink-0 w-8">mm⁶</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 単位重量 */}
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">単位長さあたり重量</span>
+                <span className="font-mono text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  {unitWeight.toFixed(4)} <span className="text-xs text-gray-500">kN/m</span>
+                  <span className="text-xs text-gray-400 ml-2">({(unitWeight / 9.80665 * 1000).toFixed(1)} kg/m)</span>
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">鉄骨単位体積重量: {STEEL_UNIT_WEIGHT} kN/m³</p>
             </div>
           </div>
         </div>
@@ -461,7 +514,7 @@ const SteelStressCalculator: React.FC = () => {
                 </div>
                 <div>
                   <label className={labelClass}>横座屈補剛間距離 lb (mm)</label>
-                  <input type="number" value={lb} onChange={e => setLb(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={lb} onChange={setLb} className={inputClass} />
                 </div>
 
                 <div>
@@ -481,11 +534,11 @@ const SteelStressCalculator: React.FC = () => {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className={labelClass}>M1 (大) (kN·m)</label>
-                        <input type="number" value={M1} onChange={e => setM1(Number(e.target.value))} className={inputClass} />
+                        <NumberInput value={M1} onChange={setM1} className={inputClass} />
                       </div>
                       <div>
                         <label className={labelClass}>M2 (小) (kN·m)</label>
-                        <input type="number" value={M2} onChange={e => setM2(Number(e.target.value))} className={inputClass} />
+                        <NumberInput value={M2} onChange={setM2} className={inputClass} />
                       </div>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -509,17 +562,6 @@ const SteelStressCalculator: React.FC = () => {
                     塑性限界細長比 <sub>p</sub>λ<sub>b</sub> = <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{correctionFactors.pLambdaB.toFixed(3)}</span>
                   </p>
                 </div>
-
-                {/* ねじり定数表示 */}
-                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-md p-3 space-y-1">
-                  <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">ねじり定数</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    J = <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{torsionConstants.J.toFixed(1)}</span> mm⁴
-                  </p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    I<sub>w</sub> = <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{torsionConstants.Iw.toFixed(1)}</span> mm⁶
-                  </p>
-                </div>
               </div>
             </div>
           )}
@@ -531,25 +573,20 @@ const SteelStressCalculator: React.FC = () => {
               <div className="space-y-3">
                 <div>
                   <label className={labelClass}>座屈長さ lk (mm)</label>
-                  <input type="number" value={lk} onChange={e => setLk(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={lk} onChange={setLk} className={inputClass} />
                 </div>
-                <div>
-                  <label className={labelClass}>座屈軸</label>
-                  <div className="flex gap-3">
-                    {(['x', 'y'] as const).map(axis => (
-                      <button
-                        key={axis}
-                        onClick={() => setBucklingAxis(axis)}
-                        className={`flex-1 px-4 py-2 rounded-md text-sm font-medium border-2 transition-all ${
-                          bucklingAxis === axis
-                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                            : 'border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {axis}軸 (i={formatValue(axis === 'x' ? props.ix : props.iy)} mm)
-                      </button>
-                    ))}
-                  </div>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-md p-3 space-y-1">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    座屈軸: <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{bucklingAxis}軸</span>
+                    <span className="text-xs text-gray-500 ml-1">(断面二次半径が小さい方を自動選択)</span>
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    ix = <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{formatValue(props.ix)}</span> mm,
+                    iy = <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{formatValue(props.iy)}</span> mm
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    → i<sub>min</sub> = <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">{formatValue(bucklingI)}</span> mm
+                  </p>
                 </div>
               </div>
             </div>
@@ -562,11 +599,11 @@ const SteelStressCalculator: React.FC = () => {
               <div className="space-y-3">
                 <div>
                   <label className={labelClass}>σ (曲げ応力度) (N/mm²)</label>
-                  <input type="number" value={sigmaB} onChange={e => setSigmaB(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={sigmaB} onChange={setSigmaB} className={inputClass} />
                 </div>
                 <div>
                   <label className={labelClass}>τ (せん断応力度) (N/mm²)</label>
-                  <input type="number" value={tauY} onChange={e => setTauY(Number(e.target.value))} className={inputClass} />
+                  <NumberInput value={tauY} onChange={setTauY} className={inputClass} />
                 </div>
               </div>
             </div>
