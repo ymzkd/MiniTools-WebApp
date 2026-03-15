@@ -5,9 +5,8 @@ import type {
   CompressionResult,
   WidthThicknessResult,
   EffectiveSectionResult,
+  CalcTarget,
 } from './steelTypes';
-
-type CalcTarget = 'bending' | 'shear' | 'compression';
 
 interface ResultPanelProps {
   calcTargets: CalcTarget[];

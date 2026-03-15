@@ -598,16 +598,6 @@ export function calcEffectiveSection(
   return result;
 }
 
-// ========== 組み合わせ応力検定 ==========
-export function calcCombinedStressRatio(
-  sigmaX: number,
-  sigmaY: number,
-  tauXY: number,
-  F: number,
-): number {
-  return Math.sqrt(sigmaX ** 2 + sigmaY ** 2 - sigmaX * sigmaY + 3 * tauXY ** 2) / F;
-}
-
 // ========== 断面性能の自動計算 ==========
 export function calcSectionProperties(
   sectionType: SteelSectionType,

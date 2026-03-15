@@ -15,6 +15,7 @@ import type {
   EffectiveSectionResult,
   TorsionConstants,
   CorrectionFactors,
+  CalcTarget,
 } from './steelTypes';
 import { STEEL_MATERIALS, DEFAULT_ELASTIC_CONSTANTS } from './steelTypes';
 import {
@@ -34,6 +35,14 @@ import NumberInput from './NumberInput';
 // 鉄骨の単位体積重量 (kN/m³)
 const STEEL_UNIT_WEIGHT = 78;
 
+// 数値のフォーマット
+const formatValue = (v: number): string => {
+  if (Math.abs(v) >= 1e7) return v.toExponential(3);
+  if (Math.abs(v) >= 100) return v.toFixed(0);
+  if (Math.abs(v) >= 1) return v.toFixed(2);
+  return v.toFixed(4);
+};
+
 // 断面形状オプション
 const sectionOptions: { type: SteelSectionType; label: string }[] = [
   { type: 'h-beam', label: 'H型' },
@@ -50,8 +59,6 @@ const sectionOptions: { type: SteelSectionType; label: string }[] = [
 const defaultDims: SteelDimensions = {
   H: 250, B: 125, tw: 6, tf: 9, r: 13, D: 100, t: 6, C: 20,
 };
-
-type CalcTarget = 'bending' | 'shear' | 'compression';
 
 const SteelStressCalculator: React.FC = () => {
   // 基本設定
@@ -147,12 +154,10 @@ const SteelStressCalculator: React.FC = () => {
   const effectiveSection: EffectiveSectionResult | null = useMemo(() => {
     if (widthThicknessResult.isOk) return null;
     return calcEffectiveSection(sectionType, dims, props, material, memberType);
-  }, [widthThicknessResult, sectionType, dims, props, material, memberType]);
+  }, [widthThicknessResult.isOk, sectionType, dims, props, material, memberType]);
 
   // 単位長さあたりの重量 (kN/m)
-  const unitWeight = useMemo(() => {
-    return props.A * 1e-6 * STEEL_UNIT_WEIGHT;
-  }, [props.A]);
+  const unitWeight = props.A * 1e-6 * STEEL_UNIT_WEIGHT;
 
   const toggleTarget = useCallback((target: CalcTarget) => {
     setCalcTargets(prev =>
@@ -243,14 +248,6 @@ const SteelStressCalculator: React.FC = () => {
   const labelClass = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
   const cardClass = "bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 shadow-sm transition-colors duration-200";
   const sectionHeaderClass = "text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3";
-
-  // 数値のフォーマット
-  const formatValue = (v: number): string => {
-    if (Math.abs(v) >= 1e7) return v.toExponential(3);
-    if (Math.abs(v) >= 100) return v.toFixed(0);
-    if (Math.abs(v) >= 1) return v.toFixed(2);
-    return v.toFixed(4);
-  };
 
   return (
     <div className="w-full px-4 sm:px-6 xl:px-12 3xl:px-16 py-6">

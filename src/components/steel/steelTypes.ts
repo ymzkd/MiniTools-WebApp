@@ -134,15 +134,8 @@ export interface EffectiveSectionResult {
   deltaC?: number;     // リップみぞ形用
 }
 
-// 組み合わせ応力検定
-export interface CombinedStressResult {
-  ratio: number;       // 検定比
-  isOk: boolean;
-  sigmaX: number;
-  sigmaY: number;
-  tauXY: number;
-  ft: number;
-}
+// 計算対象
+export type CalcTarget = 'bending' | 'shear' | 'compression';
 
 // 全体の計算結果
 export interface SteelCalculationResult {
