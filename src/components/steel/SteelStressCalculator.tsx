@@ -254,7 +254,7 @@ const SteelStressCalculator: React.FC = () => {
       {/* ヘッダー */}
       <div className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-gray-100 transition-colors duration-200">
-          鉄骨部材 断面検定
+          鉄骨部材の許容応力度計算
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
           鋼材の許容曲げ応力度・許容せん断応力度・許容圧縮応力度の計算
