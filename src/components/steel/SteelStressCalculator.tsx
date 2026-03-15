@@ -26,7 +26,6 @@ import {
   calcCompressionStress,
   calcWidthThicknessRatio,
   calcEffectiveSection,
-  calcCombinedStressRatio,
   calcSectionProperties,
 } from './steelCalculations';
 import ResultPanel from './ResultPanel';
@@ -52,7 +51,7 @@ const defaultDims: SteelDimensions = {
   H: 250, B: 125, tw: 6, tf: 9, r: 13, D: 100, t: 6, C: 20,
 };
 
-type CalcTarget = 'bending' | 'shear' | 'compression' | 'widthThickness' | 'combined';
+type CalcTarget = 'bending' | 'shear' | 'compression';
 
 const SteelStressCalculator: React.FC = () => {
   // 基本設定
@@ -60,9 +59,9 @@ const SteelStressCalculator: React.FC = () => {
   const [memberType, setMemberType] = useState<MemberType>('beam');
   const [calcTargets, setCalcTargets] = useState<CalcTarget[]>(['bending']);
 
-  // 材料
-  const [materialPreset, setMaterialPreset] = useState(4); // SN490B default
-  const [F, setF] = useState(325);
+  // 材料 - SN400B/C (t≤40) をデフォルト
+  const [materialPreset, setMaterialPreset] = useState(2);
+  const [F, setF] = useState(235);
   const [E, setE] = useState(DEFAULT_ELASTIC_CONSTANTS.E);
   const [G, setG] = useState(DEFAULT_ELASTIC_CONSTANTS.G);
 
@@ -91,15 +90,11 @@ const SteelStressCalculator: React.FC = () => {
   const [lb, setLb] = useState(5000);
   const [M1, setM1] = useState(113.39);
   const [M2, setM2] = useState(87.31);
-  const [momentDist, setMomentDist] = useState<MomentDistribution>('monotonic');
+  const [momentDist, setMomentDist] = useState<MomentDistribution>('max-in-span');
   const [doubleCurvature, setDoubleCurvature] = useState(true);
 
   // 圧縮関連
   const [lk, setLk] = useState(5000);
-
-  // 応力度入力（組み合わせ検定用）
-  const [sigmaB, setSigmaB] = useState(0);
-  const [tauY, setTauY] = useState(0);
 
   const material: MaterialParams = useMemo(() => ({ F, E, G }), [F, E, G]);
 
@@ -142,27 +137,19 @@ const SteelStressCalculator: React.FC = () => {
     return calcCompressionStress(material, lk, bucklingI);
   }, [calcTargets, material, lk, bucklingI]);
 
-  // 幅厚比
-  const widthThicknessResult: WidthThicknessResult | null = useMemo(() => {
-    if (!calcTargets.includes('widthThickness')) return null;
-    return calcWidthThicknessRatio(sectionType, dims, material, memberType);
-  }, [calcTargets, sectionType, dims, material, memberType]);
+  // 幅厚比（常に計算、基本情報に併記するため）
+  const widthThicknessResult: WidthThicknessResult = useMemo(
+    () => calcWidthThicknessRatio(sectionType, dims, material, memberType),
+    [sectionType, dims, material, memberType],
+  );
 
   // 有効断面
   const effectiveSection: EffectiveSectionResult | null = useMemo(() => {
-    if (!calcTargets.includes('widthThickness')) return null;
-    if (widthThicknessResult?.isOk) return null;
+    if (widthThicknessResult.isOk) return null;
     return calcEffectiveSection(sectionType, dims, props, material, memberType);
-  }, [calcTargets, widthThicknessResult, sectionType, dims, props, material, memberType]);
-
-  // 組み合わせ応力
-  const combinedRatio: number | null = useMemo(() => {
-    if (!calcTargets.includes('combined')) return null;
-    return calcCombinedStressRatio(sigmaB, 0, tauY, F);
-  }, [calcTargets, sigmaB, tauY, F]);
+  }, [widthThicknessResult, sectionType, dims, props, material, memberType]);
 
   // 単位長さあたりの重量 (kN/m)
-  // A [mm²] → m² に変換: A * 1e-6, × 78 kN/m³ = kN/m
   const unitWeight = useMemo(() => {
     return props.A * 1e-6 * STEEL_UNIT_WEIGHT;
   }, [props.A]);
@@ -273,7 +260,7 @@ const SteelStressCalculator: React.FC = () => {
           鉄骨部材 断面検定
         </h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">
-          鋼材の許容曲げ応力度・許容せん断応力度・許容圧縮応力度の計算、幅厚比検定、組み合わせ応力検定
+          鋼材の許容曲げ応力度・許容せん断応力度・許容圧縮応力度の計算
         </p>
       </div>
 
@@ -329,8 +316,6 @@ const SteelStressCalculator: React.FC = () => {
                 ['bending', '曲げ許容応力度'],
                 ['shear', 'せん断許容応力度'],
                 ['compression', '圧縮許容応力度'],
-                ['widthThickness', '幅厚比検定'],
-                ['combined', '組み合わせ応力検定'],
               ] as [CalcTarget, string][]).map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -445,36 +430,32 @@ const SteelStressCalculator: React.FC = () => {
                   </div>
                 </div>
               ))}
-            </div>
 
-            {/* ねじり定数 */}
-            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass}>J (サンブナンねじり)</label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      value={formatValue(torsionConstants.J)}
-                      readOnly
-                      className={readonlyInputClass + " min-w-0"}
-                      tabIndex={-1}
-                    />
-                    <span className="text-xs text-gray-400 shrink-0 w-8">mm⁴</span>
-                  </div>
+              {/* ねじり定数（セパレータなし、同じグリッド内に配置） */}
+              <div>
+                <label className={labelClass}>J (サンブナンねじり)</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={formatValue(torsionConstants.J)}
+                    readOnly
+                    className={readonlyInputClass + " min-w-0"}
+                    tabIndex={-1}
+                  />
+                  <span className="text-xs text-gray-400 shrink-0 w-8">mm⁴</span>
                 </div>
-                <div>
-                  <label className={labelClass}>Iw (曲げねじり)</label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      value={formatValue(torsionConstants.Iw)}
-                      readOnly
-                      className={readonlyInputClass + " min-w-0"}
-                      tabIndex={-1}
-                    />
-                    <span className="text-xs text-gray-400 shrink-0 w-8">mm⁶</span>
-                  </div>
+              </div>
+              <div>
+                <label className={labelClass}>Iw (曲げねじり)</label>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={formatValue(torsionConstants.Iw)}
+                    readOnly
+                    className={readonlyInputClass + " min-w-0"}
+                    tabIndex={-1}
+                  />
+                  <span className="text-xs text-gray-400 shrink-0 w-8">mm⁶</span>
                 </div>
               </div>
             </div>
@@ -524,8 +505,8 @@ const SteelStressCalculator: React.FC = () => {
                     onChange={e => setMomentDist(e.target.value as MomentDistribution)}
                     className={inputClass}
                   >
-                    <option value="monotonic">単調変化</option>
                     <option value="max-in-span">区間内最大</option>
+                    <option value="monotonic">単調変化</option>
                   </select>
                 </div>
 
@@ -591,23 +572,6 @@ const SteelStressCalculator: React.FC = () => {
               </div>
             </div>
           )}
-
-          {/* 組み合わせ応力入力 */}
-          {calcTargets.includes('combined') && (
-            <div className={cardClass}>
-              <h2 className={sectionHeaderClass}>組み合わせ応力入力</h2>
-              <div className="space-y-3">
-                <div>
-                  <label className={labelClass}>σ (曲げ応力度) (N/mm²)</label>
-                  <NumberInput value={sigmaB} onChange={setSigmaB} className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>τ (せん断応力度) (N/mm²)</label>
-                  <NumberInput value={tauY} onChange={setTauY} className={inputClass} />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ===== 右パネル: 結果 ===== */}
@@ -619,7 +583,6 @@ const SteelStressCalculator: React.FC = () => {
             compressionResult={compressionResult}
             widthThicknessResult={widthThicknessResult}
             effectiveSection={effectiveSection}
-            combinedRatio={combinedRatio}
             F={F}
           />
         </div>

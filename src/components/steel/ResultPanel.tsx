@@ -7,7 +7,7 @@ import type {
   EffectiveSectionResult,
 } from './steelTypes';
 
-type CalcTarget = 'bending' | 'shear' | 'compression' | 'widthThickness' | 'combined';
+type CalcTarget = 'bending' | 'shear' | 'compression';
 
 interface ResultPanelProps {
   calcTargets: CalcTarget[];
@@ -16,7 +16,6 @@ interface ResultPanelProps {
   compressionResult: CompressionResult | null;
   widthThicknessResult: WidthThicknessResult | null;
   effectiveSection: EffectiveSectionResult | null;
-  combinedRatio: number | null;
   F: number;
 }
 
@@ -53,19 +52,8 @@ const ResultPanel: React.FC<ResultPanelProps> = ({
   compressionResult,
   widthThicknessResult,
   effectiveSection,
-  combinedRatio,
   F,
 }) => {
-  if (calcTargets.length === 0) {
-    return (
-      <div className={cardClass}>
-        <p className="text-gray-500 dark:text-gray-400 text-center py-8">
-          左パネルで計算項目を選択してください
-        </p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       {/* 基本情報 */}
@@ -74,6 +62,56 @@ const ResultPanel: React.FC<ResultPanelProps> = ({
         <Row label="F (基準強度)" value={F} unit="N/mm²" />
         <Row label="ft (長期許容引張)" value={F / 1.5} unit="N/mm²" />
         <Row label="Λ (限界細長比)" value={1500 / Math.sqrt(F / 1.5)} />
+
+        {/* 幅厚比チェック */}
+        {widthThicknessResult && widthThicknessResult.checks.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">幅厚比</p>
+              <StatusBadge ok={widthThicknessResult.isOk} />
+            </div>
+            {widthThicknessResult.warning && (
+              <div className="mb-2 p-2 rounded bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
+                {widthThicknessResult.warning}
+              </div>
+            )}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
+                  <th className="py-1">部位</th>
+                  <th className="py-1 text-right">幅厚比</th>
+                  <th className="py-1 text-right">規定値</th>
+                  <th className="py-1 text-center">判定</th>
+                </tr>
+              </thead>
+              <tbody>
+                {widthThicknessResult.checks.map((c, i) => (
+                  <tr key={i} className="border-b border-gray-100 dark:border-gray-700/50">
+                    <td className="py-1 text-gray-700 dark:text-gray-300">{c.part}</td>
+                    <td className="py-1 text-right font-mono text-gray-800 dark:text-gray-200">{c.ratio.toFixed(2)}</td>
+                    <td className="py-1 text-right font-mono text-gray-800 dark:text-gray-200">{c.limit.toFixed(2)}</td>
+                    <td className="py-1 text-center"><StatusBadge ok={c.isOk} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* 有効断面 */}
+            {effectiveSection && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">有効断面性能</p>
+                <Row label="ΔH" value={effectiveSection.deltaH} unit="mm" />
+                <Row label="ΔB" value={effectiveSection.deltaB} unit="mm" />
+                {effectiveSection.deltaC !== undefined && (
+                  <Row label="ΔC" value={effectiveSection.deltaC} unit="mm" />
+                )}
+                <Row label="Aeff (有効断面積)" value={effectiveSection.Aeff} unit="mm²" />
+                <Row label="Zx,eff (有効断面係数)" value={effectiveSection.Zxeff} unit="mm³" />
+                <Row label="Zy,eff (有効断面係数)" value={effectiveSection.Zyeff} unit="mm³" />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 曲げ許容応力度 */}
@@ -163,74 +201,6 @@ const ResultPanel: React.FC<ResultPanelProps> = ({
             <Row label="fc (長期)" value={compressionResult.fc} unit="N/mm²" />
             <Row label="fc (短期)" value={compressionResult.fc_short} unit="N/mm²" />
           </div>
-        </div>
-      )}
-
-      {/* 幅厚比検定 */}
-      {calcTargets.includes('widthThickness') && widthThicknessResult && (
-        <div className={cardClass}>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2 flex items-center gap-2">
-            幅厚比検定
-            <StatusBadge ok={widthThicknessResult.isOk} />
-          </h3>
-          {widthThicknessResult.warning && (
-            <div className="mb-3 p-2 rounded bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm">
-              {widthThicknessResult.warning}
-            </div>
-          )}
-          {widthThicknessResult.checks.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-                  <th className="py-1">部位</th>
-                  <th className="py-1 text-right">幅厚比</th>
-                  <th className="py-1 text-right">規定値</th>
-                  <th className="py-1 text-center">判定</th>
-                </tr>
-              </thead>
-              <tbody>
-                {widthThicknessResult.checks.map((c, i) => (
-                  <tr key={i} className="border-b border-gray-100 dark:border-gray-700/50">
-                    <td className="py-1 text-gray-700 dark:text-gray-300">{c.part}</td>
-                    <td className="py-1 text-right font-mono text-gray-800 dark:text-gray-200">{c.ratio.toFixed(2)}</td>
-                    <td className="py-1 text-right font-mono text-gray-800 dark:text-gray-200">{c.limit.toFixed(2)}</td>
-                    <td className="py-1 text-center"><StatusBadge ok={c.isOk} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">この断面形状では幅厚比検定は不要です</p>
-          )}
-
-          {/* 有効断面 */}
-          {effectiveSection && (
-            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">有効断面性能</p>
-              <Row label="ΔH" value={effectiveSection.deltaH} unit="mm" />
-              <Row label="ΔB" value={effectiveSection.deltaB} unit="mm" />
-              {effectiveSection.deltaC !== undefined && (
-                <Row label="ΔC" value={effectiveSection.deltaC} unit="mm" />
-              )}
-              <Row label="Aeff (有効断面積)" value={effectiveSection.Aeff} unit="mm²" />
-              <Row label="Zx,eff (有効断面係数)" value={effectiveSection.Zxeff} unit="mm³" />
-              <Row label="Zy,eff (有効断面係数)" value={effectiveSection.Zyeff} unit="mm³" />
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 組み合わせ応力検定 */}
-      {calcTargets.includes('combined') && combinedRatio !== null && (
-        <div className={cardClass}>
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2 flex items-center gap-2">
-            組み合わせ応力検定
-            <StatusBadge ok={combinedRatio <= 1.0} />
-          </h3>
-          <Row label="検定比" value={combinedRatio} />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            √(σ² + 3τ²) / F ≤ 1.0
-          </p>
         </div>
       )}
     </div>
