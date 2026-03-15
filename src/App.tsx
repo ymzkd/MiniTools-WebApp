@@ -7,6 +7,7 @@ import PDFConverterApp from './components/pdf/PDFConverterApp';
 import MarkdownEditor from './components/markdown/MarkdownEditor';
 import BoringDataApp from './components/boring/BoringDataApp';
 import SectionPropertyCalculator from './components/section/SectionPropertyCalculator';
+import SteelStressCalculator from './components/steel/SteelStressCalculator';
 import Toast from './components/common/Toast';
 import { useToast } from './hooks/useToast';
 import { useTheme } from './hooks/useTheme';
@@ -27,6 +28,7 @@ function App() {
     if (pathname === '/markdown') return 'markdown';
     if (pathname === '/boring') return 'boring';
     if (pathname === '/section') return 'section';
+    if (pathname === '/steel') return 'steel';
     return 'matrix'; // デフォルトは matrix
   };
 
@@ -34,7 +36,7 @@ function App() {
 
   // ルートパスまたは未定義パスの場合は /matrix にリダイレクト
   useEffect(() => {
-    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/section'];
+    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/section', '/steel'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/matrix', { replace: true });
     } else if (location.pathname === '/') {
@@ -75,6 +77,9 @@ function App() {
         </div>
         <div style={{ display: activeTab === 'section' ? 'block' : 'none' }}>
           <SectionPropertyCalculator />
+        </div>
+        <div style={{ display: activeTab === 'steel' ? 'block' : 'none' }}>
+          <SteelStressCalculator />
         </div>
       </AppLayout>
 

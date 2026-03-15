@@ -137,4 +137,4 @@ export interface StandardSection {
 }
 
 // Common App Types
-export type AppTab = 'matrix' | 'figure' | 'pdf' | 'markdown' | 'boring' | 'section';
+export type AppTab = 'matrix' | 'figure' | 'pdf' | 'markdown' | 'boring' | 'section' | 'steel';

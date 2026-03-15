@@ -4,6 +4,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* number input のスピナー（矢印）を非表示 */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* ライトモードの背景色 */
 html {
   background-color: #f9fafb;
