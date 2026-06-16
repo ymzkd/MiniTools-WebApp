@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
+    "express": "^4.21.2",
     "@types/katex": "^0.16.7",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^24.1.0",
