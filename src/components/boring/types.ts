@@ -70,6 +70,8 @@ export interface BoringData {
   layers: SoilLayer[];
   standardPenetrationTests?: SPTData[];
   waterLevel?: number; // 地下水位
+  groundElevation?: number; // 孔口標高（m）
+  purpose?: string; // 調査目的
   pdfUrl?: string; // PDF柱状図のURL
   xmlUrl?: string; // XMLデータのURL
   dtdVersion?: DTDVersion; // DTDバージョン
