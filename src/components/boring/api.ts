@@ -307,6 +307,7 @@ export async function searchTokyo(
     title: item.title,
     source: 'tokyo' as const,
     metadata: {
+      'NGI:code': item.id,
       'NGI:latitude': String(item.lat),
       'NGI:longitude': String(item.lng),
       'NGI:address': item.address,
@@ -377,11 +378,14 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
 
   // 基本情報の取得（標題情報セクション - 全バージョン共通）
   const title = getText('調査名', undefined, xmlDoc) || getText('工事名', undefined, xmlDoc) || `ボーリング ${id}`;
-  const depth = getNumber('総掘進長', undefined, xmlDoc) || getNumber('孔底深度', undefined, xmlDoc) || 0;
+  // 掘削深度: KuniJibanは総掘進長/孔底深度、東京の地盤(BED0400)は総削孔長
+  const depth = getNumber('総掘進長', undefined, xmlDoc) || getNumber('孔底深度', undefined, xmlDoc) || getNumber('総削孔長', undefined, xmlDoc) || 0;
   const surveyEnd = getText('調査期間_終了年月日', undefined, xmlDoc);
   const surveyStart = getText('調査期間_開始年月日', undefined, xmlDoc);
   const date = surveyEnd || surveyStart;
-  const organization = getText('調査会社_名称', undefined, xmlDoc) || getText('発注機関_名称', undefined, xmlDoc);
+  const organization = getText('調査会社_名称', undefined, xmlDoc) || getText('発注機関_名称', undefined, xmlDoc) || getText('発注機関名称', undefined, xmlDoc);
+  const groundElevation = getNumber('孔口標高', undefined, xmlDoc);
+  const purpose = getText('調査目的', undefined, xmlDoc);
 
   // 土質層データの取得（バージョン別パーサーを使用）
   const layers = soilLayerParser.parseSoilLayers(xmlDoc);
@@ -434,6 +438,8 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
     layers,
     standardPenetrationTests: sptTests.length > 0 ? sptTests : undefined,
     waterLevel,
+    groundElevation: groundElevation || undefined,
+    purpose: purpose || undefined,
     dtdVersion,
   };
 }
