@@ -26,6 +26,19 @@ const boringIcon = new L.Icon({
   popupAnchor: [0, -12],
 });
 
+// 東京の地盤(GIS版) 地点用アイコン（オレンジでMLITと区別）
+const tokyoBoringIcon = new L.Icon({
+  iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+      <circle cx="12" cy="12" r="10" fill="#f59e0b" stroke="#fff" stroke-width="2"/>
+      <circle cx="12" cy="12" r="4" fill="#fff"/>
+    </svg>
+  `),
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -12],
+});
+
 // 選択中のボーリング地点用アイコン
 const selectedBoringIcon = new L.Icon({
   iconUrl: 'data:image/svg+xml;base64,' + btoa(`
@@ -177,7 +190,7 @@ const MapView: React.FC<MapViewProps> = ({
             <Marker
               key={result.id}
               position={[result.location.lat, result.location.lng]}
-              icon={isSelected ? selectedBoringIcon : boringIcon}
+              icon={isSelected ? selectedBoringIcon : (result.source === 'tokyo' ? tokyoBoringIcon : boringIcon)}
               eventHandlers={{
                 click: () => onResultSelect(result),
               }}
@@ -185,6 +198,13 @@ const MapView: React.FC<MapViewProps> = ({
               <Popup>
                 <div className="text-sm min-w-[200px]">
                   <p className="font-medium text-gray-900">{result.title}</p>
+                  <span
+                    className={`inline-block mt-1 px-1.5 py-0.5 rounded text-xs text-white ${
+                      result.source === 'tokyo' ? 'bg-amber-500' : 'bg-red-500'
+                    }`}
+                  >
+                    {result.source === 'tokyo' ? '東京の地盤(GIS版)' : '国土地盤'}
+                  </span>
                   {result.description && (
                     <p className="text-gray-600 mt-1">{result.description}</p>
                   )}
@@ -216,7 +236,11 @@ const MapView: React.FC<MapViewProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
-            <span className="text-gray-700 dark:text-gray-300">ボーリング地点</span>
+            <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
+            <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white shadow"></div>

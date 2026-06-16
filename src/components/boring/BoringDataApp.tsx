@@ -5,7 +5,7 @@ import SearchPanel from './SearchPanel';
 import ResultsList from './ResultsList';
 import BoringLogViewer from './BoringLogViewer';
 import {
-  searchByLocation,
+  searchAllSources,
   generateMockSearchResults,
   generateMockBoringData,
   fetchAndParseBoringData,
@@ -102,8 +102,15 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         await new Promise(resolve => setTimeout(resolve, 500)); // 擬似的な遅延
         results = generateMockSearchResults(area.center, 8);
       } else {
-        // 本番モード: サーバーレス関数経由でMLIT APIを使用
-        results = await searchByLocation(area, keyword, 50);
+        // 本番モード: MLIT(国土地盤) と 東京の地盤(GIS版) を横断検索してマージ
+        const { results: merged, errors } = await searchAllSources(area, keyword, 50);
+        results = merged;
+        // 片方のソースだけ失敗した場合は警告として通知（結果は表示する）
+        if (errors.length > 0 && merged.length > 0) {
+          onError?.(`一部ソースの検索に失敗しました（${errors.join(' / ')}）`);
+        } else if (errors.length > 0) {
+          throw new Error(errors.join(' / '));
+        }
       }
 
       setSearchResults(results);
@@ -112,7 +119,9 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
       if (results.length === 0) {
         onError?.('指定した範囲にボーリングデータが見つかりませんでした');
       } else {
-        onSuccess?.(`${results.length}件のボーリングデータが見つかりました`);
+        const tokyoCount = results.filter(r => r.source === 'tokyo').length;
+        const mlitCount = results.length - tokyoCount;
+        onSuccess?.(`${results.length}件見つかりました（国土地盤 ${mlitCount} / 東京 ${tokyoCount}）`);
       }
     } catch (err) {
       setSearchStatus('error');

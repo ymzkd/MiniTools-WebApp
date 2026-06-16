@@ -90,6 +90,37 @@ app.get('/api/kunijiban', async (req, res) => {
   }
 })
 
+// 東京の地盤(GIS版) ローカル地盤API への薄いリバースプロキシ。
+// jiban-api は別コンテナ（同一Dockerネットワーク）。ブラウザからは minitools
+// 同一オリジンの /api/tokyo/* で叩けるので Mixed Content / CORS が発生しない。
+// JIBAN_API_URL 未設定なら東京機能は無効（503）＝MLIT単独でも動作する。
+const JIBAN_API_URL = process.env.JIBAN_API_URL // 例: http://jiban-api:8000
+app.use('/api/tokyo', async (req, res) => {
+  if (!JIBAN_API_URL) {
+    return res.status(503).json({ error: 'Tokyo jiban API not configured' })
+  }
+  try {
+    const target = JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/tokyo/, '')
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers: { accept: req.headers['accept'] || '*/*' },
+    })
+    res.status(upstream.status)
+    const ct = upstream.headers.get('content-type')
+    if (ct) res.setHeader('Content-Type', ct)
+    const cc = upstream.headers.get('cache-control')
+    if (cc) res.setHeader('Cache-Control', cc)
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    return res.send(buf)
+  } catch (error) {
+    console.error('Tokyo jiban proxy error:', error)
+    return res.status(502).json({
+      error: 'Bad gateway to jiban API',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
 // Static assets + SPA fallback (final middleware works across Express 4/5).
 const distDir = path.join(__dirname, 'dist')
 app.use(express.static(distDir))
