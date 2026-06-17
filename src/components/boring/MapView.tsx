@@ -31,16 +31,19 @@ interface MapViewProps {
 
 const DENSITY_COLOR = '#c0392b';
 
-// 密度→不透明度。
-// 東京データが突出して濃いため、相対スケールだと他エリアが透明に近くなる。
-// 対数スケール＋下限を設け「データがある区画は最低でも視認できる濃さ」を保証する。
-const DENSITY_MIN_OPACITY = 0.35; // 1件でもこれ以上の濃さ
-const DENSITY_MAX_OPACITY = 0.85;
+// 密度→不透明度（4段階の離散）。
+// ゼロ件は透明（セル自体描画されない）、それ以外は最低段でも視認できる濃さに。
+// 区分は対数スケール（東京の突出に引っ張られず、低密度も最低段で見える）。
+const DENSITY_LEVELS = [0.35, 0.55, 0.7, 0.85];
+function densityLevel(n: number, maxN: number): number {
+  if (n <= 0) return -1;
+  if (maxN <= 1) return 0;
+  const t = Math.log(n + 1) / Math.log(maxN + 1); // 0..1
+  return Math.min(DENSITY_LEVELS.length - 1, Math.floor(t * DENSITY_LEVELS.length));
+}
 function densityOpacity(n: number, maxN: number): number {
-  if (n <= 0) return 0;
-  if (maxN <= 1) return DENSITY_MIN_OPACITY;
-  const t = Math.log(n + 1) / Math.log(maxN + 1); // 0..1（低密度を持ち上げる対数スケール）
-  return DENSITY_MIN_OPACITY + (DENSITY_MAX_OPACITY - DENSITY_MIN_OPACITY) * t;
+  const lv = densityLevel(n, maxN);
+  return lv < 0 ? 0 : DENSITY_LEVELS[lv];
 }
 
 // 密度タイル（グローバル固定メッシュの矩形）を描画
@@ -274,10 +277,13 @@ const MapView: React.FC<MapViewProps> = ({
             <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">東京データ密度</p>
             <div className="flex items-center gap-1">
               <span className="text-gray-600 dark:text-gray-400">少</span>
-              <div
-                className="w-24 h-3 rounded"
-                style={{ background: 'linear-gradient(to right, rgba(192,57,43,0.35), rgba(192,57,43,0.85))' }}
-              ></div>
+              {DENSITY_LEVELS.map((o) => (
+                <div
+                  key={o}
+                  className="w-5 h-3 border border-gray-300 dark:border-gray-600"
+                  style={{ backgroundColor: `rgba(192,57,43,${o})` }}
+                ></div>
+              ))}
               <span className="text-gray-600 dark:text-gray-400">多</span>
             </div>
           </>
