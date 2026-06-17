@@ -87,21 +87,6 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
         </button>
       </div>
 
-      {/* PDF柱状図（元データの柱状図PDF）をいつでも開ける。東京の地盤は全点PDF有り */}
-      {selectedResult.metadata?.['NGI:link_boring_pdf'] && (
-        <div className="px-4 pt-3">
-          <a
-            href={selectedResult.metadata['NGI:link_boring_pdf']}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
-          >
-            <FileText className="w-4 h-4" />
-            PDF柱状図を開く
-          </a>
-        </div>
-      )}
-
       {/* ローディング */}
       {loading && (
         <div className="p-8 text-center">
@@ -165,6 +150,18 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
 
           {/* 外部リンク */}
           <div className="flex flex-wrap gap-2">
+            {/* 柱状図表示（東京の地盤=PDF原本 / 国土地盤=外部ビューア）を同じ位置・スタイルで提供 */}
+            {selectedResult.metadata?.['NGI:link_boring_pdf'] && (
+              <a
+                href={selectedResult.metadata['NGI:link_boring_pdf']}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              >
+                <ExternalLink className="w-4 h-4" />
+                PDF柱状図を表示
+              </a>
+            )}
             {/* 外部ビューアーリンク */}
             {ngiId && (
               <a

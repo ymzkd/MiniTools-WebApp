@@ -305,6 +305,16 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
           >
             国土地盤情報検索サイト (KuniJiban)
           </a>
+          {' / '}
+          <a
+            href="https://www.kensetsu.metro.tokyo.lg.jp/jimusho/tech/geo-web"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            東京の地盤(GIS版)
+          </a>
+          <span className="ml-1">（東京都建設局 / CC BY 2.1 JP）</span>
         </p>
       </div>
     </div>
