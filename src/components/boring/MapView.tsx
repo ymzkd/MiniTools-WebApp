@@ -31,10 +31,16 @@ interface MapViewProps {
 
 const DENSITY_COLOR = '#c0392b';
 
-// 密度→不透明度（sqrtスケールで低密度も見えるように）
+// 密度→不透明度。
+// 東京データが突出して濃いため、相対スケールだと他エリアが透明に近くなる。
+// 対数スケール＋下限を設け「データがある区画は最低でも視認できる濃さ」を保証する。
+const DENSITY_MIN_OPACITY = 0.35; // 1件でもこれ以上の濃さ
+const DENSITY_MAX_OPACITY = 0.85;
 function densityOpacity(n: number, maxN: number): number {
-  if (maxN <= 0) return 0.15;
-  return 0.12 + 0.6 * Math.sqrt(n / maxN);
+  if (n <= 0) return 0;
+  if (maxN <= 1) return DENSITY_MIN_OPACITY;
+  const t = Math.log(n + 1) / Math.log(maxN + 1); // 0..1（低密度を持ち上げる対数スケール）
+  return DENSITY_MIN_OPACITY + (DENSITY_MAX_OPACITY - DENSITY_MIN_OPACITY) * t;
 }
 
 // 密度タイル（グローバル固定メッシュの矩形）を描画
@@ -270,7 +276,7 @@ const MapView: React.FC<MapViewProps> = ({
               <span className="text-gray-600 dark:text-gray-400">少</span>
               <div
                 className="w-24 h-3 rounded"
-                style={{ background: 'linear-gradient(to right, rgba(192,57,43,0.15), rgba(192,57,43,0.75))' }}
+                style={{ background: 'linear-gradient(to right, rgba(192,57,43,0.35), rgba(192,57,43,0.85))' }}
               ></div>
               <span className="text-gray-600 dark:text-gray-400">多</span>
             </div>
