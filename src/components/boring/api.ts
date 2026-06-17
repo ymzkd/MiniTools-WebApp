@@ -354,6 +354,174 @@ export async function searchAllSources(
   return { results, errors };
 }
 
+// ============================================================
+// ビューポート(bbox)連動の検索 — 地図表示範囲の地点をリアルタイム描画する用
+// ============================================================
+export interface MapBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+// MLIT検索結果アイテム → MLITSearchResult への正規化（searchByLocation等と共通）
+function mapMLITItem(item: {
+  id: string;
+  title: string;
+  metadata?: Record<string, string>;
+}): MLITSearchResult {
+  const lat = item.metadata?.['NGI:latitude'] ? parseFloat(item.metadata['NGI:latitude']) : undefined;
+  const lng = item.metadata?.['NGI:longitude'] ? parseFloat(item.metadata['NGI:longitude']) : undefined;
+  let xmlUrl = item.metadata?.['NGI:link_boring_xml'];
+  if (xmlUrl) {
+    xmlUrl = xmlUrl.replace('publicweb.ngic.or.jp', 'www.kunijiban.pwri.go.jp');
+  }
+  return {
+    id: item.id,
+    title: item.title,
+    source: 'mlit' as const,
+    metadata: { ...item.metadata, 'NGI:link_boring_xml': xmlUrl },
+    location: lat && lng ? { lat, lng } : undefined,
+  };
+}
+
+// MLIT(国土地盤)を bbox で検索
+export async function searchMLITWithinBounds(
+  bounds: MapBounds,
+  size: number = 500
+): Promise<MLITSearchResult[]> {
+  const variables = {
+    topLat: bounds.maxLat,
+    topLon: bounds.minLng,
+    bottomLat: bounds.minLat,
+    bottomLon: bounds.maxLng,
+    size,
+  };
+  interface SearchResponse {
+    search: {
+      totalNumber: number;
+      searchResults: Array<{ id: string; title: string; metadata?: Record<string, string> }>;
+    };
+  }
+  const data = await callMLITAPI<SearchResponse>(SEARCH_BY_LOCATION_QUERY, variables);
+  return data.search.searchResults.map(mapMLITItem).filter(r => r.location);
+}
+
+interface TokyoWithinResponse {
+  total: number;
+  truncated: boolean;
+  results: TokyoSearchItem[];
+}
+
+// 東京の地盤を bbox で検索（/api/tokyo/within）
+export async function searchTokyoWithin(
+  bounds: MapBounds,
+  limit: number = 2000
+): Promise<{ results: MLITSearchResult[]; total: number; truncated: boolean }> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    limit: String(limit),
+  });
+  const response = await fetch(`${TOKYO_API_BASE}/within?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`東京地盤API エラー: ${response.status} ${response.statusText}`);
+  }
+  const data: TokyoWithinResponse = await response.json();
+  const results = data.results.map(item => ({
+    id: item.id,
+    title: item.title,
+    source: 'tokyo' as const,
+    metadata: {
+      'NGI:code': item.id,
+      'NGI:latitude': String(item.lat),
+      'NGI:longitude': String(item.lng),
+      'NGI:address': item.address,
+      'NGI:survey_finish': item.survey_finish,
+      'NGI:link_boring_xml': item.xml_url,
+      'NGI:link_boring_pdf': item.pdf_url,
+    },
+    location: { lat: item.lat, lng: item.lng },
+    datasetName: '東京の地盤(GIS版)',
+    catalogName: 'CC BY 2.1 JP',
+  }));
+  return { results, total: data.total, truncated: data.truncated };
+}
+
+export interface DensityCell {
+  gy: number;
+  gx: number;
+  n?: number; // 件数（存在表示には不要なので任意）
+}
+
+export interface DensityResult {
+  cell: number;
+  maxN: number;
+  cells: DensityCell[];
+}
+
+// 東京データの密度（グリッド集計）。ズームアウト時にどこにデータがあるか可視化する用。
+export async function searchTokyoDensity(
+  bounds: MapBounds,
+  cell: number
+): Promise<DensityResult> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    cell: String(cell),
+  });
+  const response = await fetch(`${TOKYO_API_BASE}/density?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`東京地盤API(密度) エラー: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export interface ViewportSearchResult {
+  results: MLITSearchResult[];
+  errors: string[];
+  tokyoTotal: number;
+  tokyoTruncated: boolean;
+  mlitCount: number;
+}
+
+// MLIT + 東京 を bbox で横断取得（ビューポート描画用）。部分成功を許容。
+export async function searchAllSourcesInBounds(
+  bounds: MapBounds,
+  opts: { tokyoLimit?: number; mlitSize?: number } = {}
+): Promise<ViewportSearchResult> {
+  const errors: string[] = [];
+  const [mlitSettled, tokyoSettled] = await Promise.allSettled([
+    searchMLITWithinBounds(bounds, opts.mlitSize ?? 500),
+    searchTokyoWithin(bounds, opts.tokyoLimit ?? 2000),
+  ]);
+
+  const results: MLITSearchResult[] = [];
+  let mlitCount = 0;
+  let tokyoTotal = 0;
+  let tokyoTruncated = false;
+
+  if (mlitSettled.status === 'fulfilled') {
+    results.push(...mlitSettled.value);
+    mlitCount = mlitSettled.value.length;
+  } else {
+    errors.push(`MLIT: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
+  }
+  if (tokyoSettled.status === 'fulfilled') {
+    results.push(...tokyoSettled.value.results);
+    tokyoTotal = tokyoSettled.value.total;
+    tokyoTruncated = tokyoSettled.value.truncated;
+  } else {
+    errors.push(`東京: ${tokyoSettled.reason?.message ?? tokyoSettled.reason}`);
+  }
+
+  return { results, errors, tokyoTotal, tokyoTruncated, mlitCount };
+}
+
 // XMLパーサー: ボーリングデータを解析（DTD version 2.10/3.00/4.00対応）
 export function parseBoringXML(xmlString: string, id: string, location: GeoLocation): BoringData {
   const parser = new DOMParser();

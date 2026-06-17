@@ -42,8 +42,8 @@ const ResultsList: React.FC<ResultsListProps> = ({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <MapPin className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>検索結果がありません</p>
-          <p className="text-sm mt-1">地図をクリックして検索地点を指定してください</p>
+          <p>近接データがありません</p>
+          <p className="text-sm mt-1">地図上の地点をクリックすると、近接するデータが一覧表示されます</p>
         </div>
       </div>
     );
@@ -53,7 +53,7 @@ const ResultsList: React.FC<ResultsListProps> = ({
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          検索結果 ({results.length}件)
+          近接データ ({results.length}件)
         </h3>
       </div>
 
