@@ -23,6 +23,7 @@ interface MapViewProps {
   // 密度タイル（ズーム閾値未満で表示）。データがある区画を一律色で塗る存在表示
   densityCells: DensityCell[];
   densityCell: number;
+  mapStatus?: string; // 地図内に薄く重ねる件数表示
   onViewportChange: (bounds: MapBounds, zoom: number) => void;
   onPickNearby: (points: MLITSearchResult[]) => void;
   onResultSelect: (result: MLITSearchResult) => void;
@@ -203,6 +204,7 @@ const MapView: React.FC<MapViewProps> = ({
   belowMinZoom,
   densityCells,
   densityCell,
+  mapStatus,
   onViewportChange,
   onPickNearby,
   onResultSelect,
@@ -237,6 +239,13 @@ const MapView: React.FC<MapViewProps> = ({
           />
         )}
       </MapContainer>
+
+      {/* 件数表示（地図内に薄く重ねる） */}
+      {mapStatus && (
+        <div className="absolute bottom-2 left-2 z-[1000] text-xs text-gray-700/60 dark:text-gray-200/60 pointer-events-none select-none">
+          {mapStatus}
+        </div>
+      )}
 
       {/* ズーム不足時のヒント */}
       {belowMinZoom && (
