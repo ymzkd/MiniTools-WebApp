@@ -15,10 +15,17 @@ export interface SearchArea {
   radius: number; // メートル単位
 }
 
+// データソース種別
+// 'mlit'  … 国土地盤情報(KuniJiban) ＝ MLIT DPF GraphQL API
+// 'tokyo' … 東京の地盤(GIS版) ＝ ローカルDokployの地盤API(/api/tokyo)
+export type DataSource = 'mlit' | 'tokyo';
+
 // MLIT DPF API レスポンスの検索結果
 export interface MLITSearchResult {
   id: string;
   title: string;
+  // 検索結果の出自。未指定は既存挙動(=mlit)とみなす
+  source?: DataSource;
   metadata?: {
     'NGI:id'?: string;
     'NGI:code'?: string;
@@ -63,6 +70,8 @@ export interface BoringData {
   layers: SoilLayer[];
   standardPenetrationTests?: SPTData[];
   waterLevel?: number; // 地下水位
+  groundElevation?: number; // 孔口標高（m）
+  purpose?: string; // 調査目的
   pdfUrl?: string; // PDF柱状図のURL
   xmlUrl?: string; // XMLデータのURL
   dtdVersion?: DTDVersion; // DTDバージョン

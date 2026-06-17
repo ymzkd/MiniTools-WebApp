@@ -128,10 +128,16 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
               <FileText className="w-4 h-4" />
               <span>掘削深度: {data.depth.toFixed(1)}m</span>
             </div>
-            {selectedResult.metadata?.['NGI:boring_elevation'] && (
+            {(selectedResult.metadata?.['NGI:boring_elevation'] || data.groundElevation !== undefined) && (
               <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <Mountain className="w-4 h-4" />
-                <span>孔口標高: {selectedResult.metadata['NGI:boring_elevation']}m</span>
+                <span>孔口標高: {selectedResult.metadata?.['NGI:boring_elevation'] ?? data.groundElevation?.toFixed(2)}m</span>
+              </div>
+            )}
+            {data.purpose && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 col-span-2">
+                <FileText className="w-4 h-4" />
+                <span>調査目的: {data.purpose}</span>
               </div>
             )}
             {selectedResult.metadata?.['NGI:boring_xml_version'] && (
@@ -144,6 +150,18 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
 
           {/* 外部リンク */}
           <div className="flex flex-wrap gap-2">
+            {/* 柱状図表示（東京の地盤=PDF原本 / 国土地盤=外部ビューア）を同じ位置・スタイルで提供 */}
+            {selectedResult.metadata?.['NGI:link_boring_pdf'] && (
+              <a
+                href={selectedResult.metadata['NGI:link_boring_pdf']}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              >
+                <ExternalLink className="w-4 h-4" />
+                PDF柱状図を表示
+              </a>
+            )}
             {/* 外部ビューアーリンク */}
             {ngiId && (
               <a

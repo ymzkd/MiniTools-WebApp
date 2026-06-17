@@ -69,7 +69,12 @@ function App() {
         <div style={{ display: activeTab === 'markdown' ? 'block' : 'none' }}>
           <MarkdownEditor />
         </div>
-        <div style={{ display: activeTab === 'boring' ? 'block' : 'none' }}>
+        {/* 地盤タブは地図を縦いっぱいに使う: ナビ(h-16)直下〜画面最下部まで。
+            main の py-8 を lg:-my-8 で打ち消し、高さ=100vh-ナビ。モバイルは従来通り。 */}
+        <div
+          className="lg:-my-8 lg:h-[calc(100vh-4rem)]"
+          style={{ display: activeTab === 'boring' ? 'block' : 'none' }}
+        >
           <BoringDataApp
             onSuccess={showSuccess}
             onError={showError}

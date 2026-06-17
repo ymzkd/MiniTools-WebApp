@@ -259,6 +259,269 @@ export async function searchByKeyword(
   });
 }
 
+// ============================================================
+// 東京の地盤(GIS版) ローカル地盤API 連携
+// ローカルDokployの jiban-api を minitools 同一オリジンの
+// /api/tokyo/* プロキシ経由で叩く（Mixed Content/CORS回避）。
+// 検索結果は MLITSearchResult 形に正規化して MLIT と横断マージする。
+// ============================================================
+const TOKYO_API_BASE = '/api/tokyo';
+
+interface TokyoSearchItem {
+  id: string;            // 地点ID（例: TKY-12345）
+  title: string;         // 調査名/地点名
+  lat: number;           // 十進緯度（取り込み時に度分秒→十進変換済み）
+  lng: number;           // 十進経度
+  xml_url: string;       // bed.xml の配信パス（同一オリジン /api/tokyo/files/...）
+  pdf_url?: string;      // bed.pdf の配信パス（任意）
+  address?: string;
+  survey_finish?: string;
+}
+
+interface TokyoSearchResponse {
+  total: number;
+  results: TokyoSearchItem[];
+}
+
+// 東京データの位置検索（jiban-api /search）
+export async function searchTokyo(
+  area: SearchArea,
+  size: number = 50
+): Promise<MLITSearchResult[]> {
+  const params = new URLSearchParams({
+    lat: String(area.center.lat),
+    lng: String(area.center.lng),
+    radius: String(area.radius),
+    size: String(size),
+  });
+
+  const response = await fetch(`${TOKYO_API_BASE}/search?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`東京地盤API エラー: ${response.status} ${response.statusText}`);
+  }
+
+  const data: TokyoSearchResponse = await response.json();
+
+  return data.results.map(item => ({
+    id: item.id,
+    title: item.title,
+    source: 'tokyo' as const,
+    metadata: {
+      'NGI:code': item.id,
+      'NGI:latitude': String(item.lat),
+      'NGI:longitude': String(item.lng),
+      'NGI:address': item.address,
+      'NGI:survey_finish': item.survey_finish,
+      // 詳細取得は共通の link_boring_xml 経路に乗せる（同一オリジンの配信パス）
+      'NGI:link_boring_xml': item.xml_url,
+      'NGI:link_boring_pdf': item.pdf_url,
+    },
+    location: { lat: item.lat, lng: item.lng },
+    datasetName: '東京の地盤(GIS版)',
+    catalogName: 'CC BY 2.1 JP',
+  }));
+}
+
+// MLIT + 東京を横断検索してマージ
+// どちらか一方が失敗しても、もう一方の結果は返す（部分成功を許容）。
+export async function searchAllSources(
+  area: SearchArea,
+  keyword?: string,
+  size: number = 50
+): Promise<{ results: MLITSearchResult[]; errors: string[] }> {
+  const errors: string[] = [];
+
+  const [mlitSettled, tokyoSettled] = await Promise.allSettled([
+    searchByLocation(area, keyword, size),
+    searchTokyo(area, size),
+  ]);
+
+  const results: MLITSearchResult[] = [];
+
+  if (mlitSettled.status === 'fulfilled') {
+    // 既存MLIT結果には source を明示付与（未指定=mlit）
+    results.push(...mlitSettled.value.map(r => ({ ...r, source: 'mlit' as const })));
+  } else {
+    errors.push(`MLIT: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
+  }
+
+  if (tokyoSettled.status === 'fulfilled') {
+    results.push(...tokyoSettled.value);
+  } else {
+    errors.push(`東京: ${tokyoSettled.reason?.message ?? tokyoSettled.reason}`);
+  }
+
+  return { results, errors };
+}
+
+// ============================================================
+// ビューポート(bbox)連動の検索 — 地図表示範囲の地点をリアルタイム描画する用
+// ============================================================
+export interface MapBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+// MLIT検索結果アイテム → MLITSearchResult への正規化（searchByLocation等と共通）
+function mapMLITItem(item: {
+  id: string;
+  title: string;
+  metadata?: Record<string, string>;
+}): MLITSearchResult {
+  const lat = item.metadata?.['NGI:latitude'] ? parseFloat(item.metadata['NGI:latitude']) : undefined;
+  const lng = item.metadata?.['NGI:longitude'] ? parseFloat(item.metadata['NGI:longitude']) : undefined;
+  let xmlUrl = item.metadata?.['NGI:link_boring_xml'];
+  if (xmlUrl) {
+    xmlUrl = xmlUrl.replace('publicweb.ngic.or.jp', 'www.kunijiban.pwri.go.jp');
+  }
+  return {
+    id: item.id,
+    title: item.title,
+    source: 'mlit' as const,
+    metadata: { ...item.metadata, 'NGI:link_boring_xml': xmlUrl },
+    location: lat && lng ? { lat, lng } : undefined,
+  };
+}
+
+// MLIT(国土地盤)を bbox で検索
+export async function searchMLITWithinBounds(
+  bounds: MapBounds,
+  size: number = 500
+): Promise<MLITSearchResult[]> {
+  const variables = {
+    topLat: bounds.maxLat,
+    topLon: bounds.minLng,
+    bottomLat: bounds.minLat,
+    bottomLon: bounds.maxLng,
+    size,
+  };
+  interface SearchResponse {
+    search: {
+      totalNumber: number;
+      searchResults: Array<{ id: string; title: string; metadata?: Record<string, string> }>;
+    };
+  }
+  const data = await callMLITAPI<SearchResponse>(SEARCH_BY_LOCATION_QUERY, variables);
+  return data.search.searchResults.map(mapMLITItem).filter(r => r.location);
+}
+
+interface TokyoWithinResponse {
+  total: number;
+  truncated: boolean;
+  results: TokyoSearchItem[];
+}
+
+// 東京の地盤を bbox で検索（/api/tokyo/within）
+export async function searchTokyoWithin(
+  bounds: MapBounds,
+  limit: number = 2000
+): Promise<{ results: MLITSearchResult[]; total: number; truncated: boolean }> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    limit: String(limit),
+  });
+  const response = await fetch(`${TOKYO_API_BASE}/within?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`東京地盤API エラー: ${response.status} ${response.statusText}`);
+  }
+  const data: TokyoWithinResponse = await response.json();
+  const results = data.results.map(item => ({
+    id: item.id,
+    title: item.title,
+    source: 'tokyo' as const,
+    metadata: {
+      'NGI:code': item.id,
+      'NGI:latitude': String(item.lat),
+      'NGI:longitude': String(item.lng),
+      'NGI:address': item.address,
+      'NGI:survey_finish': item.survey_finish,
+      'NGI:link_boring_xml': item.xml_url,
+      'NGI:link_boring_pdf': item.pdf_url,
+    },
+    location: { lat: item.lat, lng: item.lng },
+    datasetName: '東京の地盤(GIS版)',
+    catalogName: 'CC BY 2.1 JP',
+  }));
+  return { results, total: data.total, truncated: data.truncated };
+}
+
+export interface DensityCell {
+  gy: number;
+  gx: number;
+  n?: number; // 件数（存在表示には不要なので任意）
+}
+
+export interface DensityResult {
+  cell: number;
+  maxN: number;
+  cells: DensityCell[];
+}
+
+// 東京データの密度（グリッド集計）。ズームアウト時にどこにデータがあるか可視化する用。
+export async function searchTokyoDensity(
+  bounds: MapBounds,
+  cell: number
+): Promise<DensityResult> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    cell: String(cell),
+  });
+  const response = await fetch(`${TOKYO_API_BASE}/density?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`東京地盤API(密度) エラー: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export interface ViewportSearchResult {
+  results: MLITSearchResult[];
+  errors: string[];
+  tokyoTotal: number;
+  tokyoTruncated: boolean;
+  mlitCount: number;
+}
+
+// MLIT + 東京 を bbox で横断取得（ビューポート描画用）。部分成功を許容。
+export async function searchAllSourcesInBounds(
+  bounds: MapBounds,
+  opts: { tokyoLimit?: number; mlitSize?: number } = {}
+): Promise<ViewportSearchResult> {
+  const errors: string[] = [];
+  const [mlitSettled, tokyoSettled] = await Promise.allSettled([
+    searchMLITWithinBounds(bounds, opts.mlitSize ?? 500),
+    searchTokyoWithin(bounds, opts.tokyoLimit ?? 2000),
+  ]);
+
+  const results: MLITSearchResult[] = [];
+  let mlitCount = 0;
+  let tokyoTotal = 0;
+  let tokyoTruncated = false;
+
+  if (mlitSettled.status === 'fulfilled') {
+    results.push(...mlitSettled.value);
+    mlitCount = mlitSettled.value.length;
+  } else {
+    errors.push(`MLIT: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
+  }
+  if (tokyoSettled.status === 'fulfilled') {
+    results.push(...tokyoSettled.value.results);
+    tokyoTotal = tokyoSettled.value.total;
+    tokyoTruncated = tokyoSettled.value.truncated;
+  } else {
+    errors.push(`東京: ${tokyoSettled.reason?.message ?? tokyoSettled.reason}`);
+  }
+
+  return { results, errors, tokyoTotal, tokyoTruncated, mlitCount };
+}
+
 // XMLパーサー: ボーリングデータを解析（DTD version 2.10/3.00/4.00対応）
 export function parseBoringXML(xmlString: string, id: string, location: GeoLocation): BoringData {
   const parser = new DOMParser();
@@ -283,11 +546,14 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
 
   // 基本情報の取得（標題情報セクション - 全バージョン共通）
   const title = getText('調査名', undefined, xmlDoc) || getText('工事名', undefined, xmlDoc) || `ボーリング ${id}`;
-  const depth = getNumber('総掘進長', undefined, xmlDoc) || getNumber('孔底深度', undefined, xmlDoc) || 0;
+  // 掘削深度: KuniJibanは総掘進長/孔底深度、東京の地盤(BED0400)は総削孔長
+  const depth = getNumber('総掘進長', undefined, xmlDoc) || getNumber('孔底深度', undefined, xmlDoc) || getNumber('総削孔長', undefined, xmlDoc) || 0;
   const surveyEnd = getText('調査期間_終了年月日', undefined, xmlDoc);
   const surveyStart = getText('調査期間_開始年月日', undefined, xmlDoc);
   const date = surveyEnd || surveyStart;
-  const organization = getText('調査会社_名称', undefined, xmlDoc) || getText('発注機関_名称', undefined, xmlDoc);
+  const organization = getText('調査会社_名称', undefined, xmlDoc) || getText('発注機関_名称', undefined, xmlDoc) || getText('発注機関名称', undefined, xmlDoc);
+  const groundElevation = getNumber('孔口標高', undefined, xmlDoc);
+  const purpose = getText('調査目的', undefined, xmlDoc);
 
   // 土質層データの取得（バージョン別パーサーを使用）
   const layers = soilLayerParser.parseSoilLayers(xmlDoc);
@@ -340,6 +606,8 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
     layers,
     standardPenetrationTests: sptTests.length > 0 ? sptTests : undefined,
     waterLevel,
+    groundElevation: groundElevation || undefined,
+    purpose: purpose || undefined,
     dtdVersion,
   };
 }
@@ -351,8 +619,11 @@ export async function fetchAndParseBoringData(
   location: GeoLocation
 ): Promise<BoringData> {
   try {
-    // CORS問題を回避するため、サーバーレス関数経由でXMLを取得
-    const fetchUrl = `/api/kunijiban?url=${encodeURIComponent(xmlUrl)}`;
+    // 東京データ(/api/tokyo/files/...)は同一オリジン配信なので直fetch。
+    // KuniJiban(外部https)はCORS回避のためサーバーレス関数経由で取得。
+    const fetchUrl = xmlUrl.startsWith('/api/tokyo/')
+      ? xmlUrl
+      : `/api/kunijiban?url=${encodeURIComponent(xmlUrl)}`;
 
     const response = await fetch(fetchUrl);
 
