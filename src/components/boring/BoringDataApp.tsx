@@ -7,6 +7,7 @@ import BoringLogViewer from './BoringLogViewer';
 import {
   searchAllSourcesInBounds,
   searchTokyoDensity,
+  searchMLITWithinBounds,
   fetchAndParseBoringData,
   type MapBounds,
   type DensityCell,
@@ -60,10 +61,9 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
   const [belowMinZoom, setBelowMinZoom] = useState(false);
   const [plotting, setPlotting] = useState(false);
   const [viewportInfo, setViewportInfo] = useState<ViewportInfo | null>(null);
-  // 密度タイル（ズーム閾値未満）
+  // 密度タイル（ズーム閾値未満）。データがある区画を一律色で塗る存在表示（東京＋MLIT）
   const [densityCells, setDensityCells] = useState<DensityCell[]>([]);
   const [densityCell, setDensityCell] = useState(0.01);
-  const [densityMaxN, setDensityMaxN] = useState(0);
 
   // デバウンスと、古いレスポンスの破棄用
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,24 +83,37 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         setError(null);
 
         if (below) {
-          // ズーム閾値未満: 個別マーカーの代わりに密度タイルを表示
-          try {
-            const cell = cellForZoom(zoom);
-            const den = await searchTokyoDensity(bounds, cell);
-            if (reqId !== reqIdRef.current) return;
-            setPlotted([]);
-            setViewportInfo(null);
-            setDensityCell(den.cell);
-            setDensityMaxN(den.maxN);
-            setDensityCells(den.cells);
-          } catch (err) {
-            if (reqId !== reqIdRef.current) return;
-            setDensityCells([]);
-            const msg = err instanceof Error ? err.message : '密度の取得に失敗しました';
-            onError?.(msg);
-          } finally {
-            if (reqId === reqIdRef.current) setPlotting(false);
+          // ズーム閾値未満: 個別マーカーの代わりに「データの有無」を示す密度タイル。
+          // 東京=サーバ側メッシュ集計(/density)、MLIT=bbox取得をフロントで同メッシュに振り分け。
+          // 件数は問わず、いずれかにデータがある区画を一律色で塗る（存在表示）。
+          const cell = cellForZoom(zoom);
+          const [denS, mlitS] = await Promise.allSettled([
+            searchTokyoDensity(bounds, cell),
+            searchMLITWithinBounds(bounds, 1000),
+          ]);
+          if (reqId !== reqIdRef.current) return;
+
+          const cellMap = new Map<string, DensityCell>();
+          if (denS.status === 'fulfilled') {
+            for (const c of denS.value.cells) cellMap.set(`${c.gy}:${c.gx}`, { gy: c.gy, gx: c.gx });
           }
+          if (mlitS.status === 'fulfilled') {
+            for (const r of mlitS.value) {
+              if (!r.location) continue;
+              const gy = Math.floor(r.location.lat / cell);
+              const gx = Math.floor(r.location.lng / cell);
+              cellMap.set(`${gy}:${gx}`, { gy, gx });
+            }
+          }
+
+          setPlotted([]);
+          setViewportInfo(null);
+          setDensityCell(cell);
+          setDensityCells([...cellMap.values()]);
+          if (denS.status === 'rejected' && mlitS.status === 'rejected') {
+            onError?.('密度データの取得に失敗しました');
+          }
+          setPlotting(false);
           return;
         }
 
@@ -261,7 +274,6 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
               belowMinZoom={belowMinZoom}
               densityCells={densityCells}
               densityCell={densityCell}
-              densityMaxN={densityMaxN}
               onViewportChange={handleViewportChange}
               onPickNearby={handlePickNearby}
               onResultSelect={handleResultSelect}

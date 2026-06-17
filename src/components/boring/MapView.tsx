@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Rectangle, Popup, Tooltip, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Rectangle, Popup, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { GeoLocation, MLITSearchResult } from './types';
@@ -20,42 +20,20 @@ interface MapViewProps {
   results: MLITSearchResult[]; // 表示範囲内にプロットする全地点（ズーム閾値以上）
   selectedResult: MLITSearchResult | null;
   belowMinZoom: boolean; // 自動描画の閾値を下回っているか
-  // 密度タイル（ズーム閾値未満で表示）
+  // 密度タイル（ズーム閾値未満で表示）。データがある区画を一律色で塗る存在表示
   densityCells: DensityCell[];
   densityCell: number;
-  densityMaxN: number;
   onViewportChange: (bounds: MapBounds, zoom: number) => void;
   onPickNearby: (points: MLITSearchResult[]) => void;
   onResultSelect: (result: MLITSearchResult) => void;
 }
 
 const DENSITY_COLOR = '#c0392b';
+const DENSITY_OPACITY = 0.55; // 存在表示の一律の濃さ（データがある区画＝この色）
 
-// 密度→不透明度（4段階の離散）。
-// ゼロ件は透明（セル自体描画されない）、それ以外は最低段でも視認できる濃さに。
-// 区分は対数スケール（東京の突出に引っ張られず、低密度も最低段で見える）。
-const DENSITY_LEVELS = [0.45, 0.6, 0.72, 0.85];
-function densityLevel(n: number, maxN: number): number {
-  if (n <= 0) return -1;
-  if (maxN <= 1) return 0;
-  const t = Math.log(n + 1) / Math.log(maxN + 1); // 0..1
-  return Math.min(DENSITY_LEVELS.length - 1, Math.floor(t * DENSITY_LEVELS.length));
-}
-function densityOpacity(n: number, maxN: number): number {
-  const lv = densityLevel(n, maxN);
-  return lv < 0 ? 0 : DENSITY_LEVELS[lv];
-}
-
-// 密度タイル（グローバル固定メッシュの矩形）を描画
-function DensityTiles({
-  cells,
-  cell,
-  maxN,
-}: {
-  cells: DensityCell[];
-  cell: number;
-  maxN: number;
-}) {
+// 密度タイル（グローバル固定メッシュの矩形）を描画。
+// 件数は問わず「データがある区画」を一律の色で塗る存在表示。
+function DensityTiles({ cells, cell }: { cells: DensityCell[]; cell: number }) {
   return (
     <>
       {cells.map((c) => {
@@ -71,11 +49,9 @@ function DensityTiles({
             pathOptions={{
               stroke: false,
               fillColor: DENSITY_COLOR,
-              fillOpacity: densityOpacity(c.n, maxN),
+              fillOpacity: DENSITY_OPACITY,
             }}
-          >
-            <Tooltip>{c.n}件</Tooltip>
-          </Rectangle>
+          />
         );
       })}
     </>
@@ -227,7 +203,6 @@ const MapView: React.FC<MapViewProps> = ({
   belowMinZoom,
   densityCells,
   densityCell,
-  densityMaxN,
   onViewportChange,
   onPickNearby,
   onResultSelect,
@@ -252,7 +227,7 @@ const MapView: React.FC<MapViewProps> = ({
         <MapCenterHandler center={center} />
         <MapResizeHandler />
         {belowMinZoom ? (
-          <DensityTiles cells={densityCells} cell={densityCell} maxN={densityMaxN} />
+          <DensityTiles cells={densityCells} cell={densityCell} />
         ) : (
           <Markers
             results={results}
@@ -266,47 +241,30 @@ const MapView: React.FC<MapViewProps> = ({
       {/* ズーム不足時のヒント */}
       {belowMinZoom && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow">
-          色が濃いほどデータが多い区画です。ズームインすると個別地点が表示されます
+          色が付いた区画にデータがあります。ズームインすると個別地点が表示されます
         </div>
       )}
 
-      {/* 凡例（ズーム閾値未満＝密度 / 以上＝マーカー） */}
-      <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
-        {belowMinZoom ? (
-          <>
-            <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">東京データ密度</p>
-            <div className="flex items-center gap-1">
-              <span className="text-gray-600 dark:text-gray-400">少</span>
-              {DENSITY_LEVELS.map((o) => (
-                <div
-                  key={o}
-                  className="w-5 h-3 border border-gray-300 dark:border-gray-600"
-                  style={{ backgroundColor: `rgba(192,57,43,${o})` }}
-                ></div>
-              ))}
-              <span className="text-gray-600 dark:text-gray-400">多</span>
+      {/* 凡例（マーカー表示時のみ） */}
+      {!belowMinZoom && (
+        <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
+          <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
+              <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban)</span>
             </div>
-          </>
-        ) : (
-          <>
-            <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
-                <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
-                <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow"></div>
-                <span className="text-gray-700 dark:text-gray-300">選択中</span>
-              </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
+              <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
             </div>
-          </>
-        )}
-      </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow"></div>
+              <span className="text-gray-700 dark:text-gray-300">選択中</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -453,7 +453,7 @@ export async function searchTokyoWithin(
 export interface DensityCell {
   gy: number;
   gx: number;
-  n: number;
+  n?: number; // 件数（存在表示には不要なので任意）
 }
 
 export interface DensityResult {
