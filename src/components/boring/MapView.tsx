@@ -34,7 +34,7 @@ const DENSITY_COLOR = '#c0392b';
 // 密度→不透明度（4段階の離散）。
 // ゼロ件は透明（セル自体描画されない）、それ以外は最低段でも視認できる濃さに。
 // 区分は対数スケール（東京の突出に引っ張られず、低密度も最低段で見える）。
-const DENSITY_LEVELS = [0.35, 0.55, 0.7, 0.85];
+const DENSITY_LEVELS = [0.45, 0.6, 0.72, 0.85];
 function densityLevel(n: number, maxN: number): number {
   if (n <= 0) return -1;
   if (maxN <= 1) return 0;
