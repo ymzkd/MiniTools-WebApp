@@ -240,9 +240,8 @@ const MapView: React.FC<MapViewProps> = ({
         )}
       </MapContainer>
 
-      {/* 件数表示（地図内に薄く重ねる） */}
+      {/* 件数表示。地図タイルは常に明色なのでダークでも濃い文字に固定（明地図に明文字=薄く見える対策） */}
       {mapStatus && (
-        {/* 地図タイルは常に明色なので、ダークモードでも濃い文字に固定（明地図に明文字=薄く見える対策） */}
         <div className="absolute bottom-2 left-2 z-[1000] text-xs text-gray-900 pointer-events-none select-none">
           {mapStatus}
         </div>
