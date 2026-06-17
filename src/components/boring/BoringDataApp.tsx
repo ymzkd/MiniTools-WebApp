@@ -6,8 +6,10 @@ import ResultsList from './ResultsList';
 import BoringLogViewer from './BoringLogViewer';
 import {
   searchAllSourcesInBounds,
+  searchTokyoDensity,
   fetchAndParseBoringData,
   type MapBounds,
+  type DensityCell,
 } from './api';
 import type {
   GeoLocation,
@@ -22,10 +24,16 @@ const DEFAULT_CENTER: GeoLocation = {
 };
 
 // ビューポート連動描画のパラメータ
-const MIN_ZOOM = 13; // これ未満は地点数が膨大になるため自動描画しない（13で約8千→上限2千に間引き）
+const MIN_ZOOM = 14; // これ以上で個別マーカー、未満は密度タイル表示
 const TOKYO_LIMIT = 2000; // 1ビューポートあたりの東京データ描画上限（超過はサンプリング）
 const MLIT_SIZE = 500; // MLITの取得上限
 const DEBOUNCE_MS = 400; // 地図操作のデバウンス
+
+// ズーム→密度メッシュのセル一辺（度）。ズームアウトで倍々に大きく（ピクセルサイズ概ね一定）
+function cellForZoom(zoom: number): number {
+  const z = Math.max(7, Math.min(13, Math.round(zoom)));
+  return 0.005 * Math.pow(2, 13 - z); // z13=0.005° ... z7=0.32°
+}
 
 interface BoringDataAppProps {
   onSuccess?: (message: string) => void;
@@ -52,6 +60,10 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
   const [belowMinZoom, setBelowMinZoom] = useState(false);
   const [plotting, setPlotting] = useState(false);
   const [viewportInfo, setViewportInfo] = useState<ViewportInfo | null>(null);
+  // 密度タイル（ズーム閾値未満）
+  const [densityCells, setDensityCells] = useState<DensityCell[]>([]);
+  const [densityCell, setDensityCell] = useState(0.01);
+  const [densityMaxN, setDensityMaxN] = useState(0);
 
   // デバウンスと、古いレスポンスの破棄用
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -65,26 +77,42 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
 
-      if (below) {
-        // ズームが浅すぎる（地点が多すぎる）ので描画しない
-        setPlotted([]);
-        setViewportInfo(null);
-        setPlotting(false);
-        return;
-      }
-
       debounceRef.current = setTimeout(async () => {
         const reqId = ++reqIdRef.current;
         setPlotting(true);
         setError(null);
+
+        if (below) {
+          // ズーム閾値未満: 個別マーカーの代わりに密度タイルを表示
+          try {
+            const cell = cellForZoom(zoom);
+            const den = await searchTokyoDensity(bounds, cell);
+            if (reqId !== reqIdRef.current) return;
+            setPlotted([]);
+            setViewportInfo(null);
+            setDensityCell(den.cell);
+            setDensityMaxN(den.maxN);
+            setDensityCells(den.cells);
+          } catch (err) {
+            if (reqId !== reqIdRef.current) return;
+            setDensityCells([]);
+            const msg = err instanceof Error ? err.message : '密度の取得に失敗しました';
+            onError?.(msg);
+          } finally {
+            if (reqId === reqIdRef.current) setPlotting(false);
+          }
+          return;
+        }
+
+        // ズーム閾値以上: 範囲内の個別地点を取得して描画
         try {
           const res = await searchAllSourcesInBounds(bounds, {
             tokyoLimit: TOKYO_LIMIT,
             mlitSize: MLIT_SIZE,
           });
-          // 古いリクエストの結果は破棄
           if (reqId !== reqIdRef.current) return;
 
+          setDensityCells([]);
           setPlotted(res.results);
           setViewportInfo({
             mlitCount: res.mlitCount,
@@ -231,6 +259,9 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
               results={plotted}
               selectedResult={selectedResult}
               belowMinZoom={belowMinZoom}
+              densityCells={densityCells}
+              densityCell={densityCell}
+              densityMaxN={densityMaxN}
               onViewportChange={handleViewportChange}
               onPickNearby={handlePickNearby}
               onResultSelect={handleResultSelect}

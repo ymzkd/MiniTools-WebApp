@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Rectangle, Popup, Tooltip, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { GeoLocation, MLITSearchResult } from './types';
-import type { MapBounds } from './api';
+import type { MapBounds, DensityCell } from './api';
 
 // 近接判定のピクセル閾値（マーカーが重なって見える程度の範囲）
 const PICK_PX = 16;
@@ -17,12 +17,60 @@ function resultKey(r: MLITSearchResult): string {
 
 interface MapViewProps {
   center: GeoLocation;
-  results: MLITSearchResult[]; // 表示範囲内にプロットする全地点
+  results: MLITSearchResult[]; // 表示範囲内にプロットする全地点（ズーム閾値以上）
   selectedResult: MLITSearchResult | null;
-  belowMinZoom: boolean; // 自動描画の閾値を下回っているか（ヒント表示用）
+  belowMinZoom: boolean; // 自動描画の閾値を下回っているか
+  // 密度タイル（ズーム閾値未満で表示）
+  densityCells: DensityCell[];
+  densityCell: number;
+  densityMaxN: number;
   onViewportChange: (bounds: MapBounds, zoom: number) => void;
   onPickNearby: (points: MLITSearchResult[]) => void;
   onResultSelect: (result: MLITSearchResult) => void;
+}
+
+const DENSITY_COLOR = '#c0392b';
+
+// 密度→不透明度（sqrtスケールで低密度も見えるように）
+function densityOpacity(n: number, maxN: number): number {
+  if (maxN <= 0) return 0.15;
+  return 0.12 + 0.6 * Math.sqrt(n / maxN);
+}
+
+// 密度タイル（グローバル固定メッシュの矩形）を描画
+function DensityTiles({
+  cells,
+  cell,
+  maxN,
+}: {
+  cells: DensityCell[];
+  cell: number;
+  maxN: number;
+}) {
+  return (
+    <>
+      {cells.map((c) => {
+        const south = c.gy * cell;
+        const west = c.gx * cell;
+        return (
+          <Rectangle
+            key={`${c.gy}-${c.gx}`}
+            bounds={[
+              [south, west],
+              [south + cell, west + cell],
+            ]}
+            pathOptions={{
+              stroke: false,
+              fillColor: DENSITY_COLOR,
+              fillOpacity: densityOpacity(c.n, maxN),
+            }}
+          >
+            <Tooltip>{c.n}件</Tooltip>
+          </Rectangle>
+        );
+      })}
+    </>
+  );
 }
 
 function toBounds(map: L.Map): MapBounds {
@@ -168,6 +216,9 @@ const MapView: React.FC<MapViewProps> = ({
   results,
   selectedResult,
   belowMinZoom,
+  densityCells,
+  densityCell,
+  densityMaxN,
   onViewportChange,
   onPickNearby,
   onResultSelect,
@@ -181,50 +232,68 @@ const MapView: React.FC<MapViewProps> = ({
         className="h-full w-full rounded-lg"
         style={{ minHeight: '400px' }}
       >
-        {/* Googleマップ風の淡色ベース地図（CARTO Voyager）: 背景が淡くマーカーが映える */}
+        {/* 地理院「淡色地図」: 背景が淡くマーカー/密度タイルが映える */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          subdomains={['a', 'b', 'c', 'd']}
-          maxZoom={20}
+          attribution='&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>'
+          url="https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png"
         />
 
         <ViewportWatcher onViewportChange={onViewportChange} />
         <ClickPicker results={results} onPickNearby={onPickNearby} />
         <MapCenterHandler center={center} />
         <MapResizeHandler />
-        <Markers
-          results={results}
-          selectedResult={selectedResult}
-          onPickNearby={onPickNearby}
-          onResultSelect={onResultSelect}
-        />
+        {belowMinZoom ? (
+          <DensityTiles cells={densityCells} cell={densityCell} maxN={densityMaxN} />
+        ) : (
+          <Markers
+            results={results}
+            selectedResult={selectedResult}
+            onPickNearby={onPickNearby}
+            onResultSelect={onResultSelect}
+          />
+        )}
       </MapContainer>
 
       {/* ズーム不足時のヒント */}
       {belowMinZoom && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow">
-          ズームインすると地点が表示されます
+          色が濃いほどデータが多い区画です。ズームインすると個別地点が表示されます
         </div>
       )}
 
-      {/* 凡例 */}
+      {/* 凡例（ズーム閾値未満＝密度 / 以上＝マーカー） */}
       <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
-        <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
-            <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
-            <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow"></div>
-            <span className="text-gray-700 dark:text-gray-300">選択中</span>
-          </div>
-        </div>
+        {belowMinZoom ? (
+          <>
+            <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">東京データ密度</p>
+            <div className="flex items-center gap-1">
+              <span className="text-gray-600 dark:text-gray-400">少</span>
+              <div
+                className="w-24 h-3 rounded"
+                style={{ background: 'linear-gradient(to right, rgba(192,57,43,0.15), rgba(192,57,43,0.75))' }}
+              ></div>
+              <span className="text-gray-600 dark:text-gray-400">多</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
+                <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
+                <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow"></div>
+                <span className="text-gray-700 dark:text-gray-300">選択中</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

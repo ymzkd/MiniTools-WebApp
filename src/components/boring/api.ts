@@ -450,6 +450,37 @@ export async function searchTokyoWithin(
   return { results, total: data.total, truncated: data.truncated };
 }
 
+export interface DensityCell {
+  gy: number;
+  gx: number;
+  n: number;
+}
+
+export interface DensityResult {
+  cell: number;
+  maxN: number;
+  cells: DensityCell[];
+}
+
+// 東京データの密度（グリッド集計）。ズームアウト時にどこにデータがあるか可視化する用。
+export async function searchTokyoDensity(
+  bounds: MapBounds,
+  cell: number
+): Promise<DensityResult> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    cell: String(cell),
+  });
+  const response = await fetch(`${TOKYO_API_BASE}/density?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`東京地盤API(密度) エラー: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export interface ViewportSearchResult {
   results: MLITSearchResult[];
   errors: string[];
