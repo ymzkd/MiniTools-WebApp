@@ -1,35 +1,12 @@
 import React, { useState } from 'react';
-import { Search, MapPin, Loader2 } from 'lucide-react';
-import type { SearchArea, SearchStatus } from './types';
+import { Search, MapPin } from 'lucide-react';
 
 interface SearchPanelProps {
-  searchArea: SearchArea | null;
-  searchStatus: SearchStatus;
-  searchRadius: number;
-  onSearch: (area: SearchArea, keyword?: string) => void;
   onLocationSearch: (address: string) => void;
-  onRadiusChange?: (radius: number) => void;
 }
 
-const SearchPanel: React.FC<SearchPanelProps> = ({
-  searchArea,
-  searchStatus,
-  searchRadius,
-  onSearch,
-  onLocationSearch,
-  onRadiusChange,
-}) => {
+const SearchPanel: React.FC<SearchPanelProps> = ({ onLocationSearch }) => {
   const [address, setAddress] = useState('');
-
-  const handleSearch = () => {
-    if (searchArea) {
-      onSearch({ ...searchArea, radius: searchRadius });
-    }
-  };
-
-  const handleRadiusChange = (newRadius: number) => {
-    onRadiusChange?.(newRadius);
-  };
 
   const handleAddressSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,8 +15,6 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
     }
   };
 
-  const isSearching = searchStatus === 'searching';
-
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 space-y-4">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -47,10 +22,10 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
         ボーリングデータ検索
       </h3>
 
-      {/* 住所検索 */}
+      {/* 住所・地名で地図を移動 */}
       <form onSubmit={handleAddressSearch} className="space-y-2">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          住所・地名で検索
+          住所・地名で移動
         </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -65,7 +40,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
           </div>
           <button
             type="submit"
-            disabled={!address.trim() || isSearching}
+            disabled={!address.trim()}
             className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             移動
@@ -73,52 +48,13 @@ const SearchPanel: React.FC<SearchPanelProps> = ({
         </div>
       </form>
 
-      {/* 地図クリック説明 */}
+      {/* 操作説明 */}
       <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
         <p className="text-sm text-blue-700 dark:text-blue-300">
-          地図をクリックして検索地点を指定してください。
-          指定した地点の周辺からボーリングデータを検索します。
+          地図を拡大・移動すると、表示範囲内のボーリングデータが自動でプロットされます。
+          地点をクリックすると、近接するデータが下の一覧に表示されます。
         </p>
       </div>
-
-      {/* 検索半径 */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          検索半径: {searchRadius}m ({(searchRadius / 1000).toFixed(1)}km)
-        </label>
-        <input
-          type="range"
-          min={1000}
-          max={5000}
-          step={100}
-          value={searchRadius}
-          onChange={(e) => handleRadiusChange(Number(e.target.value))}
-          className="w-full"
-        />
-        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-1">
-          <span>1km</span>
-          <span>5km</span>
-        </div>
-      </div>
-
-      {/* 検索ボタン */}
-      <button
-        onClick={handleSearch}
-        disabled={!searchArea || isSearching}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-      >
-        {isSearching ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            検索中...
-          </>
-        ) : (
-          <>
-            <Search className="w-5 h-5" />
-            周辺を検索
-          </>
-        )}
-      </button>
     </div>
   );
 };
