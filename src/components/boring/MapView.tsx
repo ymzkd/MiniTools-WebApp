@@ -242,7 +242,7 @@ const MapView: React.FC<MapViewProps> = ({
 
       {/* 件数表示（地図内に薄く重ねる） */}
       {mapStatus && (
-        <div className="absolute bottom-2 left-2 z-[1000] text-xs text-gray-700/60 dark:text-gray-200/60 pointer-events-none select-none">
+        <div className="absolute bottom-2 left-2 z-[1000] text-xs font-medium text-gray-700 dark:text-gray-200 pointer-events-none select-none [text-shadow:0_1px_2px_rgba(255,255,255,0.9)]">
           {mapStatus}
         </div>
       )}

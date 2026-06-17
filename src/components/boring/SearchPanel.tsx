@@ -30,7 +30,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ onLocationSearch }) => {
   };
 
   return (
-    <div className="relative inline-block" ref={ref}>
+    <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -42,7 +42,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ onLocationSearch }) => {
       </button>
 
       {open && (
-        <div className="absolute left-0 mt-2 z-[1100] w-72 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 border border-gray-200 dark:border-gray-700">
+        <div className="absolute left-0 right-0 mt-2 z-[1100] bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 border border-gray-200 dark:border-gray-700">
           <form onSubmit={submit} className="flex gap-2">
             <div className="relative flex-1">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
