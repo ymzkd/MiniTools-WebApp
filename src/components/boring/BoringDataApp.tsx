@@ -22,7 +22,7 @@ const DEFAULT_CENTER: GeoLocation = {
 };
 
 // ビューポート連動描画のパラメータ
-const MIN_ZOOM = 14; // これ未満は地点数が膨大になるため自動描画しない
+const MIN_ZOOM = 13; // これ未満は地点数が膨大になるため自動描画しない（13で約8千→上限2千に間引き）
 const TOKYO_LIMIT = 2000; // 1ビューポートあたりの東京データ描画上限（超過はサンプリング）
 const MLIT_SIZE = 500; // MLITの取得上限
 const DEBOUNCE_MS = 400; // 地図操作のデバウンス
@@ -182,11 +182,11 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         </div>
       </div>
 
-      {/* メインコンテンツ */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
+      {/* メインコンテンツ。min-h-0 で中身に依存せず高さを安定させる（地図が一定全高） */}
+      <div className="flex-1 overflow-hidden min-h-0">
+        <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:min-h-0">
           {/* 左サイドバー: 操作パネル + 近接リスト */}
-          <div className="lg:col-span-1 space-y-4 overflow-y-auto">
+          <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0">
             <SearchPanel onLocationSearch={handleLocationSearch} />
 
             {/* 表示範囲のプロット状況 */}
@@ -224,8 +224,8 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             />
           </div>
 
-          {/* 中央: 地図 */}
-          <div className="lg:col-span-1 h-[400px] lg:h-full">
+          {/* 中央: 地図（常にコンテンツ領域の全高・中身非依存で固定） */}
+          <div className="lg:col-span-1 h-[400px] lg:h-full lg:min-h-0">
             <MapView
               center={mapCenter}
               results={plotted}
@@ -238,7 +238,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
           </div>
 
           {/* 右サイドバー: 詳細表示 */}
-          <div className="lg:col-span-1 overflow-y-auto">
+          <div className="lg:col-span-1 overflow-y-auto lg:min-h-0">
             {selectedResult ? (
               <BoringLogViewer
                 data={boringData}

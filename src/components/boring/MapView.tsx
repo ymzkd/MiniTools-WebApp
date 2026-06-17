@@ -109,12 +109,12 @@ function Markers({
           <CircleMarker
             key={resultKey(r)}
             center={[r.location.lat, r.location.lng]}
-            radius={selected ? 7 : 5}
+            radius={selected ? 9 : 6}
             pathOptions={{
               color: selected ? SELECTED_COLOR : '#ffffff',
-              weight: selected ? 3 : 1,
+              weight: selected ? 3 : 2,
               fillColor: fill,
-              fillOpacity: 0.9,
+              fillOpacity: 1,
             }}
             eventHandlers={{
               click: () => {
@@ -181,9 +181,12 @@ const MapView: React.FC<MapViewProps> = ({
         className="h-full w-full rounded-lg"
         style={{ minHeight: '400px' }}
       >
+        {/* Googleマップ風の淡色ベース地図（CARTO Voyager）: 背景が淡くマーカーが映える */}
         <TileLayer
-          attribution='&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>'
-          url="https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          subdomains={['a', 'b', 'c', 'd']}
+          maxZoom={20}
         />
 
         <ViewportWatcher onViewportChange={onViewportChange} />
