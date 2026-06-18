@@ -70,6 +70,9 @@ function buildStyle(): maplibregl.StyleSpecification {
       },
     },
     layers: [
+      // 未読込領域(高速パン/ズーム時)が暗く見えないよう、最下層を明色で塗る。
+      // 地理院淡色地図の地色に近い明るいグレーにして、タイル読込中も馴染ませる。
+      { id: 'bg', type: 'background', paint: { 'background-color': '#eceae4' } },
       { id: 'gsi', type: 'raster', source: 'gsi' },
       {
         id: 'pts-heat',
@@ -232,7 +235,11 @@ const MapView: React.FC<MapViewProps> = ({
 
   return (
     <div className="h-full w-full relative">
-      <div ref={containerRef} className="h-full w-full rounded-lg" style={{ minHeight: '400px' }} />
+      <div
+        ref={containerRef}
+        className="h-full w-full rounded-lg"
+        style={{ minHeight: '400px', backgroundColor: '#eceae4' }}
+      />
 
       {/* ズーム別の見え方ヒント */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow pointer-events-none">
