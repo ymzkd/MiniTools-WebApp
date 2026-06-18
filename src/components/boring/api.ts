@@ -326,23 +326,23 @@ export async function searchTokyo(
 // どちらか一方が失敗しても、もう一方の結果は返す（部分成功を許容）。
 export async function searchAllSources(
   area: SearchArea,
-  keyword?: string,
+  _keyword?: string,
   size: number = 50
 ): Promise<{ results: MLITSearchResult[]; errors: string[] }> {
   const errors: string[] = [];
 
+  // 国土地盤(MLIT)はローカルNGI DB(/api/ngi/search)へ移行。keyword は現状ローカル未対応。
   const [mlitSettled, tokyoSettled] = await Promise.allSettled([
-    searchByLocation(area, keyword, size),
+    searchNgi(area, size),
     searchTokyo(area, size),
   ]);
 
   const results: MLITSearchResult[] = [];
 
   if (mlitSettled.status === 'fulfilled') {
-    // 既存MLIT結果には source を明示付与（未指定=mlit）
-    results.push(...mlitSettled.value.map(r => ({ ...r, source: 'mlit' as const })));
+    results.push(...mlitSettled.value);
   } else {
-    errors.push(`MLIT: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
+    errors.push(`国土地盤: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
   }
 
   if (tokyoSettled.status === 'fulfilled') {
@@ -481,6 +481,122 @@ export async function searchTokyoDensity(
   return response.json();
 }
 
+// ============================================================
+// 全国 国土地盤情報(NGI) ローカルDB 連携（/api/ngi/* → jiban-api ngi.sqlite）
+// 旧来はMLIT DPF GraphQL(/api/mlit)をライブで叩いていたが、アクセス回数・速度の
+// 問題があるため、全件メタを取り込んだローカルDB(ngi.sqlite)へ全面移行する。
+// 「国土地盤」は MLIT と同一データセットなので、UI互換のため source:'mlit' に正規化する。
+// 柱状図XML/PDFは Referer 必須のためサーバ側中継プロキシ /api/ngi/proxy/* を指す。
+// （DPF GraphQL 連携関数 searchByLocation / searchMLITWithinBounds はフォールバックとして残置）
+// ============================================================
+const NGI_API_BASE = '/api/ngi';
+
+interface NgiSearchItem {
+  id: string;
+  source_name: string;
+  code: string;
+  ngi_id: number | null;
+  title: string;
+  lat: number;
+  lng: number;
+  address?: string;
+  survey_finish?: string;
+  pref_code?: number;
+  boring_length?: number;
+  xml_url: string | null;   // 同一オリジン中継 /api/ngi/proxy/boring/xml/<id>（無い場合 null）
+  log_url: string | null;   // 柱状図(PDF/PNG)中継、または港湾の直リンクPDF
+  has_soiltest: boolean;
+  soiltest_xml_url?: string;
+  soiltest_log_url?: string;
+}
+
+function mapNgiItem(item: NgiSearchItem): MLITSearchResult {
+  return {
+    id: item.id,
+    title: item.title || item.code || item.id,
+    source: 'mlit' as const,
+    metadata: {
+      'NGI:code': item.code,
+      'NGI:id': item.ngi_id != null ? String(item.ngi_id) : undefined,
+      'NGI:latitude': String(item.lat),
+      'NGI:longitude': String(item.lng),
+      'NGI:address': item.address,
+      'NGI:survey_finish': item.survey_finish,
+      'NGI:source_name': item.source_name,
+      'NGI:boring_length': item.boring_length != null ? String(item.boring_length) : undefined,
+      // 詳細取得は共通の link_boring_xml 経路（同一オリジンの中継プロキシ）に乗せる。
+      'NGI:link_boring_xml': item.xml_url ?? undefined,
+      'NGI:link_boring_pdf': item.log_url ?? undefined,
+    },
+    location: { lat: item.lat, lng: item.lng },
+    datasetName: '国土地盤情報(NGI)',
+  };
+}
+
+// 全国NGIの位置検索（/api/ngi/search）
+export async function searchNgi(
+  area: SearchArea,
+  size: number = 50
+): Promise<MLITSearchResult[]> {
+  const params = new URLSearchParams({
+    lat: String(area.center.lat),
+    lng: String(area.center.lng),
+    radius: String(area.radius),
+    size: String(size),
+  });
+  const response = await fetch(`${NGI_API_BASE}/search?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`全国地盤API エラー: ${response.status} ${response.statusText}`);
+  }
+  const data: { total: number; results: NgiSearchItem[] } = await response.json();
+  return data.results.map(mapNgiItem);
+}
+
+// 全国NGIを bbox で検索（/api/ngi/within）
+export async function searchNgiWithin(
+  bounds: MapBounds,
+  limit: number = 2000
+): Promise<{ results: MLITSearchResult[]; total: number; truncated: boolean }> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    limit: String(limit),
+  });
+  const response = await fetch(`${NGI_API_BASE}/within?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`全国地盤API エラー: ${response.status} ${response.statusText}`);
+  }
+  const data: { total: number; truncated: boolean; results: NgiSearchItem[] } =
+    await response.json();
+  return {
+    results: data.results.map(mapNgiItem),
+    total: data.total,
+    truncated: data.truncated,
+  };
+}
+
+// 全国NGIの密度（サーバ側グリッド集計 /api/ngi/density）。
+// 旧実装(searchMLITWithinBounds でbbox取得→フロントで集計)を置換し、件数上限なく高速。
+export async function searchNgiDensity(
+  bounds: MapBounds,
+  cell: number
+): Promise<DensityResult> {
+  const params = new URLSearchParams({
+    minLat: String(bounds.minLat),
+    maxLat: String(bounds.maxLat),
+    minLng: String(bounds.minLng),
+    maxLng: String(bounds.maxLng),
+    cell: String(cell),
+  });
+  const response = await fetch(`${NGI_API_BASE}/density?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`全国地盤API(密度) エラー: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
 export interface ViewportSearchResult {
   results: MLITSearchResult[];
   errors: string[];
@@ -495,8 +611,9 @@ export async function searchAllSourcesInBounds(
   opts: { tokyoLimit?: number; mlitSize?: number } = {}
 ): Promise<ViewportSearchResult> {
   const errors: string[] = [];
+  // 国土地盤(MLIT)はライブGraphQLではなくローカルNGI DB(/api/ngi/within)へ移行。
   const [mlitSettled, tokyoSettled] = await Promise.allSettled([
-    searchMLITWithinBounds(bounds, opts.mlitSize ?? 500),
+    searchNgiWithin(bounds, opts.mlitSize ?? 2000),
     searchTokyoWithin(bounds, opts.tokyoLimit ?? 2000),
   ]);
 
@@ -506,10 +623,10 @@ export async function searchAllSourcesInBounds(
   let tokyoTruncated = false;
 
   if (mlitSettled.status === 'fulfilled') {
-    results.push(...mlitSettled.value);
-    mlitCount = mlitSettled.value.length;
+    results.push(...mlitSettled.value.results);
+    mlitCount = mlitSettled.value.total;
   } else {
-    errors.push(`MLIT: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
+    errors.push(`国土地盤: ${mlitSettled.reason?.message ?? mlitSettled.reason}`);
   }
   if (tokyoSettled.status === 'fulfilled') {
     results.push(...tokyoSettled.value.results);
@@ -619,9 +736,10 @@ export async function fetchAndParseBoringData(
   location: GeoLocation
 ): Promise<BoringData> {
   try {
-    // 東京データ(/api/tokyo/files/...)は同一オリジン配信なので直fetch。
+    // ローカル配信(東京 /api/tokyo/files, 全国NGI中継 /api/ngi/proxy)は同一オリジンなので直fetch。
     // KuniJiban(外部https)はCORS回避のためサーバーレス関数経由で取得。
-    const fetchUrl = xmlUrl.startsWith('/api/tokyo/')
+    const isLocal = xmlUrl.startsWith('/api/tokyo/') || xmlUrl.startsWith('/api/ngi/');
+    const fetchUrl = isLocal
       ? xmlUrl
       : `/api/kunijiban?url=${encodeURIComponent(xmlUrl)}`;
 

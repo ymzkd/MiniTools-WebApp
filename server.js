@@ -121,6 +121,37 @@ app.use('/api/tokyo', async (req, res) => {
   }
 })
 
+// 全国 国土地盤情報(NGI) ローカルDB + NGIC中継プロキシ への薄いリバースプロキシ。
+// /api/ngi/* → jiban-api /ngi/*（/search /within /density /proxy/...）。
+// 同一オリジン化により、Referer必須でブラウザ直リンク不可な NGIC柱状図XML/PDF/PNGも
+// /api/ngi/proxy/* 経由でそのまま開ける。XMLバイナリ(Shift_JIS)/PDF/PNGを透過する。
+app.use('/api/ngi', async (req, res) => {
+  if (!JIBAN_API_URL) {
+    return res.status(503).json({ error: 'NGI jiban API not configured' })
+  }
+  try {
+    const target =
+      JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/ngi/, '/ngi')
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers: { accept: req.headers['accept'] || '*/*' },
+    })
+    res.status(upstream.status)
+    const ct = upstream.headers.get('content-type')
+    if (ct) res.setHeader('Content-Type', ct)
+    const cc = upstream.headers.get('cache-control')
+    if (cc) res.setHeader('Cache-Control', cc)
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    return res.send(buf)
+  } catch (error) {
+    console.error('NGI jiban proxy error:', error)
+    return res.status(502).json({
+      error: 'Bad gateway to jiban API',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
 // Static assets + SPA fallback (final middleware works across Express 4/5).
 const distDir = path.join(__dirname, 'dist')
 app.use(express.static(distDir))

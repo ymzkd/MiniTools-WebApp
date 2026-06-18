@@ -7,7 +7,7 @@ import BoringLogViewer from './BoringLogViewer';
 import {
   searchAllSourcesInBounds,
   searchTokyoDensity,
-  searchMLITWithinBounds,
+  searchNgiDensity,
   fetchAndParseBoringData,
   type MapBounds,
   type DensityCell,
@@ -84,12 +84,12 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
 
         if (below) {
           // ズーム閾値未満: 個別マーカーの代わりに「データの有無」を示す密度タイル。
-          // 東京=サーバ側メッシュ集計(/density)、MLIT=bbox取得をフロントで同メッシュに振り分け。
+          // 東京・全国NGIともサーバ側メッシュ集計(/density)を使う（ライブGraphQL廃止）。
           // 件数は問わず、いずれかにデータがある区画を一律色で塗る（存在表示）。
           const cell = cellForZoom(zoom);
-          const [denS, mlitS] = await Promise.allSettled([
+          const [denS, ngiS] = await Promise.allSettled([
             searchTokyoDensity(bounds, cell),
-            searchMLITWithinBounds(bounds, 600),
+            searchNgiDensity(bounds, cell),
           ]);
           if (reqId !== reqIdRef.current) return;
 
@@ -97,20 +97,15 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
           if (denS.status === 'fulfilled') {
             for (const c of denS.value.cells) cellMap.set(`${c.gy}:${c.gx}`, { gy: c.gy, gx: c.gx });
           }
-          if (mlitS.status === 'fulfilled') {
-            for (const r of mlitS.value) {
-              if (!r.location) continue;
-              const gy = Math.floor(r.location.lat / cell);
-              const gx = Math.floor(r.location.lng / cell);
-              cellMap.set(`${gy}:${gx}`, { gy, gx });
-            }
+          if (ngiS.status === 'fulfilled') {
+            for (const c of ngiS.value.cells) cellMap.set(`${c.gy}:${c.gx}`, { gy: c.gy, gx: c.gx });
           }
 
           setPlotted([]);
           setViewportInfo(null);
           setDensityCell(cell);
           setDensityCells([...cellMap.values()]);
-          if (denS.status === 'rejected' && mlitS.status === 'rejected') {
+          if (denS.status === 'rejected' && ngiS.status === 'rejected') {
             onError?.('密度データの取得に失敗しました');
           }
           setPlotting(false);
