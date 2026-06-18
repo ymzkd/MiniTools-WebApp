@@ -13,7 +13,8 @@ const SELECTED_COLOR = '#2563eb';
 // 全地点を単一PMTiles(/api/ngi/tiles/points.pmtiles)から描画する。
 // 低ズーム=ヒートマップ(密度)、中〜高ズーム=ソース色分けの円。クリックで個別地点を選択。
 // 地点データの取得はタイル側に寄せたので、ビューポート連動のAPI取得は行わない。
-const PMTILES_URL = '/api/ngi/tiles/points.pmtiles';
+// ?v= はタイル再生成時のキャッシュバスト用（中身が変わったら上げる）。
+const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=2';
 const POINTS_LAYER = 'points'; // tippecanoe -l points
 
 interface MapViewProps {
@@ -25,12 +26,24 @@ interface MapViewProps {
 
 interface TileProps {
   source?: string; // 'tokyo' | 'ngi'
+  source_name?: string; // NGIの提供元(KuniJiban / 岐阜県 / 水戸市 等)
   id?: string;
   title?: string;
   xml_url?: string;
-  log_url?: string;
+  log_url?: string; // PDF型柱状図のときだけ存在(画像型は無し)
   soil_xml_url?: string;
   soil_log_url?: string;
+}
+
+// データソースの表示名。東京 / 国土地盤 / 自治体提供ならその名称。
+function sourceLabel(source?: string, sourceName?: string): string {
+  if (source === 'tokyo') return '東京の地盤(GIS版)';
+  const s = (sourceName ?? '').trim();
+  if (!s || s === 'KuniJiban') return '国土地盤(KuniJiban)';
+  if (s.includes('港湾')) return '国土地盤(港湾)';
+  // 自治体提供(岐阜県 / 水戸市 等)は提供元を明示。県市区町村を含むものを採用。
+  if (/[都道府県市区町村]/.test(s)) return `国土地盤 / ${s}`;
+  return '国土地盤';
 }
 
 // タイルの feature → アプリ共通の MLITSearchResult に変換（クリック→柱状図表示用）。
@@ -44,11 +57,13 @@ function featureToResult(p: TileProps, lng: number, lat: number): MLITSearchResu
     source: isTokyo ? ('tokyo' as const) : ('mlit' as const),
     metadata: {
       'NGI:link_boring_xml': p.xml_url,
+      // log_url は PDF型のみ存在。画像型では undefined になり「PDF柱状図を表示」は出さない。
       'NGI:link_boring_pdf': p.log_url,
+      ...(p.source_name ? { 'NGI:source_name': p.source_name } : {}),
       ...(ngiId ? { 'NGI:id': ngiId } : {}),
     },
     location: { lat, lng },
-    datasetName: isTokyo ? '東京の地盤(GIS版)' : '国土地盤情報(NGI)',
+    datasetName: sourceLabel(p.source, p.source_name),
   };
 }
 

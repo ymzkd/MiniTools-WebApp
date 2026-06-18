@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Download, FileText, Droplet, Calendar, Building2, Hash, ExternalLink, Mountain, Code } from 'lucide-react';
+import { X, Download, FileText, Droplet, Calendar, Building2, Hash, ExternalLink, Mountain, Code, Database } from 'lucide-react';
 import type { BoringData, MLITSearchResult } from './types';
 
 interface BoringLogViewerProps {
@@ -100,6 +100,12 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
         <div className="p-4 space-y-4">
           {/* 基本情報 */}
           <div className="grid grid-cols-2 gap-4 text-sm">
+            {selectedResult.datasetName && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400 col-span-2">
+                <Database className="w-4 h-4" />
+                <span>データソース: {selectedResult.datasetName}</span>
+              </div>
+            )}
             {selectedResult.metadata?.['NGI:code'] && (
               <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                 <Hash className="w-4 h-4" />
