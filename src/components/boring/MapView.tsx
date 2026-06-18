@@ -102,17 +102,21 @@ function buildStyle(): maplibregl.StyleSpecification {
         },
       },
       {
+        // 全ズームで表示する点レイヤ。広域でもヒートマップに埋もれず「データがある」ことを
+        // 小さなドットで確実に示す(ヒートマップは密度の濃淡用に併存)。
         id: 'pts-circle',
         type: 'circle',
         source: 'points',
         'source-layer': POINTS_LAYER,
-        minzoom: 10,
+        minzoom: 0,
         paint: {
           'circle-color': ['match', ['get', 'source'], 'tokyo', TOKYO_COLOR, NGI_COLOR],
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 4.5, 17, 7],
+          // 広域(z3)でも視認できる最小半径を確保し、ズームに応じて拡大。
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2.2, 8, 3, 11, 3.5, 14, 4.5, 17, 7],
           'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 0, 14, 1],
-          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 13, 1],
+          // 小さいうちは白枠なし、拡大に応じて枠を付ける。
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 11, 0, 14, 1],
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.9, 13, 1],
         },
       },
       {
