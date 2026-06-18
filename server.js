@@ -132,15 +132,24 @@ app.use('/api/ngi', async (req, res) => {
   try {
     const target =
       JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/ngi/, '/ngi')
-    const upstream = await fetch(target, {
-      method: req.method,
-      headers: { accept: req.headers['accept'] || '*/*' },
-    })
+    // PMTiles(/ngi/tiles)は HTTP Range で部分取得する。Range を上流へ転送し、
+    // 206/Content-Range/Accept-Ranges/ETag を素通しする（しないと毎回37MB全取得になる）。
+    const fwd = { accept: req.headers['accept'] || '*/*' }
+    if (req.headers['range']) fwd['range'] = req.headers['range']
+    if (req.headers['if-none-match']) fwd['if-none-match'] = req.headers['if-none-match']
+    const upstream = await fetch(target, { method: req.method, headers: fwd })
     res.status(upstream.status)
-    const ct = upstream.headers.get('content-type')
-    if (ct) res.setHeader('Content-Type', ct)
-    const cc = upstream.headers.get('cache-control')
-    if (cc) res.setHeader('Cache-Control', cc)
+    for (const h of [
+      'content-type',
+      'cache-control',
+      'content-range',
+      'accept-ranges',
+      'etag',
+      'last-modified',
+    ]) {
+      const v = upstream.headers.get(h)
+      if (v) res.setHeader(h, v)
+    }
     const buf = Buffer.from(await upstream.arrayBuffer())
     return res.send(buf)
   } catch (error) {
