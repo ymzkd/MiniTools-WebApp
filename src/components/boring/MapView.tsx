@@ -1,279 +1,246 @@
-import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Rectangle, Popup, useMapEvents, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import React, { useEffect, useRef } from 'react';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import * as pmtiles from 'pmtiles';
 import type { GeoLocation, MLITSearchResult } from './types';
-import type { MapBounds, DensityCell } from './api';
 
-// 近接判定のピクセル閾値（マーカーが重なって見える程度の範囲）
-const PICK_PX = 16;
+// 近接ピック(クリック周辺の地点をリスト化)のピクセル閾値
+const PICK_PX = 12;
 const TOKYO_COLOR = '#f59e0b';
-const MLIT_COLOR = '#ef4444';
+const NGI_COLOR = '#ef4444';
 const SELECTED_COLOR = '#2563eb';
 
-function resultKey(r: MLITSearchResult): string {
-  return `${r.source ?? 'mlit'}-${r.id}`;
-}
+// 全地点を単一PMTiles(/api/ngi/tiles/points.pmtiles)から描画する。
+// 低ズーム=ヒートマップ(密度)、中〜高ズーム=ソース色分けの円。クリックで個別地点を選択。
+// 地点データの取得はタイル側に寄せたので、ビューポート連動のAPI取得は行わない。
+const PMTILES_URL = '/api/ngi/tiles/points.pmtiles';
+const POINTS_LAYER = 'points'; // tippecanoe -l points
 
 interface MapViewProps {
   center: GeoLocation;
-  results: MLITSearchResult[]; // 表示範囲内にプロットする全地点（ズーム閾値以上）
   selectedResult: MLITSearchResult | null;
-  belowMinZoom: boolean; // 自動描画の閾値を下回っているか
-  // 密度タイル（ズーム閾値未満で表示）。データがある区画を一律色で塗る存在表示
-  densityCells: DensityCell[];
-  densityCell: number;
-  mapStatus?: string; // 地図内に薄く重ねる件数表示
-  onViewportChange: (bounds: MapBounds, zoom: number) => void;
   onPickNearby: (points: MLITSearchResult[]) => void;
   onResultSelect: (result: MLITSearchResult) => void;
 }
 
-const DENSITY_COLOR = '#c0392b';
-const DENSITY_OPACITY = 0.55; // 存在表示の一律の濃さ（データがある区画＝この色）
-
-// 密度タイル（グローバル固定メッシュの矩形）を描画。
-// 件数は問わず「データがある区画」を一律の色で塗る存在表示。
-function DensityTiles({ cells, cell }: { cells: DensityCell[]; cell: number }) {
-  return (
-    <>
-      {cells.map((c) => {
-        const south = c.gy * cell;
-        const west = c.gx * cell;
-        return (
-          <Rectangle
-            key={`${c.gy}-${c.gx}`}
-            bounds={[
-              [south, west],
-              [south + cell, west + cell],
-            ]}
-            pathOptions={{
-              stroke: false,
-              fillColor: DENSITY_COLOR,
-              fillOpacity: DENSITY_OPACITY,
-            }}
-          />
-        );
-      })}
-    </>
-  );
+interface TileProps {
+  source?: string; // 'tokyo' | 'ngi'
+  id?: string;
+  title?: string;
+  xml_url?: string;
+  log_url?: string;
+  soil_xml_url?: string;
+  soil_log_url?: string;
 }
 
-function toBounds(map: L.Map): MapBounds {
-  const b = map.getBounds();
+// タイルの feature → アプリ共通の MLITSearchResult に変換（クリック→柱状図表示用）。
+function featureToResult(p: TileProps, lng: number, lat: number): MLITSearchResult {
+  const isTokyo = p.source === 'tokyo';
+  // NGIビューア由来のID(プロキシURL末尾)を抽出（BoringLogViewerのビューアリンク用）。
+  const ngiId = (p.xml_url || p.log_url || '').match(/\/(\d+)$/)?.[1];
   return {
-    minLat: b.getSouth(),
-    maxLat: b.getNorth(),
-    minLng: b.getWest(),
-    maxLng: b.getEast(),
-  };
-}
-
-// 地図移動/ズーム終了でビューポートを通知。初回マウント時も1回通知。
-function ViewportWatcher({
-  onViewportChange,
-}: {
-  onViewportChange: (bounds: MapBounds, zoom: number) => void;
-}) {
-  const map = useMap();
-  useEffect(() => {
-    onViewportChange(toBounds(map), map.getZoom());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  useMapEvents({
-    moveend: () => onViewportChange(toBounds(map), map.getZoom()),
-    zoomend: () => onViewportChange(toBounds(map), map.getZoom()),
-  });
-  return null;
-}
-
-// 空白部分のクリックで、近接する地点群をリストへ
-function ClickPicker({
-  results,
-  onPickNearby,
-}: {
-  results: MLITSearchResult[];
-  onPickNearby: (points: MLITSearchResult[]) => void;
-}) {
-  const map = useMapEvents({
-    click: (e) => {
-      const cp = map.latLngToContainerPoint(e.latlng);
-      const near = results.filter((r) => {
-        if (!r.location) return false;
-        const p = map.latLngToContainerPoint([r.location.lat, r.location.lng]);
-        return p.distanceTo(cp) <= PICK_PX;
-      });
-      onPickNearby(near);
+    id: p.id ?? `${lng},${lat}`,
+    title: p.title ?? p.id ?? '',
+    source: isTokyo ? ('tokyo' as const) : ('mlit' as const),
+    metadata: {
+      'NGI:link_boring_xml': p.xml_url,
+      'NGI:link_boring_pdf': p.log_url,
+      ...(ngiId ? { 'NGI:id': ngiId } : {}),
     },
-  });
-  return null;
-}
-
-// CircleMarker（canvas描画）で大量点を軽量に描画
-function Markers({
-  results,
-  selectedResult,
-  onPickNearby,
-  onResultSelect,
-}: {
-  results: MLITSearchResult[];
-  selectedResult: MLITSearchResult | null;
-  onPickNearby: (points: MLITSearchResult[]) => void;
-  onResultSelect: (result: MLITSearchResult) => void;
-}) {
-  const map = useMap();
-
-  const pickAround = (loc: GeoLocation) => {
-    const cp = map.latLngToContainerPoint([loc.lat, loc.lng]);
-    const near = results.filter((r) => {
-      if (!r.location) return false;
-      const p = map.latLngToContainerPoint([r.location.lat, r.location.lng]);
-      return p.distanceTo(cp) <= PICK_PX;
-    });
-    onPickNearby(near);
+    location: { lat, lng },
+    datasetName: isTokyo ? '東京の地盤(GIS版)' : '国土地盤情報(NGI)',
   };
-
-  return (
-    <>
-      {results.map((r) => {
-        if (!r.location) return null;
-        const selected = selectedResult?.id === r.id && selectedResult?.source === r.source;
-        const fill = r.source === 'tokyo' ? TOKYO_COLOR : MLIT_COLOR;
-        return (
-          <CircleMarker
-            key={resultKey(r)}
-            center={[r.location.lat, r.location.lng]}
-            radius={selected ? 9 : 6}
-            pathOptions={{
-              color: selected ? SELECTED_COLOR : '#ffffff',
-              weight: selected ? 3 : 2,
-              fillColor: fill,
-              fillOpacity: 1,
-            }}
-            eventHandlers={{
-              click: () => {
-                onResultSelect(r);
-                if (r.location) pickAround(r.location);
-              },
-            }}
-          >
-            <Popup>
-              <div className="text-sm">
-                <p className="font-medium text-gray-900">{r.title}</p>
-                <span
-                  className={`inline-block mt-1 px-1.5 py-0.5 rounded text-xs text-white ${
-                    r.source === 'tokyo' ? 'bg-amber-500' : 'bg-red-500'
-                  }`}
-                >
-                  {r.source === 'tokyo' ? '東京の地盤(GIS版)' : '国土地盤'}
-                </span>
-              </div>
-            </Popup>
-          </CircleMarker>
-        );
-      })}
-    </>
-  );
 }
 
-// 地図中心移動ハンドラー（地名ジャンプ）
-function MapCenterHandler({ center }: { center: GeoLocation }) {
-  const map = useMap();
-  useEffect(() => {
-    map.setView([center.lat, center.lng], map.getZoom());
-  }, [center, map]);
-  return null;
-}
-
-// 地図サイズ更新ハンドラー
-function MapResizeHandler() {
-  const map = useMap();
-  useEffect(() => {
-    const container = map.getContainer();
-    const ro = new ResizeObserver(() => map.invalidateSize());
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [map]);
-  return null;
+function buildStyle(): maplibregl.StyleSpecification {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return {
+    version: 8,
+    sources: {
+      gsi: {
+        type: 'raster',
+        tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution:
+          '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',
+      },
+      points: {
+        type: 'vector',
+        url: `pmtiles://${origin}${PMTILES_URL}`,
+      },
+    },
+    layers: [
+      { id: 'gsi', type: 'raster', source: 'gsi' },
+      {
+        id: 'pts-heat',
+        type: 'heatmap',
+        source: 'points',
+        'source-layer': POINTS_LAYER,
+        maxzoom: 12,
+        paint: {
+          'heatmap-weight': 0.6,
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.5, 12, 1.4],
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 6, 10, 12, 22],
+          // 円レイヤが立ち上がる z10-12 でヒートマップをフェードアウト
+          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.85, 12, 0],
+        },
+      },
+      {
+        id: 'pts-circle',
+        type: 'circle',
+        source: 'points',
+        'source-layer': POINTS_LAYER,
+        minzoom: 10,
+        paint: {
+          'circle-color': ['match', ['get', 'source'], 'tokyo', TOKYO_COLOR, NGI_COLOR],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 4.5, 17, 7],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 0, 14, 1],
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 13, 1],
+        },
+      },
+      {
+        id: 'pts-selected',
+        type: 'circle',
+        source: 'points',
+        'source-layer': POINTS_LAYER,
+        minzoom: 10,
+        filter: ['==', ['get', 'id'], ''],
+        paint: {
+          'circle-color': SELECTED_COLOR,
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 5, 16, 9],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 3,
+        },
+      },
+    ],
+  };
 }
 
 const MapView: React.FC<MapViewProps> = ({
   center,
-  results,
   selectedResult,
-  belowMinZoom,
-  densityCells,
-  densityCell,
-  mapStatus,
-  onViewportChange,
   onPickNearby,
   onResultSelect,
 }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  // 最新のコールバックを ref 経由で参照（map初期化は1回のみにするため）
+  const cbRef = useRef({ onPickNearby, onResultSelect });
+  cbRef.current = { onPickNearby, onResultSelect };
+
+  // 初期化（マウント時1回）
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    // PMTiles プロトコルを登録（Range取得で表示範囲のタイルだけ読む）
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', protocol.tile);
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: buildStyle(),
+      center: [center.lng, center.lat],
+      zoom: 15,
+      attributionControl: { compact: true },
+    });
+    mapRef.current = map;
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+
+    const handleClick = (e: maplibregl.MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f) return;
+      const coords = (f.geometry as GeoJSON.Point).coordinates;
+      onResultSelectFromFeature(f.properties as TileProps, coords[0], coords[1]);
+      // クリック周辺の地点群をリストへ
+      const box: [maplibregl.PointLike, maplibregl.PointLike] = [
+        [e.point.x - PICK_PX, e.point.y - PICK_PX],
+        [e.point.x + PICK_PX, e.point.y + PICK_PX],
+      ];
+      const near = map.queryRenderedFeatures(box, { layers: ['pts-circle'] });
+      const seen = new Set<string>();
+      const list: MLITSearchResult[] = [];
+      for (const nf of near) {
+        const p = nf.properties as TileProps;
+        const c = (nf.geometry as GeoJSON.Point).coordinates;
+        const r = featureToResult(p, c[0], c[1]);
+        const key = `${r.source}-${r.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        list.push(r);
+      }
+      cbRef.current.onPickNearby(list);
+    };
+    const onResultSelectFromFeature = (p: TileProps, lng: number, lat: number) => {
+      cbRef.current.onResultSelect(featureToResult(p, lng, lat));
+    };
+
+    map.on('click', 'pts-circle', handleClick);
+    map.on('mouseenter', 'pts-circle', () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'pts-circle', () => {
+      map.getCanvas().style.cursor = '';
+    });
+
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(containerRef.current);
+
+    return () => {
+      ro.disconnect();
+      map.remove();
+      mapRef.current = null;
+      maplibregl.removeProtocol('pmtiles');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 地名検索などで center が変わったら移動
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({ center: [center.lng, center.lat], zoom: Math.max(map.getZoom(), 15) });
+  }, [center]);
+
+  // 選択地点のハイライト（フィルタ更新）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (!map.getLayer('pts-selected')) return;
+      map.setFilter('pts-selected', ['==', ['get', 'id'], selectedResult?.id ?? '']);
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once('idle', apply);
+  }, [selectedResult]);
+
   return (
     <div className="h-full w-full relative">
-      <MapContainer
-        center={[center.lat, center.lng]}
-        zoom={15}
-        preferCanvas={true} // 大量マーカーをcanvasで軽量描画
-        className="h-full w-full rounded-lg"
-        style={{ minHeight: '400px' }}
-      >
-        {/* 地理院「淡色地図」: 背景が淡くマーカー/密度タイルが映える */}
-        <TileLayer
-          attribution='&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>'
-          url="https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png"
-        />
+      <div ref={containerRef} className="h-full w-full rounded-lg" style={{ minHeight: '400px' }} />
 
-        <ViewportWatcher onViewportChange={onViewportChange} />
-        <ClickPicker results={results} onPickNearby={onPickNearby} />
-        <MapCenterHandler center={center} />
-        <MapResizeHandler />
-        {belowMinZoom ? (
-          <DensityTiles cells={densityCells} cell={densityCell} />
-        ) : (
-          <Markers
-            results={results}
-            selectedResult={selectedResult}
-            onPickNearby={onPickNearby}
-            onResultSelect={onResultSelect}
-          />
-        )}
-      </MapContainer>
+      {/* ズーム別の見え方ヒント */}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow pointer-events-none">
+        広域=ヒートマップ表示。ズームインで個別地点（クリックで柱状図）
+      </div>
 
-      {/* 件数表示。地図タイルは常に明色なのでダークでも濃い文字に固定（明地図に明文字=薄く見える対策） */}
-      {mapStatus && (
-        <div className="absolute bottom-2 left-2 z-[1000] text-xs text-gray-900 pointer-events-none select-none">
-          {mapStatus}
-        </div>
-      )}
-
-      {/* ズーム不足時のヒント */}
-      {belowMinZoom && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1000] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow">
-          色が付いた区画にデータがあります。ズームインすると個別地点が表示されます
-        </div>
-      )}
-
-      {/* 凡例（マーカー表示時のみ） */}
-      {!belowMinZoom && (
-        <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1000]">
-          <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
-              <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
-              <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow"></div>
-              <span className="text-gray-700 dark:text-gray-300">選択中</span>
-            </div>
+      {/* 凡例 */}
+      <div className="absolute bottom-4 right-4 bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg text-xs z-[1]">
+        <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
+            <span className="text-gray-700 dark:text-gray-300">国土地盤(NGI)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
+            <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-blue-600 border-2 border-white shadow"></div>
+            <span className="text-gray-700 dark:text-gray-300">選択中</span>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

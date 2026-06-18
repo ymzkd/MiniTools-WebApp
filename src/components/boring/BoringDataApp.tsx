@@ -1,17 +1,9 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { AlertCircle } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
 import MapView from './MapView';
 import SearchPanel from './SearchPanel';
 import ResultsList from './ResultsList';
 import BoringLogViewer from './BoringLogViewer';
-import {
-  searchAllSourcesInBounds,
-  searchTokyoDensity,
-  searchNgiDensity,
-  fetchAndParseBoringData,
-  type MapBounds,
-  type DensityCell,
-} from './api';
+import { fetchAndParseBoringData } from './api';
 import type {
   GeoLocation,
   MLITSearchResult,
@@ -24,130 +16,20 @@ const DEFAULT_CENTER: GeoLocation = {
   lng: 139.7671,
 };
 
-// ビューポート連動描画のパラメータ
-const MIN_ZOOM = 14; // これ以上で個別マーカー、未満は密度タイル表示
-const TOKYO_LIMIT = 2000; // 1ビューポートあたりの東京データ描画上限（超過はサンプリング）
-const MLIT_SIZE = 500; // MLITの取得上限
-const DEBOUNCE_MS = 400; // 地図操作のデバウンス
-
-// ズーム→密度メッシュのセル一辺（度）。
-// 全件ローカルDB集計に移行しアクセス制限が無くなったので、以前より細かい基準にする。
-// z13=0.005°(≈550m) … z5=1.28°。ズームと共にセルも縮むので1ビューポートのセル数は概ね一定。
-// 下限を z5 まで広げ、国全体ズームでも 422 にならない範囲に収める（サーバ cell 上限 le=8.0）。
-function cellForZoom(zoom: number): number {
-  const z = Math.max(5, Math.min(13, Math.round(zoom)));
-  return 0.005 * Math.pow(2, 13 - z);
-}
-
 interface BoringDataAppProps {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
 }
 
-interface ViewportInfo {
-  mlitCount: number;
-  tokyoTotal: number;
-  tokyoTruncated: boolean;
-  shown: number;
-}
-
 const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => {
   const [mapCenter, setMapCenter] = useState<GeoLocation>(DEFAULT_CENTER);
-  // 表示範囲内にプロットする全地点（地図用）
-  const [plotted, setPlotted] = useState<MLITSearchResult[]>([]);
   // クリック近接でリストに出す部分集合（リスト用）
   const [listed, setListed] = useState<MLITSearchResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<MLITSearchResult | null>(null);
   const [boringData, setBoringData] = useState<BoringData | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [belowMinZoom, setBelowMinZoom] = useState(false);
-  const [plotting, setPlotting] = useState(false);
-  const [viewportInfo, setViewportInfo] = useState<ViewportInfo | null>(null);
-  // 密度タイル（ズーム閾値未満）。データがある区画を一律色で塗る存在表示（東京＋MLIT）
-  const [densityCells, setDensityCells] = useState<DensityCell[]>([]);
-  const [densityCell, setDensityCell] = useState(0.005);
 
-  // デバウンスと、古いレスポンスの破棄用
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reqIdRef = useRef(0);
-
-  // 地図の表示範囲が変わるたびに、範囲内の地点をリアルタイム取得してプロット
-  const handleViewportChange = useCallback(
-    (bounds: MapBounds, zoom: number) => {
-      const below = zoom < MIN_ZOOM;
-      setBelowMinZoom(below);
-
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-
-      debounceRef.current = setTimeout(async () => {
-        const reqId = ++reqIdRef.current;
-        setPlotting(true);
-        setError(null);
-
-        if (below) {
-          // ズーム閾値未満: 個別マーカーの代わりに「データの有無」を示す密度タイル。
-          // 東京・全国NGIともサーバ側メッシュ集計(/density)を使う（ライブGraphQL廃止）。
-          // 件数は問わず、いずれかにデータがある区画を一律色で塗る（存在表示）。
-          const cell = cellForZoom(zoom);
-          const [denS, ngiS] = await Promise.allSettled([
-            searchTokyoDensity(bounds, cell),
-            searchNgiDensity(bounds, cell),
-          ]);
-          if (reqId !== reqIdRef.current) return;
-
-          const cellMap = new Map<string, DensityCell>();
-          if (denS.status === 'fulfilled') {
-            for (const c of denS.value.cells) cellMap.set(`${c.gy}:${c.gx}`, { gy: c.gy, gx: c.gx });
-          }
-          if (ngiS.status === 'fulfilled') {
-            for (const c of ngiS.value.cells) cellMap.set(`${c.gy}:${c.gx}`, { gy: c.gy, gx: c.gx });
-          }
-
-          setPlotted([]);
-          setViewportInfo(null);
-          setDensityCell(cell);
-          setDensityCells([...cellMap.values()]);
-          if (denS.status === 'rejected' && ngiS.status === 'rejected') {
-            onError?.('密度データの取得に失敗しました');
-          }
-          setPlotting(false);
-          return;
-        }
-
-        // ズーム閾値以上: 範囲内の個別地点を取得して描画
-        try {
-          const res = await searchAllSourcesInBounds(bounds, {
-            tokyoLimit: TOKYO_LIMIT,
-            mlitSize: MLIT_SIZE,
-          });
-          if (reqId !== reqIdRef.current) return;
-
-          setDensityCells([]);
-          setPlotted(res.results);
-          setViewportInfo({
-            mlitCount: res.mlitCount,
-            tokyoTotal: res.tokyoTotal,
-            tokyoTruncated: res.tokyoTruncated,
-            shown: res.results.length,
-          });
-          if (res.errors.length > 0) {
-            onError?.(`一部ソースの取得に失敗（${res.errors.join(' / ')}）`);
-          }
-        } catch (err) {
-          if (reqId !== reqIdRef.current) return;
-          const msg = err instanceof Error ? err.message : 'データ取得に失敗しました';
-          setError(msg);
-          onError?.(msg);
-        } finally {
-          if (reqId === reqIdRef.current) setPlotting(false);
-        }
-      }, DEBOUNCE_MS);
-    },
-    [onError]
-  );
-
-  // クリック近接の地点群をリスト表示（地図側でピクセル距離フィルタ済み）
+  // クリック近接の地点群をリスト表示（地図側=タイルの描画地点から近接抽出）
   const handlePickNearby = useCallback((points: MLITSearchResult[]) => {
     setListed(points);
   }, []);
@@ -207,17 +89,6 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
     setBoringData(null);
   }, []);
 
-  // 地図内に薄く重ねる件数表示（マーカー表示時のみ）
-  const mapStatus = belowMinZoom
-    ? ''
-    : plotting
-    ? '取得中…'
-    : viewportInfo
-    ? `表示中 ${viewportInfo.shown}件（国土地盤 ${viewportInfo.mlitCount} / 東京 ${viewportInfo.tokyoTotal}${
-        viewportInfo.tokyoTruncated ? '→間引き' : ''
-      }）`
-    : '';
-
   return (
     <div className="h-full flex flex-col">
       {/* ヘッダー */}
@@ -227,7 +98,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             ボーリングデータ検索
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            地図を動かすと表示範囲内のボーリングデータが自動表示されます。地点をクリックすると近接データが左の一覧に出ます。
+            広域では密度ヒートマップ、ズームインで個別地点を表示します。地点をクリックすると柱状図が表示され、近接データが左の一覧に出ます。
           </p>
         </div>
       </div>
@@ -238,13 +109,6 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
           {/* 左サイドバー: 操作パネル + 近接リスト */}
           <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0">
             <SearchPanel onLocationSearch={handleLocationSearch} />
-
-            {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-              </div>
-            )}
 
             <ResultsList
               results={listed}
@@ -258,13 +122,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
           <div className="lg:col-span-1 h-[400px] lg:h-full lg:min-h-0">
             <MapView
               center={mapCenter}
-              results={plotted}
               selectedResult={selectedResult}
-              belowMinZoom={belowMinZoom}
-              densityCells={densityCells}
-              densityCell={densityCell}
-              mapStatus={mapStatus}
-              onViewportChange={handleViewportChange}
               onPickNearby={handlePickNearby}
               onResultSelect={handleResultSelect}
             />
