@@ -78,11 +78,24 @@ function buildStyle(): maplibregl.StyleSpecification {
         'source-layer': POINTS_LAYER,
         maxzoom: 12,
         paint: {
-          'heatmap-weight': 0.6,
-          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.5, 12, 1.4],
-          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 6, 10, 12, 22],
+          'heatmap-weight': 0.8,
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1.0, 6, 1.1, 12, 1.5],
+          // 広域でも孤立した地点が見えるよう、低ズームで半径を大きめに取る。
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 7, 4, 10, 8, 16, 12, 26],
+          // 低密度(=まばらにデータがある所)にも色の下限を置き、「データがある」ことが分かるようにする。
+          'heatmap-color': [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0, 'rgba(0,0,0,0)',
+            0.04, 'rgba(33,102,172,0.55)',
+            0.25, 'rgba(103,169,207,0.7)',
+            0.5, 'rgba(253,184,99,0.85)',
+            0.8, 'rgba(239,138,98,0.9)',
+            1, 'rgba(178,24,43,0.95)',
+          ],
           // 円レイヤが立ち上がる z10-12 でヒートマップをフェードアウト
-          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.85, 12, 0],
+          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.9, 12, 0],
         },
       },
       {
@@ -146,6 +159,9 @@ const MapView: React.FC<MapViewProps> = ({
     });
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // ホイール1ノッチあたりのズーム量を大きくする（既定は細かく、何度もスクロールが必要なため）。
+    map.scrollZoom.setWheelZoomRate(1 / 120); // 既定 1/450 → 約3.7倍速
+    map.scrollZoom.setZoomRate(1 / 60); // トラックパッド/ピンチも速める
 
     const handleClick = (e: maplibregl.MapLayerMouseEvent) => {
       const f = e.features?.[0];
