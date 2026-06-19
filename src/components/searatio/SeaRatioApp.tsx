@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, MapPin, Waves } from 'lucide-react';
 import SeaRatioMap from './SeaRatioMap';
+import type { ZoneOverlay } from './SeaRatioMap';
 import { fetchDesign, fetchElevation, geocode, snowDepthCm } from './api';
 import type { DesignResult } from './api';
 
@@ -27,6 +28,8 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const [address, setAddress] = useState('');
   // 加算されると地図が円全体に表示範囲を合わせる（住所検索・座標入力時のみ。クリックでは加算しない）
   const [viewVersion, setViewVersion] = useState(0);
+  // 地図に薄く重ねる地域区分（なし / 積雪 / 風速）
+  const [overlay, setOverlay] = useState<ZoneOverlay>('none');
 
   const [design, setDesign] = useState<DesignResult | null>(null);
   const [elevation, setElevation] = useState<number | null>(null);
@@ -184,6 +187,32 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               </button>
             </form>
 
+            {/* 地図オーバーレイ（地域区分を薄く重ねる） */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">地図オーバーレイ（地域区分）</span>
+              <div className="grid grid-cols-3 gap-1">
+                {([
+                  ['none', 'なし'],
+                  ['snow', '積雪区分'],
+                  ['wind', '風速区分'],
+                ] as [ZoneOverlay, string][]).map(([val, label]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setOverlay(val)}
+                    className={`px-2 py-1.5 text-sm rounded-lg border transition-colors ${
+                      overlay === val
+                        ? 'bg-blue-500 text-white border-blue-500'
+                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {overlay !== 'none' && <ZoneLegend overlay={overlay} />}
+            </div>
+
             {/* 結果 */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-4">
               {loading && <p className="text-sm text-gray-400">計算中…</p>}
@@ -256,11 +285,40 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               center={point}
               radiusKm={radiusKm}
               viewVersion={viewVersion}
+              overlay={overlay}
               onPick={handleMapPick}
             />
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// オーバーレイの凡例（地図の塗り色と対応するグラデーションバー）。
+const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overlay }) => {
+  const conf =
+    overlay === 'snow'
+      ? {
+          grad: 'linear-gradient(to right, #deebf7, #6baed6, #08306b)',
+          min: '第1区',
+          max: '第40区',
+          note: '平12建告1455号 積雪荷重の地域区分（濃いほど区分番号が大）',
+        }
+      : {
+          grad: 'linear-gradient(to right, #fee5d9, #fb6a4a, #a50f15)',
+          min: '第1区 (Vo30)',
+          max: '第9区 (Vo46)',
+          note: '平12建告1454号 基準風速の地域区分（濃いほど基準風速が大）',
+        };
+  return (
+    <div className="pt-1">
+      <div className="h-2 w-full rounded" style={{ background: conf.grad }} />
+      <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+        <span>{conf.min}</span>
+        <span>{conf.max}</span>
+      </div>
+      <p className="text-[10px] text-gray-400 mt-1">{conf.note}</p>
     </div>
   );
 };

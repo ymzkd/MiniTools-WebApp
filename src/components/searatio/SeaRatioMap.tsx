@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -7,13 +7,34 @@ interface LatLng {
   lng: number;
 }
 
+export type ZoneOverlay = 'none' | 'snow' | 'wind';
+
 interface SeaRatioMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
   radiusKm: number;
   // この値が変わったとき（住所検索・座標入力・初期表示）だけ円全体が収まるよう表示範囲を合わせる。
   // 地図クリックでは変えない＝クリックのたびに勝手にズームしないようにするため。
   viewVersion: number;
+  overlay: ZoneOverlay; // 地域区分の薄いオーバーレイ（none / 積雪区分 / 風速区分）
   onPick: (lat: number, lng: number) => void;
+}
+
+// ゾーン番号→色。色が濃いほど区分番号が大きい（元アプリと同じ向き）。薄く重ねる。
+// 積雪は青系(第1〜40区)、風速は赤系(第1〜9区)。
+const ZONE_FILL_COLOR: Record<'snow' | 'wind', maplibregl.ExpressionSpecification> = {
+  snow: ['interpolate', ['linear'], ['get', 'zone'], 1, '#deebf7', 20, '#6baed6', 40, '#08306b'],
+  wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
+};
+
+// 取得済みゾーンGeoJSONのモジュールキャッシュ（kindごとに1回だけfetch）
+const zoneGeojsonCache: Record<string, GeoJSON.FeatureCollection> = {};
+async function loadZoneGeojson(kind: 'snow' | 'wind'): Promise<GeoJSON.FeatureCollection> {
+  if (zoneGeojsonCache[kind]) return zoneGeojsonCache[kind];
+  const res = await fetch(`/api/design/zones/${kind}`, { headers: { accept: 'application/geo+json' } });
+  if (!res.ok) throw new Error(`zones ${kind}: ${res.status}`);
+  const fc = (await res.json()) as GeoJSON.FeatureCollection;
+  zoneGeojsonCache[kind] = fc;
+  return fc;
 }
 
 // 経度を [-180, 180] に正規化（メルカトルで地図を一周しても巨大な経度を上流へ送らない）。
@@ -66,13 +87,47 @@ function buildStyle(): maplibregl.StyleSpecification {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const SeaRatioMap: React.FC<SeaRatioMapProps> = ({ center, radiusKm, viewVersion, onPick }) => {
+const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
+  center,
+  radiusKm,
+  viewVersion,
+  overlay,
+  onPick,
+}) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
   const firstFitRef = useRef(false);
+  const overlayReqRef = useRef(0); // 非同期オーバーレイ適用の競合防止トークン
+  const overlayRef = useRef(overlay);
+  overlayRef.current = overlay;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+
+  // ゾーン区分オーバーレイの表示切り替え（非同期fetch＋競合防止）。
+  const applyOverlay = useCallback((kind: ZoneOverlay) => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current || !map.getLayer('zones-fill')) return;
+    const token = ++overlayReqRef.current;
+    if (kind === 'none') {
+      map.setLayoutProperty('zones-fill', 'visibility', 'none');
+      map.setLayoutProperty('zones-line', 'visibility', 'none');
+      return;
+    }
+    map.setPaintProperty('zones-fill', 'fill-color', ZONE_FILL_COLOR[kind]);
+    loadZoneGeojson(kind)
+      .then((fc) => {
+        if (token !== overlayReqRef.current) return; // 古い選択は破棄
+        const src = map.getSource('zones') as maplibregl.GeoJSONSource | undefined;
+        if (!src) return;
+        src.setData(fc);
+        map.setLayoutProperty('zones-fill', 'visibility', 'visible');
+        map.setLayoutProperty('zones-line', 'visibility', 'visible');
+      })
+      .catch(() => {
+        /* 取得失敗時は何も重ねない */
+      });
+  }, []);
   // viewVersion 効果が最新の中心・半径を参照するための ref（中心変化では再fitしないため依存に入れない）
   const latestRef = useRef({ center, radiusKm });
   latestRef.current = { center, radiusKm };
@@ -111,6 +166,23 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({ center, radiusKm, viewVersion
     };
 
     map.on('load', () => {
+      // ゾーン区分オーバーレイ（GSIタイルの上・解析円の下に薄く重ねる）。初期は非表示。
+      map.addSource('zones', { type: 'geojson', data: EMPTY_FC });
+      map.addLayer({
+        id: 'zones-fill',
+        type: 'fill',
+        source: 'zones',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': ZONE_FILL_COLOR.snow, 'fill-opacity': 0.4 },
+      });
+      map.addLayer({
+        id: 'zones-line',
+        type: 'line',
+        source: 'zones',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.6 },
+      });
+
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
       map.addSource('marker', { type: 'geojson', data: EMPTY_FC });
       map.addLayer({
@@ -140,6 +212,7 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({ center, radiusKm, viewVersion
       // 初期データ反映。表示範囲合わせは「実サイズが付いてから」一度だけ（下の maybeInitialFit）。
       updateData(map, center, radiusKm);
       maybeInitialFit();
+      applyOverlay(overlayRef.current); // マウント時にオーバーレイ選択済みなら反映
     });
 
     // 地図のどこをクリックしても、その地点を選択する。
@@ -176,6 +249,11 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({ center, radiusKm, viewVersion
     const { center: c, radiusKm: r } = latestRef.current;
     fitToCircle(map, c, r);
   }, [viewVersion]);
+
+  // オーバーレイ選択が変わったら反映
+  useEffect(() => {
+    applyOverlay(overlay);
+  }, [overlay, applyOverlay]);
 
   return (
     <div className="h-full w-full relative">
