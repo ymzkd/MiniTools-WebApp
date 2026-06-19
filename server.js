@@ -162,8 +162,11 @@ app.use('/api/ngi', async (req, res) => {
 })
 
 // 設計用地域区分API（jiban-api /design/*）への薄いリバースプロキシ。
-// /api/design/* → jiban-api /design/*（lookup: 基準風速 / 積雪荷重係数 / 海率）。
-// 海率計算アプリが minitools 同一オリジンの /api/design/lookup を叩く。
+// /api/design/* → jiban-api /design/*
+//   lookup: 基準風速 / 積雪荷重係数 / 海率
+//   tiles : 地域区分オーバーレイの PMTiles（HTTP Range 取得）
+// 地図オーバーレイの .pmtiles は Range で部分取得するため、Range/206/Content-Range/
+// Accept-Ranges/ETag を素通しする（NGI タイルと同じ扱い。しないと毎回全取得になる）。
 app.use('/api/design', async (req, res) => {
   if (!JIBAN_API_URL) {
     return res.status(503).json({ error: 'Design API not configured' })
@@ -171,15 +174,22 @@ app.use('/api/design', async (req, res) => {
   try {
     const target =
       JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/design/, '/design')
-    const upstream = await fetch(target, {
-      method: req.method,
-      headers: { accept: req.headers['accept'] || '*/*' },
-    })
+    const fwd = { accept: req.headers['accept'] || '*/*' }
+    if (req.headers['range']) fwd['range'] = req.headers['range']
+    if (req.headers['if-none-match']) fwd['if-none-match'] = req.headers['if-none-match']
+    const upstream = await fetch(target, { method: req.method, headers: fwd })
     res.status(upstream.status)
-    const ct = upstream.headers.get('content-type')
-    if (ct) res.setHeader('Content-Type', ct)
-    const cc = upstream.headers.get('cache-control')
-    if (cc) res.setHeader('Cache-Control', cc)
+    for (const h of [
+      'content-type',
+      'cache-control',
+      'content-range',
+      'accept-ranges',
+      'etag',
+      'last-modified',
+    ]) {
+      const v = upstream.headers.get(h)
+      if (v) res.setHeader(h, v)
+    }
     const buf = Buffer.from(await upstream.arrayBuffer())
     return res.send(buf)
   } catch (error) {

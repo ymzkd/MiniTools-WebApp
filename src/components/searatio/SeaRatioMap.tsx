@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import * as pmtiles from 'pmtiles';
 
 interface LatLng {
   lat: number;
@@ -26,15 +27,21 @@ const ZONE_FILL_COLOR: Record<'snow' | 'wind', maplibregl.ExpressionSpecificatio
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
 };
 
-// 取得済みゾーンGeoJSONのモジュールキャッシュ（kindごとに1回だけfetch）
-const zoneGeojsonCache: Record<string, GeoJSON.FeatureCollection> = {};
-async function loadZoneGeojson(kind: 'snow' | 'wind'): Promise<GeoJSON.FeatureCollection> {
-  if (zoneGeojsonCache[kind]) return zoneGeojsonCache[kind];
-  const res = await fetch(`/api/design/zones/${kind}`, { headers: { accept: 'application/geo+json' } });
-  if (!res.ok) throw new Error(`zones ${kind}: ${res.status}`);
-  const fc = (await res.json()) as GeoJSON.FeatureCollection;
-  zoneGeojsonCache[kind] = fc;
-  return fc;
+// ゾーン区分ベクタタイル(PMTiles)の同一オリジン取得パス。jiban-api /design/tiles を
+// minitools の Express が Range 転送する。tippecanoe の -l zones に対応(source-layer)。
+const ZONE_PMTILES: Record<'snow' | 'wind', string> = {
+  snow: '/api/design/tiles/snow_zones.pmtiles',
+  wind: '/api/design/tiles/wind_zones.pmtiles',
+};
+const ZONE_SOURCE_LAYER = 'zones';
+
+// pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
+// (全タブ常時マウントのSPAなので、片方のアンマウントで他方を壊さないよう removeProtocol しない)。
+let _pmtilesRegistered = false;
+function ensurePmtilesProtocol() {
+  if (_pmtilesRegistered) return;
+  _pmtilesRegistered = true;
+  maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);
 }
 
 // 経度を [-180, 180] に正規化（メルカトルで地図を一周しても巨大な経度を上流へ送らない）。
@@ -98,35 +105,17 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
   const firstFitRef = useRef(false);
-  const overlayReqRef = useRef(0); // 非同期オーバーレイ適用の競合防止トークン
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
 
-  // ゾーン区分オーバーレイの表示切り替え（非同期fetch＋競合防止）。
+  // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
   const applyOverlay = useCallback((kind: ZoneOverlay) => {
     const map = mapRef.current;
-    if (!map || !readyRef.current || !map.getLayer('zones-fill')) return;
-    const token = ++overlayReqRef.current;
-    if (kind === 'none') {
-      map.setLayoutProperty('zones-fill', 'visibility', 'none');
-      map.setLayoutProperty('zones-line', 'visibility', 'none');
-      return;
-    }
-    map.setPaintProperty('zones-fill', 'fill-color', ZONE_FILL_COLOR[kind]);
-    loadZoneGeojson(kind)
-      .then((fc) => {
-        if (token !== overlayReqRef.current) return; // 古い選択は破棄
-        const src = map.getSource('zones') as maplibregl.GeoJSONSource | undefined;
-        if (!src) return;
-        src.setData(fc);
-        map.setLayoutProperty('zones-fill', 'visibility', 'visible');
-        map.setLayoutProperty('zones-line', 'visibility', 'visible');
-      })
-      .catch(() => {
-        /* 取得失敗時は何も重ねない */
-      });
+    if (!map || !readyRef.current || !map.getLayer('zones-snow-fill')) return;
+    map.setLayoutProperty('zones-snow-fill', 'visibility', kind === 'snow' ? 'visible' : 'none');
+    map.setLayoutProperty('zones-wind-fill', 'visibility', kind === 'wind' ? 'visible' : 'none');
   }, []);
   // viewVersion 効果が最新の中心・半径を参照するための ref（中心変化では再fitしないため依存に入れない）
   const latestRef = useRef({ center, radiusKm });
@@ -148,6 +137,7 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
       maxPitch: 0,
     });
     mapRef.current = map;
+    ensurePmtilesProtocol();
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -167,20 +157,21 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
 
     map.on('load', () => {
       // ゾーン区分オーバーレイ（GSIタイルの上・解析円の下に薄く重ねる）。初期は非表示。
-      map.addSource('zones', { type: 'geojson', data: EMPTY_FC });
-      map.addLayer({
-        id: 'zones-fill',
-        type: 'fill',
-        source: 'zones',
-        layout: { visibility: 'none' },
-        paint: { 'fill-color': ZONE_FILL_COLOR.snow, 'fill-opacity': 0.4 },
-      });
-      map.addLayer({
-        id: 'zones-line',
-        type: 'line',
-        source: 'zones',
-        layout: { visibility: 'none' },
-        paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.6 },
+      // PMTilesベクタソースを2種(積雪/風速)。可視になったタイルだけ Range 取得される。
+      const origin = window.location.origin;
+      (['snow', 'wind'] as const).forEach((kind) => {
+        map.addSource(`zones-${kind}`, {
+          type: 'vector',
+          url: `pmtiles://${origin}${ZONE_PMTILES[kind]}`,
+        });
+        map.addLayer({
+          id: `zones-${kind}-fill`,
+          type: 'fill',
+          source: `zones-${kind}`,
+          'source-layer': ZONE_SOURCE_LAYER,
+          layout: { visibility: 'none' },
+          paint: { 'fill-color': ZONE_FILL_COLOR[kind], 'fill-opacity': 0.4 },
+        });
       });
 
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
