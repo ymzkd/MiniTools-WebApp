@@ -25,6 +25,8 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   // 海率計算半径の任意上書き（空なら API が積雪R→40km で自動決定）
   const [radiusText, setRadiusText] = useState('');
   const [address, setAddress] = useState('');
+  // 加算されると地図が円全体に表示範囲を合わせる（住所検索・座標入力時のみ。クリックでは加算しない）
+  const [viewVersion, setViewVersion] = useState(0);
 
   const [design, setDesign] = useState<DesignResult | null>(null);
   const [elevation, setElevation] = useState<number | null>(null);
@@ -74,6 +76,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
       const lng = parseFloat(lngText);
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
         setPoint({ lat, lng });
+        setViewVersion((v) => v + 1);
       } else {
         onError?.('緯度・経度は数値で入力してください');
       }
@@ -89,6 +92,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
         const r = await geocode(address.trim());
         if (r) {
           setPoint(r);
+          setViewVersion((v) => v + 1);
           onSuccess?.(`「${address.trim()}」に移動しました`);
         } else {
           onError?.('住所が見つかりませんでした');
@@ -248,7 +252,12 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
 
           {/* 右: 地図 */}
           <div className="lg:col-span-2 h-[400px] lg:h-full lg:min-h-0">
-            <SeaRatioMap center={point} radiusKm={radiusKm} onPick={handleMapPick} />
+            <SeaRatioMap
+              center={point}
+              radiusKm={radiusKm}
+              viewVersion={viewVersion}
+              onPick={handleMapPick}
+            />
           </div>
         </div>
       </div>
