@@ -19,14 +19,11 @@ interface LatLng {
 }
 
 const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
+  // 選択中の地点は内部状態として保持（緯度経度の入力欄は持たない）。
   const [point, setPoint] = useState<LatLng>(DEFAULT_POINT);
-  // 緯度経度の入力欄（地図クリック・住所検索でも同期）
-  const [latText, setLatText] = useState(String(DEFAULT_POINT.lat));
-  const [lngText, setLngText] = useState(String(DEFAULT_POINT.lng));
-  // 海率計算半径の任意上書き（空なら API が積雪R→40km で自動決定）
-  const [radiusText, setRadiusText] = useState('');
-  const [address, setAddress] = useState('');
-  // 加算されると地図が円全体に表示範囲を合わせる（住所検索・座標入力時のみ。クリックでは加算しない）
+  // 検索ボックス：住所・地名、または「緯度,経度」を受け付ける。
+  const [query, setQuery] = useState('');
+  // 加算されると地図が円全体に表示範囲を合わせる（検索時のみ。クリックでは加算しない）
   const [viewVersion, setViewVersion] = useState(0);
   // 地図に薄く重ねる地域区分（なし / 積雪 / 風速）
   const [overlay, setOverlay] = useState<ZoneOverlay>('none');
@@ -35,18 +32,12 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const [elevation, setElevation] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 地点・半径が変わるたびに設計パラメータ＋標高を取得
+  // 地点が変わるたびに設計パラメータ＋標高を取得（半径は常にAPI自動: 積雪R→40km）
   const reqId = useRef(0);
   useEffect(() => {
     const id = ++reqId.current;
-    const radiusKm = radiusText.trim() ? parseFloat(radiusText) : undefined;
-    if (radiusKm != null && (!Number.isFinite(radiusKm) || radiusKm <= 0)) return;
-
     setLoading(true);
-    Promise.all([
-      fetchDesign(point.lat, point.lng, radiusKm),
-      fetchElevation(point.lat, point.lng),
-    ])
+    Promise.all([fetchDesign(point.lat, point.lng), fetchElevation(point.lat, point.lng)])
       .then(([d, e]) => {
         if (id !== reqId.current) return; // 古い応答は破棄
         setDesign(d);
@@ -60,43 +51,39 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
       .finally(() => {
         if (id === reqId.current) setLoading(false);
       });
-  }, [point.lat, point.lng, radiusText, onError]);
-
-  // 緯度経度入力欄を地点へ反映
-  useEffect(() => {
-    setLatText(String(point.lat));
-    setLngText(String(point.lng));
-  }, [point.lat, point.lng]);
+  }, [point.lat, point.lng, onError]);
 
   const handleMapPick = useCallback((lat: number, lng: number) => {
     setPoint({ lat, lng });
   }, []);
 
-  const applyManual = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      const lat = parseFloat(latText);
-      const lng = parseFloat(lngText);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        setPoint({ lat, lng });
-        setViewVersion((v) => v + 1);
-      } else {
-        onError?.('緯度・経度は数値で入力してください');
-      }
-    },
-    [latText, lngText, onError]
-  );
-
-  const handleAddressSearch = useCallback(
+  // 検索：カンマ区切りの「緯度,経度」ならそこへ移動、そうでなければ住所・地名でジオコーディング。
+  const handleSearch = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!address.trim()) return;
+      const q = query.trim();
+      if (!q) return;
+      // 半角/全角カンマ区切りの数値2つ＝緯度,経度
+      const m = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,，]\s*(-?\d+(?:\.\d+)?)\s*$/);
+      if (m) {
+        const lat = parseFloat(m[1]);
+        const lng = parseFloat(m[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+          setPoint({ lat, lng });
+          setViewVersion((v) => v + 1);
+          onSuccess?.(`緯度 ${lat}, 経度 ${lng} に移動しました`);
+        } else {
+          onError?.('緯度は±90、経度は±180の範囲で入力してください');
+        }
+        return;
+      }
+      // それ以外は住所・地名としてジオコーディング
       try {
-        const r = await geocode(address.trim());
+        const r = await geocode(q);
         if (r) {
           setPoint(r);
           setViewVersion((v) => v + 1);
-          onSuccess?.(`「${address.trim()}」に移動しました`);
+          onSuccess?.(`「${q}」に移動しました`);
         } else {
           onError?.('住所が見つかりませんでした');
         }
@@ -104,10 +91,10 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
         onError?.('住所検索に失敗しました');
       }
     },
-    [address, onSuccess, onError]
+    [query, onSuccess, onError]
   );
 
-  const radiusKm = design?.radius_km ?? (radiusText.trim() ? parseFloat(radiusText) : 40);
+  const radiusKm = design?.radius_km ?? 40;
   const snow = design?.snow ?? null;
   const wind = design?.wind ?? null;
   const seaRatio = design?.sea_ratio ?? null;
@@ -136,7 +123,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
           海率計算
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          地図をクリックまたは緯度経度を入力すると、その地点の海率・標高と、建築基準法告示（平成12年基準）の積雪荷重係数・基準風速を表示します。
+          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示（平成12年基準）の積雪荷重係数・基準風速を表示します。
         </p>
       </div>
 
@@ -144,15 +131,15 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
         <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:min-h-0">
           {/* 左: 入力 + 結果 */}
           <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0">
-            {/* 住所検索 */}
-            <form onSubmit={handleAddressSearch} className="flex gap-2">
+            {/* 検索（住所・地名 または 緯度,経度） */}
+            <form onSubmit={handleSearch} className="flex gap-2">
               <div className="relative flex-1">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="住所・地名（例: 東京都千代田区）"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="住所・地名 または 緯度,経度（例: 35.681,139.767）"
                   className={inputCls + ' pl-10'}
                 />
               </div>
@@ -162,37 +149,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               >
                 <Search className="w-4 h-4" />
                 検索
-              </button>
-            </form>
-
-            {/* 緯度経度・半径 */}
-            <form onSubmit={applyManual} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">緯度</span>
-                  <input value={latText} onChange={(e) => setLatText(e.target.value)} className={inputCls} />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">経度</span>
-                  <input value={lngText} onChange={(e) => setLngText(e.target.value)} className={inputCls} />
-                </label>
-              </div>
-              <label className="block">
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  海率計算半径 [km]（空欄＝告示の積雪R、無指定地点は40km）
-                </span>
-                <input
-                  value={radiusText}
-                  onChange={(e) => setRadiusText(e.target.value)}
-                  placeholder="自動"
-                  className={inputCls}
-                />
-              </label>
-              <button
-                type="submit"
-                className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-              >
-                この座標で計算
               </button>
             </form>
 
@@ -256,7 +212,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                   </div>
                 ) : snow ? (
                   <>
-                    {snow.nearest && <NearestNote kind="積雪" zone={snow.zone} km={snow.nearest_km} />}
                     <table className="w-full text-sm">
                       <tbody>
                         <Row k="地域区分" v={`第${snow.zone}区`} />
@@ -288,7 +243,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                 </h3>
                 {windUsable && wind ? (
                   <>
-                    {wind.nearest && <NearestNote kind="風速" zone={wind.zone} km={wind.nearest_km} />}
                     <table className="w-full text-sm">
                       <tbody>
                         <Row k="地域区分" v={`第${wind.zone}区`} />
@@ -320,14 +274,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
     </div>
   );
 };
-
-// 区域外だが陸のため最寄り区分で計算したことを示す注記。
-const NearestNote: React.FC<{ kind: string; zone: number; km?: number }> = ({ kind, zone, km }) => (
-  <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded px-2 py-1 mb-1">
-    区域外のため最寄りの{kind}第{zone}区で計算
-    {km != null ? `（約${km}km）` : ''}
-  </p>
-);
 
 // オーバーレイの凡例（地図の塗り色と対応するグラデーションバー）。
 const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overlay }) => {
