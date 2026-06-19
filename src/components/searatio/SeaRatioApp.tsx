@@ -152,14 +152,15 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               </button>
             </form>
 
-            {/* 地図オーバーレイ（地域区分を薄く重ねる） */}
+            {/* 地図オーバーレイ（地域区分・積雪深を薄く重ねる） */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-2">
-              <span className="text-xs text-gray-500 dark:text-gray-400">地図オーバーレイ（地域区分）</span>
-              <div className="grid grid-cols-3 gap-1">
+              <span className="text-xs text-gray-500 dark:text-gray-400">地図オーバーレイ</span>
+              <div className="grid grid-cols-2 gap-1">
                 {([
                   ['none', 'なし'],
                   ['snow', '積雪区分'],
                   ['wind', '風速区分'],
+                  ['depth', '積雪深マップ'],
                 ] as [ZoneOverlay, string][]).map(([val, label]) => (
                   <button
                     key={val}
@@ -276,7 +277,33 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
 };
 
 // オーバーレイの凡例（地図の塗り色と対応するグラデーションバー）。
+// 積雪深バンドの凡例（地図の step 色と一致）。下限cm→色。
+const DEPTH_LEGEND: [number, string][] = [
+  [5, '#c6dbef'], [20, '#9ecae1'], [50, '#6baed6'], [100, '#4292c6'], [150, '#2171b5'],
+  [200, '#08519c'], [300, '#08306b'], [500, '#54278f'], [800, '#3f007d'], [1200, '#2d004b'],
+];
+
 const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overlay }) => {
+  if (overlay === 'depth') {
+    return (
+      <div className="pt-1">
+        <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+          {DEPTH_LEGEND.map(([lo, c], i) => {
+            const hi = DEPTH_LEGEND[i + 1]?.[0];
+            return (
+              <span key={lo} className="inline-flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-300">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
+                {hi ? `${lo}–${hi}` : `${lo}+`}
+              </span>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1">
+          垂直積雪量 d=(α·H+β·rs+γ)×100 [cm]（標高は国土地理院DEM）。約5cm未満は非表示
+        </p>
+      </div>
+    );
+  }
   const conf =
     overlay === 'snow'
       ? {

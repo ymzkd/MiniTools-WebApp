@@ -8,7 +8,7 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'snow' | 'wind';
+export type ZoneOverlay = 'none' | 'snow' | 'wind' | 'depth';
 
 interface SeaRatioMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -16,7 +16,7 @@ interface SeaRatioMapProps {
   // この値が変わったとき（住所検索・座標入力・初期表示）だけ円全体が収まるよう表示範囲を合わせる。
   // 地図クリックでは変えない＝クリックのたびに勝手にズームしないようにするため。
   viewVersion: number;
-  overlay: ZoneOverlay; // 地域区分の薄いオーバーレイ（none / 積雪区分 / 風速区分）
+  overlay: ZoneOverlay; // 薄いオーバーレイ（none / 積雪区分 / 風速区分 / 積雪深）
   onPick: (lat: number, lng: number) => void;
 }
 
@@ -27,13 +27,22 @@ const ZONE_FILL_COLOR: Record<'snow' | 'wind', maplibregl.ExpressionSpecificatio
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
 };
 
-// ゾーン区分ベクタタイル(PMTiles)の同一オリジン取得パス。jiban-api /design/tiles を
-// minitools の Express が Range 転送する。tippecanoe の -l zones に対応(source-layer)。
+// 積雪深バンド(d=バンド下限cm)の色（青→紫。build_snow_depth.py の BANDS と一致）。
+const DEPTH_FILL_COLOR: maplibregl.ExpressionSpecification = [
+  'step', ['get', 'd'],
+  '#c6dbef', 20, '#9ecae1', 50, '#6baed6', 100, '#4292c6', 150, '#2171b5',
+  200, '#08519c', 300, '#08306b', 500, '#54278f', 800, '#3f007d', 1200, '#2d004b',
+];
+
+// ベクタタイル(PMTiles)の同一オリジン取得パス。jiban-api /design/tiles を minitools の
+// Express が Range 転送する。tippecanoe の -l 名が source-layer になる。
 const ZONE_PMTILES: Record<'snow' | 'wind', string> = {
   snow: '/api/design/tiles/snow_zones.pmtiles',
   wind: '/api/design/tiles/wind_zones.pmtiles',
 };
 const ZONE_SOURCE_LAYER = 'zones';
+const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
+const DEPTH_SOURCE_LAYER = 'snow_depth';
 
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
 // (全タブ常時マウントのSPAなので、片方のアンマウントで他方を壊さないよう removeProtocol しない)。
@@ -116,6 +125,9 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
     if (!map || !readyRef.current || !map.getLayer('zones-snow-fill')) return;
     map.setLayoutProperty('zones-snow-fill', 'visibility', kind === 'snow' ? 'visible' : 'none');
     map.setLayoutProperty('zones-wind-fill', 'visibility', kind === 'wind' ? 'visible' : 'none');
+    if (map.getLayer('zones-depth-fill')) {
+      map.setLayoutProperty('zones-depth-fill', 'visibility', kind === 'depth' ? 'visible' : 'none');
+    }
   }, []);
   // viewVersion 効果が最新の中心・半径を参照するための ref（中心変化では再fitしないため依存に入れない）
   const latestRef = useRef({ center, radiusKm });
@@ -172,6 +184,19 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           layout: { visibility: 'none' },
           paint: { 'fill-color': ZONE_FILL_COLOR[kind], 'fill-opacity': 0.62 },
         });
+      });
+      // 積雪深マップ（深さバンド）。source-layer は tippecanoe の -l snow_depth。
+      map.addSource('zones-depth', {
+        type: 'vector',
+        url: `pmtiles://${origin}${DEPTH_PMTILES}`,
+      });
+      map.addLayer({
+        id: 'zones-depth-fill',
+        type: 'fill',
+        source: 'zones-depth',
+        'source-layer': DEPTH_SOURCE_LAYER,
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': DEPTH_FILL_COLOR, 'fill-opacity': 0.62 },
       });
 
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
