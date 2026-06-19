@@ -170,7 +170,7 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           source: `zones-${kind}`,
           'source-layer': ZONE_SOURCE_LAYER,
           layout: { visibility: 'none' },
-          paint: { 'fill-color': ZONE_FILL_COLOR[kind], 'fill-opacity': 0.4 },
+          paint: { 'fill-color': ZONE_FILL_COLOR[kind], 'fill-opacity': 0.62 },
         });
       });
 

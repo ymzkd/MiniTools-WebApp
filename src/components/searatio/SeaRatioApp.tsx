@@ -112,8 +112,17 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const wind = design?.wind ?? null;
   const seaRatio = design?.sea_ratio ?? null;
   const landRatio = design?.land_ratio ?? null;
+
+  // 標高が取れる＝陸とみなす。区域ポリゴン外(海岸線変化の埋立地等)でも、陸なら
+  // 最寄り区分(nearest)を採用して計算する。陸と判定できなければ採用しない＝海上扱い。
+  const onLand = elevation != null;
+  const snowUsable = !!snow && (!snow.nearest || onLand);
+  const windUsable = !!wind && (!wind.nearest || onLand);
+  // 積雪深 d=(α·H+β·rs+γ)×100。第0区(no_snow, 係数0)なら 0 になる。
   const depth =
-    snow && elevation != null && seaRatio != null ? snowDepthCm(snow, elevation, seaRatio) : null;
+    snowUsable && snow && elevation != null && seaRatio != null
+      ? snowDepthCm(snow, elevation, seaRatio)
+      : null;
 
   const inputCls =
     'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent';
@@ -232,8 +241,22 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   設計用積雪量（平12建告1455号）
                 </h3>
-                {snow ? (
+                {!snowUsable ? (
+                  <p className="text-sm text-gray-400">
+                    海上または区域外です（標高が取得できず陸と判定されませんでした）
+                  </p>
+                ) : snow && snow.no_snow ? (
+                  <div>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      積雪荷重の対象区域外（第0区・積雪なし）
+                    </p>
+                    <div className="mt-2">
+                      <Metric label="積雪深 d" value="0 cm" />
+                    </div>
+                  </div>
+                ) : snow ? (
                   <>
+                    {snow.nearest && <NearestNote kind="積雪" zone={snow.zone} km={snow.nearest_km} />}
                     <table className="w-full text-sm">
                       <tbody>
                         <Row k="地域区分" v={`第${snow.zone}区`} />
@@ -255,9 +278,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                       <p className="text-xs text-gray-400 mt-1">標高が取得できると積雪深を計算します</p>
                     )}
                   </>
-                ) : (
-                  <p className="text-sm text-gray-400">この地点は積雪荷重の対象区域外です（沖縄県など）</p>
-                )}
+                ) : null}
               </div>
 
               {/* 基準風速 */}
@@ -265,15 +286,20 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   設計基準風速（平12建告1454号）
                 </h3>
-                {wind ? (
-                  <table className="w-full text-sm">
-                    <tbody>
-                      <Row k="地域区分" v={`第${wind.zone}区`} />
-                      <Row k="Vo (基準風速)" v={`${wind.Vo} m/s`} />
-                    </tbody>
-                  </table>
+                {windUsable && wind ? (
+                  <>
+                    {wind.nearest && <NearestNote kind="風速" zone={wind.zone} km={wind.nearest_km} />}
+                    <table className="w-full text-sm">
+                      <tbody>
+                        <Row k="地域区分" v={`第${wind.zone}区`} />
+                        <Row k="Vo (基準風速)" v={`${wind.Vo} m/s`} />
+                      </tbody>
+                    </table>
+                  </>
                 ) : (
-                  <p className="text-sm text-gray-400">基準風速の地域区分が取得できませんでした</p>
+                  <p className="text-sm text-gray-400">
+                    海上または区域外です（陸と判定されませんでした）
+                  </p>
                 )}
               </div>
             </div>
@@ -295,6 +321,14 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   );
 };
 
+// 区域外だが陸のため最寄り区分で計算したことを示す注記。
+const NearestNote: React.FC<{ kind: string; zone: number; km?: number }> = ({ kind, zone, km }) => (
+  <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded px-2 py-1 mb-1">
+    区域外のため最寄りの{kind}第{zone}区で計算
+    {km != null ? `（約${km}km）` : ''}
+  </p>
+);
+
 // オーバーレイの凡例（地図の塗り色と対応するグラデーションバー）。
 const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overlay }) => {
   const conf =
@@ -303,7 +337,7 @@ const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overl
           grad: 'linear-gradient(to right, #deebf7, #6baed6, #08306b)',
           min: '第1区',
           max: '第40区',
-          note: '平12建告1455号 積雪荷重の地域区分（濃いほど区分番号が大）',
+          note: '平12建告1455号 積雪荷重の地域区分（濃いほど区分番号が大）。第0区(沖縄)=積雪なし',
         }
       : {
           grad: 'linear-gradient(to right, #fee5d9, #fb6a4a, #a50f15)',

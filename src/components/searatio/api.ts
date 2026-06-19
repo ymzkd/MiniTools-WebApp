@@ -5,6 +5,8 @@
 export interface WindParams {
   zone: number;
   Vo: number;
+  nearest?: boolean; // 区域外で最寄り区分を補完したとき true
+  nearest_km?: number; // 最寄り区域までの距離(km)
 }
 
 export interface SnowParams {
@@ -13,6 +15,9 @@ export interface SnowParams {
   beta: number;
   gamma: number;
   R: number;
+  no_snow?: boolean; // 積雪荷重 対象区域外（沖縄県＝第0区）
+  nearest?: boolean;
+  nearest_km?: number;
 }
 
 export interface DesignResult {
