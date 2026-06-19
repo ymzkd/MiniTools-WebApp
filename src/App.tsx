@@ -6,6 +6,7 @@ import FigureLayoutApp from './components/figure/FigureLayoutApp';
 import PDFConverterApp from './components/pdf/PDFConverterApp';
 import MarkdownEditor from './components/markdown/MarkdownEditor';
 import BoringDataApp from './components/boring/BoringDataApp';
+import SeaRatioApp from './components/searatio/SeaRatioApp';
 import SectionPropertyCalculator from './components/section/SectionPropertyCalculator';
 import SteelStressCalculator from './components/steel/SteelStressCalculator';
 import Toast from './components/common/Toast';
@@ -27,6 +28,7 @@ function App() {
     if (pathname === '/pdf') return 'pdf';
     if (pathname === '/markdown') return 'markdown';
     if (pathname === '/boring') return 'boring';
+    if (pathname === '/searatio') return 'searatio';
     if (pathname === '/section') return 'section';
     if (pathname === '/steel') return 'steel';
     return 'matrix'; // デフォルトは matrix
@@ -36,7 +38,7 @@ function App() {
 
   // ルートパスまたは未定義パスの場合は /matrix にリダイレクト
   useEffect(() => {
-    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/section', '/steel'];
+    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/searatio', '/section', '/steel'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/matrix', { replace: true });
     } else if (location.pathname === '/') {
@@ -76,6 +78,16 @@ function App() {
           style={{ display: activeTab === 'boring' ? 'block' : 'none' }}
         >
           <BoringDataApp
+            onSuccess={showSuccess}
+            onError={showError}
+          />
+        </div>
+        {/* 海率計算も地図を縦いっぱいに使う（boring と同じ高さ戦略） */}
+        <div
+          className="lg:-my-8 lg:h-[calc(100vh-4rem)]"
+          style={{ display: activeTab === 'searatio' ? 'block' : 'none' }}
+        >
+          <SeaRatioApp
             onSuccess={showSuccess}
             onError={showError}
           />

@@ -161,6 +161,36 @@ app.use('/api/ngi', async (req, res) => {
   }
 })
 
+// 設計用地域区分API（jiban-api /design/*）への薄いリバースプロキシ。
+// /api/design/* → jiban-api /design/*（lookup: 基準風速 / 積雪荷重係数 / 海率）。
+// 海率計算アプリが minitools 同一オリジンの /api/design/lookup を叩く。
+app.use('/api/design', async (req, res) => {
+  if (!JIBAN_API_URL) {
+    return res.status(503).json({ error: 'Design API not configured' })
+  }
+  try {
+    const target =
+      JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/design/, '/design')
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers: { accept: req.headers['accept'] || '*/*' },
+    })
+    res.status(upstream.status)
+    const ct = upstream.headers.get('content-type')
+    if (ct) res.setHeader('Content-Type', ct)
+    const cc = upstream.headers.get('cache-control')
+    if (cc) res.setHeader('Cache-Control', cc)
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    return res.send(buf)
+  } catch (error) {
+    console.error('Design jiban proxy error:', error)
+    return res.status(502).json({
+      error: 'Bad gateway to jiban API',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
 // Static assets + SPA fallback (final middleware works across Express 4/5).
 const distDir = path.join(__dirname, 'dist')
 app.use(express.static(distDir))
