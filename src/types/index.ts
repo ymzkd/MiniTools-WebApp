@@ -85,7 +85,7 @@ export interface SectionDimensions {
 
   // 丸パイプ (pipe)
   outerDiameter?: number;     // 外径 D
-  innerDiameter?: number;     // 内径 d
+  // 板厚 t は共通の thickness フィールドを使用（内径は D - 2t で算出）
 
   // 矩形断面 (rectangle)
   width?: number;             // 幅 B

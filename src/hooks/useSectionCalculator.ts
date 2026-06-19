@@ -62,8 +62,11 @@ function calculateCircle(dims: SectionDimensions): SectionProperties | null {
 // 丸パイプ（中空円形）
 function calculatePipe(dims: SectionDimensions): SectionProperties | null {
   const D = dims.outerDiameter;
-  const d = dims.innerDiameter;
-  if (!D || !d || D <= 0 || d <= 0 || d >= D) return null;
+  const t = dims.thickness;
+  if (!D || !t || D <= 0 || t <= 0 || t * 2 >= D) return null;
+
+  // 内径は外径と板厚から算出
+  const d = D - 2 * t;
 
   const area = (Math.PI / 4) * (D * D - d * d);
   const I = (Math.PI / 64) * (Math.pow(D, 4) - Math.pow(d, 4));
@@ -294,12 +297,12 @@ function validateDimensions(
       if (!dimensions.outerDiameter || dimensions.outerDiameter <= 0) {
         errors.push('外径は正の値を入力してください');
       }
-      if (!dimensions.innerDiameter || dimensions.innerDiameter <= 0) {
-        errors.push('内径は正の値を入力してください');
+      if (!dimensions.thickness || dimensions.thickness <= 0) {
+        errors.push('板厚は正の値を入力してください');
       }
-      if (dimensions.outerDiameter && dimensions.innerDiameter &&
-          dimensions.innerDiameter >= dimensions.outerDiameter) {
-        errors.push('内径は外径より小さくしてください');
+      if (dimensions.outerDiameter && dimensions.thickness &&
+          dimensions.thickness * 2 >= dimensions.outerDiameter) {
+        errors.push('板厚が大きすぎます');
       }
       break;
     case 'rectangle':
@@ -419,7 +422,7 @@ export function useSectionCalculator(): UseSectionCalculatorReturn {
         setDimensions({ diameter: 100 });
         break;
       case 'pipe':
-        setDimensions({ outerDiameter: 100, innerDiameter: 80 });
+        setDimensions({ outerDiameter: 100, thickness: 10 });
         break;
       case 'rectangle':
         setDimensions({ width: 100, height: 200 });

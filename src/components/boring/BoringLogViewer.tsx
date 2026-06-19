@@ -65,6 +65,37 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
 
   const ngiId = getNGIId();
 
+  // ファイル名に使えない文字を除去
+  const sanitizeFileName = (name: string): string =>
+    name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'boring';
+
+  // XMLボタン押下でそのままダウンロードさせる。
+  // 同一オリジンの中継URL(/api/ngi, /api/tokyo)をBlob化してdownload属性で保存する。
+  // 取得に失敗した場合は従来どおり新規タブで開く（フォールバック）。
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (e) {
+      console.error('ダウンロードに失敗しました:', e);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  // 詳細ボタン用XMLファイル名（ボーリングID/タイトルから生成）
+  const xmlFileName = sanitizeFileName(
+    selectedResult.metadata?.['NGI:code'] || data?.title || selectedResult.title || 'boring'
+  ) + '.xml';
+
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
       {/* ヘッダー */}
@@ -181,17 +212,18 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
               </a>
             )}
 
-            {/* XMLファイルリンク */}
+            {/* XMLファイルダウンロード（押下でそのまま保存） */}
             {selectedResult.metadata?.['NGI:link_boring_xml'] && (
-              <a
-                href={selectedResult.metadata['NGI:link_boring_xml']}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() =>
+                  handleDownload(selectedResult.metadata!['NGI:link_boring_xml']!, xmlFileName)
+                }
                 className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
               >
-                <FileText className="w-4 h-4" />
-                XMLファイルを表示
-              </a>
+                <Download className="w-4 h-4" />
+                XMLファイルをダウンロード
+              </button>
             )}
           </div>
 
@@ -343,17 +375,16 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                   </a>
                 ))}
                 {xmlResources.map((resource) => (
-                  <a
+                  <button
                     key={resource.id}
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                    type="button"
+                    onClick={() => handleDownload(resource.url, sanitizeFileName(resource.name))}
+                    className="w-full flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-left"
                   >
-                    <FileText className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <Download className="w-4 h-4 text-green-600 dark:text-green-400" />
                     <span className="text-green-700 dark:text-green-300 flex-1">{resource.name}</span>
                     <span className="text-xs text-green-500 dark:text-green-400">XML</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>
@@ -389,17 +420,16 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                   </a>
                 ))}
                 {xmlResources.map((resource) => (
-                  <a
+                  <button
                     key={resource.id}
-                    href={resource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                    type="button"
+                    onClick={() => handleDownload(resource.url, sanitizeFileName(resource.name))}
+                    className="w-full flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-left"
                   >
-                    <FileText className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    <Download className="w-4 h-4 text-green-600 dark:text-green-400" />
                     <span className="text-green-700 dark:text-green-300 flex-1">{resource.name}</span>
                     <span className="text-xs text-green-500 dark:text-green-400">XML</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>

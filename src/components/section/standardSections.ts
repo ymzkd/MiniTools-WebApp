@@ -40,22 +40,22 @@ export const circleStandards: StandardSection[] = [
 
 // 丸パイプ（SGP鋼管相当）
 export const pipeStandards: StandardSection[] = [
-  { outerDiameter: 21.7, innerDiameter: 15.9 },   // 15A
-  { outerDiameter: 27.2, innerDiameter: 21.4 },   // 20A
-  { outerDiameter: 34.0, innerDiameter: 27.6 },   // 25A
-  { outerDiameter: 42.7, innerDiameter: 35.5 },   // 32A
-  { outerDiameter: 48.6, innerDiameter: 41.2 },   // 40A
-  { outerDiameter: 60.5, innerDiameter: 52.7 },   // 50A
-  { outerDiameter: 76.3, innerDiameter: 67.9 },   // 65A
-  { outerDiameter: 89.1, innerDiameter: 80.1 },   // 80A
-  { outerDiameter: 101.6, innerDiameter: 92.0 },  // 90A
-  { outerDiameter: 114.3, innerDiameter: 105.3 }, // 100A
-  { outerDiameter: 139.8, innerDiameter: 130.0 }, // 125A
-  { outerDiameter: 165.2, innerDiameter: 154.8 }, // 150A
-  { outerDiameter: 216.3, innerDiameter: 204.7 }, // 200A
+  { outerDiameter: 21.7, thickness: 2.8 },   // 15A
+  { outerDiameter: 27.2, thickness: 2.8 },   // 20A
+  { outerDiameter: 34.0, thickness: 3.2 },   // 25A
+  { outerDiameter: 42.7, thickness: 3.5 },   // 32A
+  { outerDiameter: 48.6, thickness: 3.5 },   // 40A
+  { outerDiameter: 60.5, thickness: 3.8 },   // 50A
+  { outerDiameter: 76.3, thickness: 4.2 },   // 65A
+  { outerDiameter: 89.1, thickness: 4.2 },   // 80A
+  { outerDiameter: 101.6, thickness: 4.2 },  // 90A
+  { outerDiameter: 114.3, thickness: 4.5 },  // 100A
+  { outerDiameter: 139.8, thickness: 4.5 },  // 125A
+  { outerDiameter: 165.2, thickness: 5.0 },  // 150A
+  { outerDiameter: 216.3, thickness: 5.8 },  // 200A
 ].map((dims, i) => createStandardSection(
   `pipe-${i}`,
-  `φ${dims.outerDiameter}×${((dims.outerDiameter - dims.innerDiameter) / 2).toFixed(1)}t`,
+  `φ${dims.outerDiameter}×${dims.thickness}t`,
   'pipe',
   dims
 )).filter((s): s is StandardSection => s !== null);
