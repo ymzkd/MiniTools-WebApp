@@ -59,7 +59,8 @@ const SectionDiagram: React.FC<SectionDiagramProps> = ({ shapeType, dimensions, 
 
   const renderPipe = () => {
     const D = dimensions.outerDiameter || 100;
-    const d = dimensions.innerDiameter || 80;
+    const t = dimensions.thickness || 10;
+    const d = Math.max(D - 2 * t, 0);
     const scale = (svgSize - padding * 2) / D;
     const cx = svgSize / 2;
     const cy = svgSize / 2;
@@ -77,7 +78,7 @@ const SectionDiagram: React.FC<SectionDiagramProps> = ({ shapeType, dimensions, 
         <text x={cx} y={cy - rOuter - 5} textAnchor="middle"
           className="fill-gray-700 dark:fill-gray-300 text-xs">D={D}</text>
         <text x={cx} y={cy + 15} textAnchor="middle"
-          className="fill-gray-700 dark:fill-gray-300 text-xs">d={d}</text>
+          className="fill-gray-700 dark:fill-gray-300 text-xs">t={t}</text>
       </g>
     );
   };

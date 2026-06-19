@@ -126,12 +126,12 @@ function buildStyle(): maplibregl.StyleSpecification {
         minzoom: 0,
         paint: {
           'circle-color': ['match', ['get', 'source'], 'tokyo', TOKYO_COLOR, NGI_COLOR],
-          // 広域(z3)でも視認できる最小半径を確保し、ズームに応じて拡大。
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2.2, 8, 3, 11, 3.5, 14, 4.5, 17, 7],
+          // 地図に埋もれず目立つよう、各ズームで一回り大きめの半径にする。
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3.5, 8, 5, 11, 6, 14, 7.5, 17, 10],
           'circle-stroke-color': '#ffffff',
-          // 小さいうちは白枠なし、拡大に応じて枠を付ける。
-          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 11, 0, 14, 1],
-          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.9, 13, 1],
+          // 全ズームで白枠を付けて地図背景とのコントラストを高め、視認性を上げる。
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 3, 1, 8, 1.2, 14, 1.8],
+          'circle-opacity': 1,
         },
       },
       {
@@ -178,8 +178,16 @@ const MapView: React.FC<MapViewProps> = ({
       center: [center.lng, center.lat],
       zoom: 15,
       attributionControl: { compact: true },
+      // 2次元の情報しか扱わないため、地図の3次元操作(回転・傾き)は無効化する
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      maxPitch: 0,
     });
     mapRef.current = map;
+    // ドラッグ/タッチ/キーボードによる回転も明示的に無効化（2D固定）
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     // ホイール1ノッチあたりのズーム量を大きくする（既定は細かく、何度もスクロールが必要なため）。
     map.scrollZoom.setWheelZoomRate(1 / 120); // 既定 1/450 → 約3.7倍速

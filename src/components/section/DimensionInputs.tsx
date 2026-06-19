@@ -73,9 +73,10 @@ const DimensionInputs: React.FC<DimensionInputsProps> = ({
               onChange={(v) => onUpdate('outerDiameter', v)}
             />
             <InputField
-              label="内径 d"
-              value={dimensions.innerDiameter}
-              onChange={(v) => onUpdate('innerDiameter', v)}
+              label="板厚 t"
+              value={dimensions.thickness}
+              onChange={(v) => onUpdate('thickness', v)}
+              step={0.1}
             />
           </>
         );
