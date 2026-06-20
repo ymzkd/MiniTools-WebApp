@@ -10,8 +10,8 @@ const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?:
   { val: 'none', Icon: EyeOff, label: 'オフ' },
   { val: 'wind', Icon: Wind, label: '風速区分' },
   { val: 'seismic', Icon: Activity, label: '地震地域係数' },
-  { val: 'urban', Icon: Building2, label: '都市計画区域' },
   { val: 'depth', Icon: Snowflake, label: '積雪深マップ' },
+  { val: 'urban', Icon: Building2, label: '都市計画区域' },
 ];
 
 interface SeaRatioAppProps {
@@ -404,10 +404,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
             OpenStreetMap
           </a>
           <span className="ml-1">（住所検索 Nominatim・ODbL）</span>
-          <br className="hidden sm:block" />
-          <span className="ml-1">
-            基準風速・積雪荷重係数・地震地域係数・積雪深は 建築基準法 平12建告1454号／平12建告1455号／昭55建告1793号 に基づく地域区分
-          </span>
         </p>
       </div>
     </div>
