@@ -14,7 +14,7 @@ const navItems: { tab: AppTab; path: string; icon: React.ComponentType<{ classNa
   { tab: 'pdf', path: '/pdf', icon: FileText, label: 'PDF Converter' },
   { tab: 'markdown', path: '/markdown', icon: PenLine, label: 'Markdown Editor' },
   { tab: 'boring', path: '/boring', icon: MapPin, label: 'Boring Data' },
-  { tab: 'searatio', path: '/searatio', icon: TriangleAlert, label: 'Hazard Map' },
+  { tab: 'hazard', path: '/hazard', icon: TriangleAlert, label: 'Hazard Map' },
   { tab: 'section', path: '/section', icon: Ruler, label: 'Section Calc' },
   { tab: 'steel', path: '/steel', icon: HardHat, label: 'Steel Stress' },
 ];

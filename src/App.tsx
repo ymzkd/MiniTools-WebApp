@@ -28,7 +28,7 @@ function App() {
     if (pathname === '/pdf') return 'pdf';
     if (pathname === '/markdown') return 'markdown';
     if (pathname === '/boring') return 'boring';
-    if (pathname === '/searatio') return 'searatio';
+    if (pathname === '/hazard' || pathname === '/searatio') return 'hazard';
     if (pathname === '/section') return 'section';
     if (pathname === '/steel') return 'steel';
     return 'matrix'; // デフォルトは matrix
@@ -38,7 +38,7 @@ function App() {
 
   // ルートパスまたは未定義パスの場合は /matrix にリダイレクト
   useEffect(() => {
-    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/searatio', '/section', '/steel'];
+    const validPaths = ['/', '/matrix', '/figure', '/pdf', '/markdown', '/boring', '/hazard', '/searatio', '/section', '/steel'];
     if (!validPaths.includes(location.pathname)) {
       navigate('/matrix', { replace: true });
     } else if (location.pathname === '/') {
@@ -85,7 +85,7 @@ function App() {
         {/* 海率計算も地図を縦いっぱいに使う（boring と同じ高さ戦略） */}
         <div
           className="lg:-my-8 lg:h-[calc(100vh-4rem)]"
-          style={{ display: activeTab === 'searatio' ? 'block' : 'none' }}
+          style={{ display: activeTab === 'hazard' ? 'block' : 'none' }}
         >
           <SeaRatioApp
             onSuccess={showSuccess}
