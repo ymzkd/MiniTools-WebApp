@@ -370,6 +370,46 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
           </div>
         </div>
       </div>
+
+      {/* フッター: データ出典 */}
+      <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 px-4 py-2">
+        <p className="text-xs text-gray-500 dark:text-gray-400 text-center leading-relaxed">
+          データ出典:
+          <a
+            href="https://nlftp.mlit.go.jp/ksj/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline ml-1"
+          >
+            国土数値情報
+          </a>
+          <span className="ml-1">（都市地域 A09・行政区域 N03・湖沼 W09／国土交通省・CC BY 4.0）</span>
+          {' / '}
+          <a
+            href="https://maps.gsi.go.jp/development/ichiran.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            国土地理院
+          </a>
+          <span className="ml-1">（標高・背景地図）</span>
+          {' / '}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            OpenStreetMap
+          </a>
+          <span className="ml-1">（住所検索 Nominatim・ODbL）</span>
+          <br className="hidden sm:block" />
+          <span className="ml-1">
+            基準風速・積雪荷重係数・地震地域係数・積雪深は 建築基準法 平12建告1454号／平12建告1455号／昭55建告1793号 に基づく地域区分
+          </span>
+        </p>
+      </div>
     </div>
   );
 };
