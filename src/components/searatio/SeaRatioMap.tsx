@@ -27,10 +27,9 @@ const ZONE_FILL_COLOR: Record<'snow' | 'wind', maplibregl.ExpressionSpecificatio
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
 };
 
-// 積雪深は「値ラスター」(各ピクセルに d を 8bit: L=round(d/DMAX*255))。maplibre v5 の
-// color-relief レイヤーで raster-dem を読み、custom encoding(redFactor=DMAX/255)で
-// elevation≈d[cm] に復号 → 連続カラーランプで GPU 着色。段差/境界のない無段階カラー。
-const DEPTH_DMAX = 1500; // build_snow_depth.py の DMAX と一致
+// 積雪深は「値ラスター」: タイルは d[cm] を terrarium 標高エンコードで格納。maplibre v5 の
+// color-relief レイヤー(raster-dem, encoding=terrarium)が elevation=d[cm] に復号し、
+// 下の連続カラーランプで GPU 着色する。段差/境界のない無段階カラー。
 // ['elevation'] はこの型定義に未収載だが color-relief で有効。castで通す。
 const DEPTH_RELIEF_COLOR = [
   'interpolate', ['linear'], ['elevation'],
@@ -197,16 +196,12 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         });
       });
       // 積雪深マップ（値ラスター → color-relief で無段階連続着色）。
-      // raster-dem custom encoding で elevation = R*(DMAX/255) ≈ d[cm]（値は R=G=B）。
+      // タイルは terrarium 標高エンコードで d[cm] を格納。color-relief が elevation=d に復号。
       map.addSource('zones-depth', {
         type: 'raster-dem',
         url: `pmtiles://${origin}${DEPTH_PMTILES}`,
         tileSize: 256,
-        encoding: 'custom',
-        redFactor: DEPTH_DMAX / 255,
-        greenFactor: 0,
-        blueFactor: 0,
-        baseShift: 0,
+        encoding: 'terrarium',
       });
       map.addLayer({
         id: 'zones-depth-fill',
