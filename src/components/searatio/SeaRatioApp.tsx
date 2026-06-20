@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Gauge, EyeOff } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Gauge, EyeOff } from 'lucide-react';
 import SeaRatioMap from './SeaRatioMap';
 import type { ZoneOverlay } from './SeaRatioMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
@@ -10,6 +10,7 @@ const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?:
   { val: 'none', Icon: EyeOff, label: 'オフ' },
   { val: 'snow', Icon: Snowflake, label: '積雪区分' },
   { val: 'wind', Icon: Wind, label: '風速区分' },
+  { val: 'seismic', Icon: Activity, label: '地震地域係数' },
   { val: 'depth', Icon: Gauge, label: '積雪深マップ' },
 ];
 
@@ -126,6 +127,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const radiusKm = design?.radius_km ?? 40;
   const snow = design?.snow ?? null;
   const wind = design?.wind ?? null;
+  const seismic = design?.seismic ?? null;
   const seaRatio = design?.sea_ratio ?? null;
   const landRatio = design?.land_ratio ?? null;
 
@@ -134,6 +136,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const onLand = elevation != null;
   const snowUsable = !!snow && (!snow.nearest || onLand);
   const windUsable = !!wind && (!wind.nearest || onLand);
+  const seismicUsable = !!seismic && (!seismic.nearest || onLand);
   // 積雪深 d=(α·H+β·rs+γ)×100。第0区(no_snow, 係数0)なら 0 になる。
   const depth =
     snowUsable && snow && elevation != null && seaRatio != null
@@ -152,7 +155,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
           Hazard Map
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示（平成12年基準）の積雪荷重係数・基準風速・積雪深を表示します。
+          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深を表示します。
         </p>
       </div>
 
@@ -277,6 +280,29 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                     </table>
                     <div className="mt-2">
                       <Metric label="基準風速 Vo" value={`${wind.Vo} m/s`} />
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-400">
+                    海上または区域外です（陸と判定されませんでした）
+                  </p>
+                )}
+              </div>
+
+              {/* 地震地域係数 */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  地震地域係数（昭55建告1793号）
+                </h3>
+                {seismicUsable && seismic ? (
+                  <>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        <Row k="地域区分" v={`第${seismic.zone}区`} />
+                      </tbody>
+                    </table>
+                    <div className="mt-2">
+                      <Metric label="地震地域係数 Z" value={`${seismic.Z}`} />
                     </div>
                   </>
                 ) : (

@@ -20,11 +20,19 @@ export interface SnowParams {
   nearest_km?: number;
 }
 
+export interface SeismicParams {
+  zone: number;
+  Z: number; // 地震地域係数（昭55建告1793号。1.0/0.9/0.8/0.7）
+  nearest?: boolean;
+  nearest_km?: number;
+}
+
 export interface DesignResult {
   lat: number;
   lng: number;
   wind: WindParams | null;
   snow: SnowParams | null;
+  seismic: SeismicParams | null;
   radius_km: number;
   sea_ratio: number;
   land_ratio: number;
