@@ -82,6 +82,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
       setLoadingDetail(true);
       try {
         const xmlUrl = result.metadata?.['NGI:link_boring_xml'];
+        const pdfUrl = result.metadata?.['NGI:link_boring_pdf'];
         if (xmlUrl && result.location) {
           try {
             const data = await fetchAndParseBoringData(xmlUrl, result.id, result.location);
@@ -91,8 +92,12 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             onError?.('ボーリングデータの取得に失敗しました');
             setBoringData(null);
           }
+        } else if (pdfUrl) {
+          // PDF柱状図のみの地点（港湾など）。インライン柱状図は無いが、データはある（PDF）。
+          // エラーにせず、詳細パネルの「PDF柱状図を表示」ボタンを案内する。
+          setBoringData(null);
         } else {
-          onError?.('XMLリンクが見つかりません');
+          onError?.('この地点の柱状図データが見つかりませんでした');
           setBoringData(null);
         }
       } finally {
