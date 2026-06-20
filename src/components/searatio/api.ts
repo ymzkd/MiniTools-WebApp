@@ -65,6 +65,22 @@ export async function fetchElevation(lat: number, lng: number): Promise<number |
   }
 }
 
+/** 緯度経度 → 住所（Nominatim リバースジオコーディング, 日本語）。取得不可は null。 */
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}` +
+        `&zoom=18&addressdetails=0&accept-language=ja`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && typeof data.display_name === 'string') return data.display_name as string;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** 住所・地名 → 緯度経度（Nominatim, 日本に限定）。見つからなければ null。 */
 export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
   const res = await fetch(

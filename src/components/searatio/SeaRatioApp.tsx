@@ -1,9 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, Waves } from 'lucide-react';
+import { Search, MapPin, Waves, Snowflake, Wind, Gauge, EyeOff } from 'lucide-react';
 import SeaRatioMap from './SeaRatioMap';
 import type { ZoneOverlay } from './SeaRatioMap';
-import { fetchDesign, fetchElevation, geocode, snowDepthCm } from './api';
+import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult } from './api';
+
+// 地図上のオーバーレイ切替アイコン
+const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?: string }>; label: string }[] = [
+  { val: 'none', Icon: EyeOff, label: 'オフ' },
+  { val: 'snow', Icon: Snowflake, label: '積雪区分' },
+  { val: 'wind', Icon: Wind, label: '風速区分' },
+  { val: 'depth', Icon: Gauge, label: '積雪深マップ' },
+];
 
 interface SeaRatioAppProps {
   onSuccess?: (message: string) => void;
@@ -31,6 +39,27 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const [design, setDesign] = useState<DesignResult | null>(null);
   const [elevation, setElevation] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  // 選択地点の住所（リバースジオコーディング）
+  const [placeName, setPlaceName] = useState<string | null>(null);
+  const [placeLoading, setPlaceLoading] = useState(false);
+
+  // 地点が変わったら住所を取得（デバウンス。Nominatim への過負荷を避ける）
+  useEffect(() => {
+    let cancelled = false;
+    setPlaceName(null);
+    setPlaceLoading(true);
+    const t = setTimeout(async () => {
+      const name = await reverseGeocode(point.lat, point.lng);
+      if (!cancelled) {
+        setPlaceName(name);
+        setPlaceLoading(false);
+      }
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [point.lat, point.lng]);
 
   // 地点が変わるたびに設計パラメータ＋標高を取得（半径は常にAPI自動: 積雪R→40km）
   const reqId = useRef(0);
@@ -152,32 +181,37 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               </button>
             </form>
 
-            {/* 地図オーバーレイ（地域区分・積雪深を薄く重ねる） */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-2">
-              <span className="text-xs text-gray-500 dark:text-gray-400">地図オーバーレイ</span>
-              <div className="grid grid-cols-2 gap-1">
-                {([
-                  ['none', 'なし'],
-                  ['snow', '積雪区分'],
-                  ['wind', '風速区分'],
-                  ['depth', '積雪深マップ'],
-                ] as [ZoneOverlay, string][]).map(([val, label]) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setOverlay(val)}
-                    className={`px-2 py-1.5 text-sm rounded-lg border transition-colors ${
-                      overlay === val
-                        ? 'bg-blue-500 text-white border-blue-500'
-                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+            {/* 選択地点（緯度経度・住所） */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-1">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">緯度</div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+                    {point.lat.toFixed(6)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">経度</div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+                    {point.lng.toFixed(6)}
+                  </div>
+                </div>
               </div>
-              {overlay !== 'none' && <ZoneLegend overlay={overlay} />}
+              <div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">所在地</div>
+                <div className="text-sm text-gray-800 dark:text-gray-200">
+                  {placeLoading ? '取得中…' : placeName ?? '取得できませんでした（海上など）'}
+                </div>
+              </div>
             </div>
+
+            {/* オーバーレイ凡例（地図右上のアイコンで切替。選択中のみ表示） */}
+            {overlay !== 'none' && (
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+                <span className="text-xs text-gray-500 dark:text-gray-400">オーバーレイ凡例</span>
+                <ZoneLegend overlay={overlay} />
+              </div>
+            )}
 
             {/* 結果 */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-4">
@@ -247,9 +281,11 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                     <table className="w-full text-sm">
                       <tbody>
                         <Row k="地域区分" v={`第${wind.zone}区`} />
-                        <Row k="Vo (基準風速)" v={`${wind.Vo} m/s`} />
                       </tbody>
                     </table>
+                    <div className="mt-2">
+                      <Metric label="基準風速 Vo" value={`${wind.Vo} m/s`} />
+                    </div>
                   </>
                 ) : (
                   <p className="text-sm text-gray-400">
@@ -260,8 +296,8 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
             </div>
           </div>
 
-          {/* 右: 地図 */}
-          <div className="lg:col-span-2 h-[400px] lg:h-full lg:min-h-0">
+          {/* 右: 地図 + オーバーレイ切替アイコン */}
+          <div className="lg:col-span-2 h-[400px] lg:h-full lg:min-h-0 relative">
             <SeaRatioMap
               center={point}
               radiusKm={radiusKm}
@@ -269,6 +305,24 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               overlay={overlay}
               onPick={handleMapPick}
             />
+            <div className="absolute top-3 left-3 z-[2] flex flex-col gap-1 bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-1 backdrop-blur-sm">
+              {OVERLAY_ITEMS.map(({ val, Icon, label }) => (
+                <button
+                  key={val}
+                  type="button"
+                  title={label}
+                  aria-label={label}
+                  onClick={() => setOverlay(val)}
+                  className={`inline-flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
+                    overlay === val
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

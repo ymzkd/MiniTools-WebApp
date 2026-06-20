@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
@@ -61,6 +61,54 @@ function ensurePmtilesProtocol() {
   if (_pmtilesRegistered) return;
   _pmtilesRegistered = true;
   maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);
+}
+
+// ホバー時に積雪深(d[cm])をカーソル位置で読み出すため、深さPMTilesを直接デコードする。
+// 同一タイルは ImageData をキャッシュ(タイル内移動は再デコード不要)。
+let _depthPM: pmtiles.PMTiles | null = null;
+const _depthTileCache = new Map<string, Uint8ClampedArray | null>();
+const DEPTH_NATIVE_Z = 12; // build_snow_depth.py のネイティブズーム
+
+async function loadDepthTile(z: number, x: number, y: number): Promise<Uint8ClampedArray | null> {
+  const key = `${z}/${x}/${y}`;
+  if (_depthTileCache.has(key)) return _depthTileCache.get(key)!;
+  let out: Uint8ClampedArray | null = null;
+  try {
+    if (!_depthPM) _depthPM = new pmtiles.PMTiles(`${window.location.origin}${DEPTH_PMTILES}`);
+    const r = await _depthPM.getZxy(z, x, y);
+    if (r) {
+      const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }));
+      const cv = document.createElement('canvas');
+      cv.width = 256;
+      cv.height = 256;
+      const ctx = cv.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bmp, 0, 0);
+        out = ctx.getImageData(0, 0, 256, 256).data;
+      }
+    }
+  } catch {
+    out = null;
+  }
+  _depthTileCache.set(key, out);
+  return out;
+}
+
+// 緯度経度の積雪深[cm]（terrarium 復号）。雪なし/タイルなしは null。
+async function depthAtLngLat(lng: number, lat: number): Promise<number | null> {
+  const n = 2 ** DEPTH_NATIVE_Z;
+  const xf = ((lng + 180) / 360) * n;
+  const latR = (lat * Math.PI) / 180;
+  const yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
+  const x = Math.floor(xf);
+  const y = Math.floor(yf);
+  const px = Math.min(255, Math.max(0, Math.floor((xf - x) * 256)));
+  const py = Math.min(255, Math.max(0, Math.floor((yf - y) * 256)));
+  const img = await loadDepthTile(DEPTH_NATIVE_Z, x, y);
+  if (!img) return null;
+  const i = (py * 256 + px) * 4;
+  const d = img[i] * 256 + img[i + 1] + img[i + 2] / 256 - 32768; // terrarium 復号
+  return d > 0.5 ? d : null;
 }
 
 // 経度を [-180, 180] に正規化（メルカトルで地図を一周しても巨大な経度を上流へ送らない）。
@@ -128,6 +176,9 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
   overlayRef.current = overlay;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  // カーソル位置のオーバーレイ値ツールチップ
+  const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
+  const hoverTokenRef = useRef(0);
 
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
   const applyOverlay = useCallback((kind: ZoneOverlay) => {
@@ -251,6 +302,44 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
       onPickRef.current(e.lngLat.lat, normLng(e.lngLat.lng));
     });
 
+    // オーバーレイ表示中、カーソル位置のデータを小さくリアルタイム表示。
+    //   区分(snow/wind)はベクタを queryRenderedFeatures で即時取得。
+    //   積雪深はラスターなので PMTiles のタイル画素を復号(同一タイルはキャッシュ)。
+    map.on('mousemove', (e) => {
+      const ov = overlayRef.current;
+      if (ov === 'none') {
+        setHover(null);
+        return;
+      }
+      if (ov === 'snow' || ov === 'wind') {
+        const fs = map.queryRenderedFeatures(e.point, { layers: [`zones-${ov}-fill`] });
+        if (fs.length) {
+          const p = fs[0].properties || {};
+          const text =
+            ov === 'snow'
+              ? p.zone === 0
+                ? '積雪: 第0区（積雪なし）'
+                : `積雪: 第${p.zone}区`
+              : `風速: 第${p.zone}区 Vo${p.Vo}`;
+          setHover({ x: e.point.x, y: e.point.y, text });
+        } else {
+          setHover(null);
+        }
+        return;
+      }
+      // depth: 非同期デコード（古い応答は token で破棄）
+      const token = ++hoverTokenRef.current;
+      const px = e.point.x;
+      const py = e.point.y;
+      depthAtLngLat(e.lngLat.lng, e.lngLat.lat)
+        .then((d) => {
+          if (token !== hoverTokenRef.current) return;
+          setHover(d != null ? { x: px, y: py, text: `積雪深: 約 ${Math.round(d)} cm` } : null);
+        })
+        .catch(() => {});
+    });
+    map.on('mouseout', () => setHover(null));
+
     const ro = new ResizeObserver(() => {
       map.resize();
       maybeInitialFit();
@@ -296,6 +385,14 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow pointer-events-none">
         地図をクリックして地点を指定
       </div>
+      {hover && (
+        <div
+          className="absolute z-[3] pointer-events-none px-2 py-1 text-xs rounded bg-gray-900/85 text-white shadow whitespace-nowrap"
+          style={{ left: hover.x + 14, top: hover.y + 14 }}
+        >
+          {hover.text}
+        </div>
+      )}
     </div>
   );
 };
