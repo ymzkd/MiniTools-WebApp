@@ -199,8 +199,8 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                 PDF柱状図を表示
               </a>
             )}
-            {/* 外部ビューアーリンク */}
-            {ngiId && (
+            {/* 外部ビューアーリンク（PDF柱状図ボタンがある場合は同じ柱状図なので出さない） */}
+            {ngiId && !selectedResult.metadata?.['NGI:link_boring_pdf'] && (
               <a
                 href={`https://www.kunijiban.pwri.go.jp/viewer/refer/?data=boring&type=view&id=${ngiId}`}
                 target="_blank"

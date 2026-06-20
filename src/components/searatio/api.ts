@@ -98,7 +98,7 @@ function formatJpAddress(data: { display_name?: unknown; address?: Record<string
     if (next && next.startsWith(parts[i])) continue;
     out.push(parts[i]);
   }
-  const s = out.join('');
+  const s = out.join(' '); // 分類間は半角スペース区切り
   return s || null;
 }
 
