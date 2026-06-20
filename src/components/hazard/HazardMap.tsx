@@ -10,7 +10,7 @@ interface LatLng {
 
 export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth';
 
-interface SeaRatioMapProps {
+interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
   radiusKm: number;
   // この値が変わったとき（住所検索・座標入力・初期表示）だけ円全体が収まるよう表示範囲を合わせる。
@@ -203,7 +203,7 @@ function buildStyle(): maplibregl.StyleSpecification {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
+const HazardMap: React.FC<HazardMapProps> = ({
   center,
   radiusKm,
   viewVersion,
@@ -554,4 +554,4 @@ function fitToCircle(map: maplibregl.Map, center: LatLng, radiusKm: number) {
   map.fitBounds(b, { padding: 40, animate: false, maxZoom: 14 });
 }
 
-export default SeaRatioMap;
+export default HazardMap;

@@ -6,7 +6,7 @@ import FigureLayoutApp from './components/figure/FigureLayoutApp';
 import PDFConverterApp from './components/pdf/PDFConverterApp';
 import MarkdownEditor from './components/markdown/MarkdownEditor';
 import BoringDataApp from './components/boring/BoringDataApp';
-import SeaRatioApp from './components/searatio/SeaRatioApp';
+import HazardMapApp from './components/hazard/HazardMapApp';
 import SectionPropertyCalculator from './components/section/SectionPropertyCalculator';
 import SteelStressCalculator from './components/steel/SteelStressCalculator';
 import Toast from './components/common/Toast';
@@ -82,12 +82,12 @@ function App() {
             onError={showError}
           />
         </div>
-        {/* 海率計算も地図を縦いっぱいに使う（boring と同じ高さ戦略） */}
+        {/* Hazard Map も地図を縦いっぱいに使う（boring と同じ高さ戦略） */}
         <div
           className="lg:-my-8 lg:h-[calc(100vh-4rem)]"
           style={{ display: activeTab === 'hazard' ? 'block' : 'none' }}
         >
-          <SeaRatioApp
+          <HazardMapApp
             onSuccess={showSuccess}
             onError={showError}
           />

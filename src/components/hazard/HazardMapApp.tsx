@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff } from 'lucide-react';
-import SeaRatioMap from './SeaRatioMap';
-import type { ZoneOverlay } from './SeaRatioMap';
+import HazardMap from './HazardMap';
+import type { ZoneOverlay } from './HazardMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult } from './api';
 
@@ -14,7 +14,7 @@ const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?:
   { val: 'urban', Icon: Building2, label: '都市計画区域' },
 ];
 
-interface SeaRatioAppProps {
+interface HazardMapAppProps {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
 }
@@ -27,7 +27,7 @@ interface LatLng {
   lng: number;
 }
 
-const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
+const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 選択中の地点は内部状態として保持（緯度経度の入力欄は持たない）。
   const [point, setPoint] = useState<LatLng>(DEFAULT_POINT);
   // 検索ボックス：住所・地名、または「緯度,経度」を受け付ける。
@@ -337,7 +337,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
 
           {/* 右: 地図 + オーバーレイ切替アイコン */}
           <div className="lg:col-span-2 h-[400px] lg:h-full lg:min-h-0 relative">
-            <SeaRatioMap
+            <HazardMap
               center={point}
               radiusKm={radiusKm}
               viewVersion={viewVersion}
@@ -430,4 +430,4 @@ const Row: React.FC<{ k: string; v: string }> = ({ k, v }) => (
   </tr>
 );
 
-export default SeaRatioApp;
+export default HazardMapApp;
