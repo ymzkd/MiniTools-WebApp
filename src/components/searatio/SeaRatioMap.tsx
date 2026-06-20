@@ -27,13 +27,13 @@ const ZONE_FILL_COLOR: Record<'snow' | 'wind', maplibregl.ExpressionSpecificatio
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
 };
 
-// 積雪深は「値ラスター」。各ピクセルに d を 8bit エンコード(L=round(d/DMAX*255))。
-// maplibre の raster-color で GPU 連続着色するため、段差/境界のない無段階カラーになる。
-//   raster-color-mix=[DMAX,0,0,0] → raster-value≈d[cm]、range=[0,DMAX]、ramp で着色。
+// 積雪深は「値ラスター」(各ピクセルに d を 8bit: L=round(d/DMAX*255))。maplibre v5 の
+// color-relief レイヤーで raster-dem を読み、custom encoding(redFactor=DMAX/255)で
+// elevation≈d[cm] に復号 → 連続カラーランプで GPU 着色。段差/境界のない無段階カラー。
 const DEPTH_DMAX = 1500; // build_snow_depth.py の DMAX と一致
-// raster-value はこの maplibre 型定義に未収載だが実行時に有効(v4 raster-color)。castで通す。
-const DEPTH_COLOR_RAMP = [
-  'interpolate', ['linear'], ['raster-value'],
+// ['elevation'] はこの型定義に未収載だが color-relief で有効。castで通す。
+const DEPTH_RELIEF_COLOR = [
+  'interpolate', ['linear'], ['elevation'],
   0, 'rgba(0,0,0,0)',
   5, 'rgba(198,219,239,0.45)',
   50, 'rgba(158,202,225,0.55)',
@@ -196,26 +196,28 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           paint: { 'fill-color': ZONE_FILL_COLOR[kind], 'fill-opacity': 0.62 },
         });
       });
-      // 積雪深マップ（値ラスター → raster-color で無段階連続着色）。
+      // 積雪深マップ（値ラスター → color-relief で無段階連続着色）。
+      // raster-dem custom encoding で elevation = R*(DMAX/255) ≈ d[cm]（値は R=G=B）。
       map.addSource('zones-depth', {
-        type: 'raster',
+        type: 'raster-dem',
         url: `pmtiles://${origin}${DEPTH_PMTILES}`,
         tileSize: 256,
+        encoding: 'custom',
+        redFactor: DEPTH_DMAX / 255,
+        greenFactor: 0,
+        blueFactor: 0,
+        baseShift: 0,
       });
       map.addLayer({
         id: 'zones-depth-fill',
-        type: 'raster',
+        type: 'color-relief',
         source: 'zones-depth',
         layout: { visibility: 'none' },
-        // raster-color/-range/-mix はこの型定義に未収載のため cast(実行時に有効)。
         paint: {
-          'raster-color': DEPTH_COLOR_RAMP,
-          'raster-color-range': [0, DEPTH_DMAX],
-          'raster-color-mix': [DEPTH_DMAX, 0, 0, 0],
-          'raster-resampling': 'linear',
-          'raster-opacity': 0.85,
-        } as unknown as maplibregl.RasterLayerSpecification['paint'],
-      });
+          'color-relief-color': DEPTH_RELIEF_COLOR,
+          'color-relief-opacity': 0.9,
+        },
+      } as unknown as maplibregl.AddLayerObject);
 
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
       map.addSource('marker', { type: 'geojson', data: EMPTY_FC });
