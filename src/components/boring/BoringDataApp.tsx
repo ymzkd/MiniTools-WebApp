@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
+import { Search, MapPin } from 'lucide-react';
 import MapView from './MapView';
-import SearchPanel from './SearchPanel';
 import ResultsList from './ResultsList';
 import BoringLogViewer from './BoringLogViewer';
 import { fetchAndParseBoringData } from './api';
@@ -23,6 +23,8 @@ interface BoringDataAppProps {
 
 const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => {
   const [mapCenter, setMapCenter] = useState<GeoLocation>(DEFAULT_CENTER);
+  // 検索ボックス（住所・地名 または 緯度,経度）
+  const [query, setQuery] = useState('');
   // クリック近接でリストに出す部分集合（リスト用）
   const [listed, setListed] = useState<MLITSearchResult[]>([]);
   const [selectedResult, setSelectedResult] = useState<MLITSearchResult | null>(null);
@@ -34,19 +36,35 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
     setListed(points);
   }, []);
 
-  // 地名検索 → 地図を移動（Nominatim）
-  const handleLocationSearch = useCallback(
-    async (address: string) => {
+  // 検索：カンマ区切りの「緯度,経度」ならそこへ移動、そうでなければ住所・地名でジオコーディング。
+  // （Hazard Map の検索仕様に合わせる）
+  const handleSearch = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      const q = query.trim();
+      if (!q) return;
+      const m = q.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,，]\s*(-?\d+(?:\.\d+)?)\s*$/);
+      if (m) {
+        const lat = parseFloat(m[1]);
+        const lng = parseFloat(m[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+          setMapCenter({ lat, lng });
+          onSuccess?.(`緯度 ${lat}, 経度 ${lng} に移動しました`);
+        } else {
+          onError?.('緯度は±90、経度は±180の範囲で入力してください');
+        }
+        return;
+      }
       try {
         const response = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            address
+            q
           )}&countrycodes=jp&limit=1`
         );
         const data = await response.json();
         if (data && data.length > 0) {
           setMapCenter({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
-          onSuccess?.(`「${address}」に移動しました`);
+          onSuccess?.(`「${q}」に移動しました`);
         } else {
           onError?.('住所が見つかりませんでした');
         }
@@ -54,7 +72,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         onError?.('住所検索に失敗しました');
       }
     },
-    [onSuccess, onError]
+    [query, onSuccess, onError]
   );
 
   // 結果選択 → 詳細（柱状図）取得
@@ -64,6 +82,7 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
       setLoadingDetail(true);
       try {
         const xmlUrl = result.metadata?.['NGI:link_boring_xml'];
+        const pdfUrl = result.metadata?.['NGI:link_boring_pdf'];
         if (xmlUrl && result.location) {
           try {
             const data = await fetchAndParseBoringData(xmlUrl, result.id, result.location);
@@ -73,8 +92,12 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             onError?.('ボーリングデータの取得に失敗しました');
             setBoringData(null);
           }
+        } else if (pdfUrl) {
+          // PDF柱状図のみの地点（港湾など）。インライン柱状図は無いが、データはある（PDF）。
+          // エラーにせず、詳細パネルの「PDF柱状図を表示」ボタンを案内する。
+          setBoringData(null);
         } else {
-          onError?.('XMLリンクが見つかりません');
+          onError?.('この地点の柱状図データが見つかりませんでした');
           setBoringData(null);
         }
       } finally {
@@ -103,33 +126,32 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         </div>
       </div>
 
-      {/* メインコンテンツ。min-h-0 で中身に依存せず高さを安定させる（地図が一定全高） */}
+      {/* メインコンテンツ。Hazard Map と同様、情報は左パネルに集約し地図を広く取る。 */}
       <div className="flex-1 overflow-hidden min-h-0">
         <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:min-h-0">
-          {/* 左サイドバー: 操作パネル + 近接リスト */}
+          {/* 左パネル: 検索 + 一覧 / 選択中の柱状図詳細 */}
           <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0">
-            <SearchPanel onLocationSearch={handleLocationSearch} />
+            {/* 検索（住所・地名 または 緯度,経度） */}
+            <form onSubmit={handleSearch} className="flex gap-2">
+              <div className="relative flex-1">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="住所・地名 または 緯度,経度（例: 35.681,139.767）"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors inline-flex items-center gap-1"
+              >
+                <Search className="w-4 h-4" />
+                検索
+              </button>
+            </form>
 
-            <ResultsList
-              results={listed}
-              selectedResult={selectedResult}
-              searchStatus={listed.length > 0 ? 'success' : 'idle'}
-              onResultSelect={handleResultSelect}
-            />
-          </div>
-
-          {/* 中央: 地図（常にコンテンツ領域の全高・中身非依存で固定） */}
-          <div className="lg:col-span-1 h-[400px] lg:h-full lg:min-h-0">
-            <MapView
-              center={mapCenter}
-              selectedResult={selectedResult}
-              onPickNearby={handlePickNearby}
-              onResultSelect={handleResultSelect}
-            />
-          </div>
-
-          {/* 右サイドバー: 詳細表示 */}
-          <div className="lg:col-span-1 overflow-y-auto lg:min-h-0">
             {selectedResult ? (
               <BoringLogViewer
                 data={boringData}
@@ -138,19 +160,23 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
                 onClose={handleCloseDetail}
               />
             ) : (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-                <div className="text-gray-400 dark:text-gray-500 mb-4">
-                  <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                </div>
-                <p className="text-gray-500 dark:text-gray-400">
-                  地点をクリックして一覧から選ぶと
-                  <br />
-                  柱状図が表示されます
-                </p>
-              </div>
+              <ResultsList
+                results={listed}
+                selectedResult={selectedResult}
+                searchStatus={listed.length > 0 ? 'success' : 'idle'}
+                onResultSelect={handleResultSelect}
+              />
             )}
+          </div>
+
+          {/* 右: 地図（広く） */}
+          <div className="lg:col-span-2 h-[400px] lg:h-full lg:min-h-0">
+            <MapView
+              center={mapCenter}
+              selectedResult={selectedResult}
+              onPickNearby={handlePickNearby}
+              onResultSelect={handleResultSelect}
+            />
           </div>
         </div>
       </div>

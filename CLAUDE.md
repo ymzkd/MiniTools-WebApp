@@ -4,19 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **Math Tools Suite**, an integrated web application that combines two powerful mathematical tools:
+This is **MiniTools**, an integrated web application bundling several math / structural-engineering tools
+under a single tab-based interface. Each tool lives in its own directory under `src/components/` and is
+mounted simultaneously (visibility toggled by CSS) so per-tab state is preserved across tab switches.
 
-1. **LaTeX Matrix Editor** - Visual editing of mathematical matrices with real-time LaTeX preview and generation
-2. **Figure Layout Tool** - Academic figure arrangement tool with drag-and-drop functionality and mathematical caption support
+Tools (tab id → path → directory):
 
-The applications are unified under a single interface with tab-based navigation, providing a comprehensive toolkit for mathematical document preparation.
+1. **Matrix Editor** (`matrix` → `/matrix` → `matrix/`) — visual LaTeX matrix editing with real-time KaTeX preview
+2. **Figure Layout** (`figure` → `/figure` → `figure/`) — academic figure arrangement with drag-and-drop + KaTeX captions
+3. **PDF Converter** (`pdf` → `/pdf` → `pdf/`) — PDF conversion utilities
+4. **Markdown Editor** (`markdown` → `/markdown` → `markdown/`) — markdown editing/preview
+5. **Boring Data** (`boring` → `/boring` → `boring/`) — geotechnical boring-log search over a full-height map (jiban-api backed)
+6. **Hazard Map** (`hazard` → `/hazard` → `hazard/`) — point lookup of 海率/標高 and design zones (基準風速/積雪/地震/積雪深) on a map (jiban-api `/api/design` backed). Legacy `/searatio` path still resolves here.
+7. **Section Calc** (`section` → `/section` → `section/`) — section property calculator
+8. **Steel Stress** (`steel` → `/steel` → `steel/`) — steel stress calculator
+
+Routing lives in `src/App.tsx`; the tab list / labels in `src/components/common/Navigation.tsx`; the `AppTab`
+union in `src/types/index.ts`. Adding a tool means touching those three plus a new `src/components/<tool>/`.
 
 ## Architecture
 
 ### Core Components
-- **Unified App Layout**: Tab-based navigation between tools (`src/components/common/AppLayout.tsx`)
-- **LaTeX Matrix Editor**: Mathematical matrix editing (`src/components/matrix/LaTeXMatrixEditor.tsx`)
-- **Figure Layout Tool**: Image arrangement system (`src/components/figure/FigureLayoutApp.tsx`)
+- **Unified App Layout**: Tab-based navigation between tools (`src/components/common/AppLayout.tsx`, `Navigation.tsx`)
+- **Map-based tools** (Boring Data, Hazard Map): maplibre-gl + pmtiles, served same-origin via an Express
+  proxy to **jiban-api** (`/api/...`); take the full viewport height (see the `lg:-my-8 lg:h-[calc(100vh-4rem)]` wrappers in `App.tsx`)
 - **KaTeX Integration**: Mathematical rendering using KaTeX v0.16.22 with MathML output
 - **Shared Components**: Common UI elements, navigation, toast notifications, and theme management
 
@@ -82,12 +93,18 @@ The project is now set up as a modern Node.js application with Vite + React 19 +
 ```
 src/
 ├── components/
-│   ├── common/           # Shared components (Navigation, Layout, Toast)
-│   ├── matrix/           # LaTeX Matrix Editor components
-│   └── figure/           # Figure Layout Tool components
+│   ├── common/           # Shared components (Navigation, AppLayout, Toast)
+│   ├── matrix/           # Matrix Editor
+│   ├── figure/           # Figure Layout
+│   ├── pdf/              # PDF Converter
+│   ├── markdown/         # Markdown Editor
+│   ├── boring/           # Boring Data (map, jiban-api)
+│   ├── hazard/           # Hazard Map (map + design zones, jiban-api)
+│   ├── section/          # Section Calc
+│   └── steel/            # Steel Stress
 ├── hooks/                # Custom React hooks
-├── types/                # TypeScript type definitions
-└── App.tsx              # Main application with tab routing
+├── types/                # TypeScript type definitions (AppTab union)
+└── App.tsx               # Main application with tab routing
 ```
 
 ### Advanced UI Features

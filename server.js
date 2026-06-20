@@ -161,6 +161,46 @@ app.use('/api/ngi', async (req, res) => {
   }
 })
 
+// 設計用地域区分API（jiban-api /design/*）への薄いリバースプロキシ。
+// /api/design/* → jiban-api /design/*
+//   lookup: 基準風速 / 積雪荷重係数 / 海率
+//   tiles : 地域区分オーバーレイの PMTiles（HTTP Range 取得）
+// 地図オーバーレイの .pmtiles は Range で部分取得するため、Range/206/Content-Range/
+// Accept-Ranges/ETag を素通しする（NGI タイルと同じ扱い。しないと毎回全取得になる）。
+app.use('/api/design', async (req, res) => {
+  if (!JIBAN_API_URL) {
+    return res.status(503).json({ error: 'Design API not configured' })
+  }
+  try {
+    const target =
+      JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/design/, '/design')
+    const fwd = { accept: req.headers['accept'] || '*/*' }
+    if (req.headers['range']) fwd['range'] = req.headers['range']
+    if (req.headers['if-none-match']) fwd['if-none-match'] = req.headers['if-none-match']
+    const upstream = await fetch(target, { method: req.method, headers: fwd })
+    res.status(upstream.status)
+    for (const h of [
+      'content-type',
+      'cache-control',
+      'content-range',
+      'accept-ranges',
+      'etag',
+      'last-modified',
+    ]) {
+      const v = upstream.headers.get(h)
+      if (v) res.setHeader(h, v)
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    return res.send(buf)
+  } catch (error) {
+    console.error('Design jiban proxy error:', error)
+    return res.status(502).json({
+      error: 'Bad gateway to jiban API',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
 // Static assets + SPA fallback (final middleware works across Express 4/5).
 const distDir = path.join(__dirname, 'dist')
 app.use(express.static(distDir))

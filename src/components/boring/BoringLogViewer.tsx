@@ -126,6 +126,51 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
         </div>
       )}
 
+      {/* 外部リンク（柱状図PDF / 外部ビューア / XML）。インライン柱状図(data)の有無に依らず表示。
+          PDF柱状図のみの地点(港湾など)でもここから柱状図PDFを開ける。 */}
+      {!loading &&
+        (selectedResult.metadata?.['NGI:link_boring_pdf'] ||
+          ngiId ||
+          selectedResult.metadata?.['NGI:link_boring_xml']) && (
+          <div className="flex flex-wrap gap-2 px-4 pt-4">
+            {selectedResult.metadata?.['NGI:link_boring_pdf'] && (
+              <a
+                href={selectedResult.metadata['NGI:link_boring_pdf']}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              >
+                <ExternalLink className="w-4 h-4" />
+                PDF柱状図を表示
+              </a>
+            )}
+            {/* 外部ビューア（PDF柱状図ボタンがある場合は同じ柱状図なので出さない） */}
+            {ngiId && !selectedResult.metadata?.['NGI:link_boring_pdf'] && (
+              <a
+                href={`https://www.kunijiban.pwri.go.jp/viewer/refer/?data=boring&type=view&id=${ngiId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+              >
+                <ExternalLink className="w-4 h-4" />
+                外部サイトで柱状図を表示
+              </a>
+            )}
+            {selectedResult.metadata?.['NGI:link_boring_xml'] && (
+              <button
+                type="button"
+                onClick={() =>
+                  handleDownload(selectedResult.metadata!['NGI:link_boring_xml']!, xmlFileName)
+                }
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
+              >
+                <Download className="w-4 h-4" />
+                XMLファイルをダウンロード
+              </button>
+            )}
+          </div>
+        )}
+
       {/* データ表示 */}
       {!loading && data && (
         <div className="p-4 space-y-4">
@@ -182,48 +227,6 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                 <Code className="w-4 h-4" />
                 <span>XMLバージョン: {selectedResult.metadata['NGI:boring_xml_version']}</span>
               </div>
-            )}
-          </div>
-
-          {/* 外部リンク */}
-          <div className="flex flex-wrap gap-2">
-            {/* 柱状図表示（東京の地盤=PDF原本 / 国土地盤=外部ビューア）を同じ位置・スタイルで提供 */}
-            {selectedResult.metadata?.['NGI:link_boring_pdf'] && (
-              <a
-                href={selectedResult.metadata['NGI:link_boring_pdf']}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-              >
-                <ExternalLink className="w-4 h-4" />
-                PDF柱状図を表示
-              </a>
-            )}
-            {/* 外部ビューアーリンク */}
-            {ngiId && (
-              <a
-                href={`https://www.kunijiban.pwri.go.jp/viewer/refer/?data=boring&type=view&id=${ngiId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
-              >
-                <ExternalLink className="w-4 h-4" />
-                外部サイトで柱状図を表示
-              </a>
-            )}
-
-            {/* XMLファイルダウンロード（押下でそのまま保存） */}
-            {selectedResult.metadata?.['NGI:link_boring_xml'] && (
-              <button
-                type="button"
-                onClick={() =>
-                  handleDownload(selectedResult.metadata!['NGI:link_boring_xml']!, xmlFileName)
-                }
-                className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
-              >
-                <Download className="w-4 h-4" />
-                XMLファイルをダウンロード
-              </button>
             )}
           </div>
 
@@ -396,7 +399,9 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
       {!loading && !data && (
         <div className="p-4 space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {selectedResult.description || 'データの詳細情報がありません'}
+            {selectedResult.metadata?.['NGI:link_boring_pdf']
+              ? 'この地点の柱状図はPDFで提供されています。上の「PDF柱状図を表示」からご覧ください。'
+              : selectedResult.description || 'データの詳細情報がありません'}
           </p>
 
           {/* ダウンロードリンク */}
