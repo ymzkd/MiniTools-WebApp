@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, EyeOff } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff } from 'lucide-react';
 import SeaRatioMap from './SeaRatioMap';
 import type { ZoneOverlay } from './SeaRatioMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
@@ -10,6 +10,7 @@ const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?:
   { val: 'none', Icon: EyeOff, label: 'オフ' },
   { val: 'wind', Icon: Wind, label: '風速区分' },
   { val: 'seismic', Icon: Activity, label: '地震地域係数' },
+  { val: 'urban', Icon: Building2, label: '都市計画区域' },
   { val: 'depth', Icon: Snowflake, label: '積雪深マップ' },
 ];
 

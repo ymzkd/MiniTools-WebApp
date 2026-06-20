@@ -8,7 +8,7 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'depth';
+export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth';
 
 interface SeaRatioMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -55,6 +55,10 @@ const ZONE_PMTILES: Record<'wind' | 'seismic', string> = {
 };
 const ZONE_SOURCE_LAYER = 'zones';
 const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
+// 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
+const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
+const URBAN_SOURCE_LAYER = 'urban';
+const URBAN_FILL_COLOR = '#9ca3af'; // gray-400
 
 // 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
 const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string; min: string; max: string }> = {
@@ -69,6 +73,12 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     grad: 'linear-gradient(to right, #fee08b, #fdae61, #f46d43, #d73027)',
     min: 'Z0.7',
     max: 'Z1.0',
+  },
+  urban: {
+    title: '都市計画区域（国土数値情報 A09）',
+    grad: '#9ca3af',
+    min: '区域内',
+    max: '',
   },
   depth: {
     title: '積雪深（垂直積雪量 cm）',
@@ -223,6 +233,9 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
     if (map.getLayer('zones-seismic-fill')) {
       map.setLayoutProperty('zones-seismic-fill', 'visibility', kind === 'seismic' ? 'visible' : 'none');
     }
+    if (map.getLayer('zones-urban-fill')) {
+      map.setLayoutProperty('zones-urban-fill', 'visibility', kind === 'urban' ? 'visible' : 'none');
+    }
     if (map.getLayer('zones-depth-fill')) {
       map.setLayoutProperty('zones-depth-fill', 'visibility', kind === 'depth' ? 'visible' : 'none');
     }
@@ -302,6 +315,20 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         },
       } as unknown as maplibregl.AddLayerObject);
 
+      // 都市計画区域（外形のみ・グレー塗り）。
+      map.addSource('zones-urban', {
+        type: 'vector',
+        url: `pmtiles://${origin}${URBAN_PMTILES}`,
+      });
+      map.addLayer({
+        id: 'zones-urban-fill',
+        type: 'fill',
+        source: 'zones-urban',
+        'source-layer': URBAN_SOURCE_LAYER,
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': URBAN_FILL_COLOR, 'fill-opacity': 0.45 },
+      });
+
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
       map.addSource('marker', { type: 'geojson', data: EMPTY_FC });
       map.addLayer({
@@ -317,6 +344,8 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         paint: { 'line-color': '#2563eb', 'line-width': 2 },
       });
       // 海岸線/湖岸線までの測線（中心→最寄り点）と最寄り点マーカー。
+      // 重ね順: 測線 → 最寄り点(橙) → 中心マーカー(赤) の順で、地点指定の赤を最前面にする
+      // (広域表示で赤マーカーが隠れないように)。
       map.addSource('shore', { type: 'geojson', data: EMPTY_FC });
       map.addLayer({
         id: 'shore-line',
@@ -324,17 +353,6 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         source: 'shore',
         filter: ['==', ['geometry-type'], 'LineString'],
         paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [2, 1.5] },
-      });
-      map.addLayer({
-        id: 'marker',
-        type: 'circle',
-        source: 'marker',
-        paint: {
-          'circle-radius': 6,
-          'circle-color': '#ef4444',
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2,
-        },
       });
       map.addLayer({
         id: 'shore-pt',
@@ -346,6 +364,17 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           'circle-color': '#f59e0b',
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 1.5,
+        },
+      });
+      map.addLayer({
+        id: 'marker',
+        type: 'circle',
+        source: 'marker',
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#ef4444',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
         },
       });
       readyRef.current = true;
@@ -382,6 +411,11 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         } else {
           setHover(null);
         }
+        return;
+      }
+      if (ov === 'urban') {
+        const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-urban-fill'] });
+        setHover(fs.length ? '都市計画区域: 区域内' : '都市計画区域: 区域外');
         return;
       }
       // depth: 非同期デコード（古い応答は token で破棄）
