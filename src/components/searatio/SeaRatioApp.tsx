@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, Waves, Snowflake, Wind, Gauge, EyeOff } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Gauge, EyeOff } from 'lucide-react';
 import SeaRatioMap from './SeaRatioMap';
 import type { ZoneOverlay } from './SeaRatioMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
@@ -148,11 +148,11 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
       {/* ヘッダー */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-          <Waves className="w-5 h-5 text-blue-500" />
-          海率計算
+          <TriangleAlert className="w-5 h-5 text-amber-500" />
+          Hazard Map
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示（平成12年基準）の積雪荷重係数・基準風速を表示します。
+          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示（平成12年基準）の積雪荷重係数・基準風速・積雪深を表示します。
         </p>
       </div>
 
@@ -204,14 +204,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                 </div>
               </div>
             </div>
-
-            {/* オーバーレイ凡例（地図右上のアイコンで切替。選択中のみ表示） */}
-            {overlay !== 'none' && (
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-                <span className="text-xs text-gray-500 dark:text-gray-400">オーバーレイ凡例</span>
-                <ZoneLegend overlay={overlay} />
-              </div>
-            )}
 
             {/* 結果 */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-4">
@@ -326,57 +318,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
           </div>
         </div>
       </div>
-    </div>
-  );
-};
-
-// オーバーレイの凡例（地図の塗り色と対応するグラデーションバー）。
-// 積雪深(連続カラー)の凡例グラデーション。raster-color ramp(0..1500cm)と一致。
-const DEPTH_GRADIENT =
-  'linear-gradient(to right,' +
-  'rgba(198,219,239,0.45) 0%,rgba(158,202,225,0.55) 3%,rgba(107,174,214,0.6) 7%,' +
-  'rgba(66,146,198,0.65) 13%,rgba(33,113,181,0.7) 20%,rgba(8,69,148,0.74) 33%,' +
-  'rgba(84,39,143,0.78) 53%,rgba(106,30,140,0.82) 80%,rgba(74,20,80,0.85) 100%)';
-
-const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overlay }) => {
-  if (overlay === 'depth') {
-    return (
-      <div className="pt-1">
-        <div className="h-2 w-full rounded" style={{ background: DEPTH_GRADIENT }} />
-        <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-          <span>0</span>
-          <span>300</span>
-          <span>800</span>
-          <span>1500 cm</span>
-        </div>
-        <p className="text-[10px] text-gray-400 mt-1">
-          垂直積雪量 d=(α·H+β·rs+γ)×100 [cm]（標高は国土地理院DEM）。無段階カラー・約5cm未満は透明
-        </p>
-      </div>
-    );
-  }
-  const conf =
-    overlay === 'snow'
-      ? {
-          grad: 'linear-gradient(to right, #deebf7, #6baed6, #08306b)',
-          min: '第1区',
-          max: '第40区',
-          note: '平12建告1455号 積雪荷重の地域区分（濃いほど区分番号が大）。第0区(沖縄)=積雪なし',
-        }
-      : {
-          grad: 'linear-gradient(to right, #fee5d9, #fb6a4a, #a50f15)',
-          min: '第1区 (Vo30)',
-          max: '第9区 (Vo46)',
-          note: '平12建告1454号 基準風速の地域区分（濃いほど基準風速が大）',
-        };
-  return (
-    <div className="pt-1">
-      <div className="h-2 w-full rounded" style={{ background: conf.grad }} />
-      <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-        <span>{conf.min}</span>
-        <span>{conf.max}</span>
-      </div>
-      <p className="text-[10px] text-gray-400 mt-1">{conf.note}</p>
     </div>
   );
 };

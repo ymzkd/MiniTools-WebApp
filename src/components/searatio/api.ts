@@ -65,17 +65,52 @@ export async function fetchElevation(lat: number, lng: number): Promise<number |
   }
 }
 
+// 住所として不要な要素（国/郵便番号/地方/振興局/POI・建物・道路 等）の address キー。
+// これらの値を display_name から除外する。
+const NON_ADDRESS_KEYS = [
+  'country', 'country_code', 'postcode', 'region', 'subprovince', 'state_district',
+  'ISO3166-2-lvl4', 'ISO3166-2-lvl6',
+  'amenity', 'building', 'railway', 'shop', 'office', 'tourism', 'leisure', 'man_made',
+  'historic', 'road', 'emergency', 'aeroway', 'highway', 'natural', 'place', 'club',
+  'craft', 'healthcare',
+];
+
+/** Nominatim の reverse 応答を、日本の住所表記（都道府県→市区町村→丁目…）の一続きに整形。 */
+function formatJpAddress(data: { display_name?: unknown; address?: Record<string, unknown> }): string | null {
+  const dn = data.display_name;
+  if (typeof dn !== 'string') return null;
+  const a = data.address || {};
+  const excludeVals = new Set<string>();
+  for (const k of NON_ADDRESS_KEYS) {
+    const v = a[k];
+    if (typeof v === 'string') excludeVals.add(v);
+  }
+  // display_name は「小→大, 郵便番号, 日本」の順。除外して反転＝大→小に。
+  const parts = dn
+    .split(',')
+    .map((s) => s.trim())
+    .filter((p) => p && p !== '日本' && !excludeVals.has(p) && !/^\d{3}-?\d{2,4}$/.test(p));
+  parts.reverse();
+  // 接頭辞重複の除去（例: 「丸の内」⊂「丸の内一丁目」→ 親を落とす）
+  const out: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const next = parts[i + 1];
+    if (next && next.startsWith(parts[i])) continue;
+    out.push(parts[i]);
+  }
+  const s = out.join('');
+  return s || null;
+}
+
 /** 緯度経度 → 住所（Nominatim リバースジオコーディング, 日本語）。取得不可は null。 */
 export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}` +
-        `&zoom=18&addressdetails=0&accept-language=ja`
+        `&zoom=18&addressdetails=1&accept-language=ja`
     );
     if (!res.ok) return null;
-    const data = await res.json();
-    if (data && typeof data.display_name === 'string') return data.display_name as string;
-    return null;
+    return formatJpAddress(await res.json());
   } catch {
     return null;
   }

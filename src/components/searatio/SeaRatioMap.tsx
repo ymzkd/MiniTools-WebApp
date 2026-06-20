@@ -54,6 +54,31 @@ const ZONE_PMTILES: Record<'snow' | 'wind', string> = {
 const ZONE_SOURCE_LAYER = 'zones';
 const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
 
+// 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
+const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string; min: string; max: string }> = {
+  snow: {
+    title: '積雪荷重 地域区分（平12建告1455号）',
+    grad: 'linear-gradient(to right, #deebf7, #6baed6, #08306b)',
+    min: '第1区',
+    max: '第40区',
+  },
+  wind: {
+    title: '基準風速 地域区分（平12建告1454号）',
+    grad: 'linear-gradient(to right, #fee5d9, #fb6a4a, #a50f15)',
+    min: '第1区 Vo30',
+    max: '第9区 Vo46',
+  },
+  depth: {
+    title: '積雪深（垂直積雪量 cm）',
+    grad:
+      'linear-gradient(to right,rgba(198,219,239,0.6) 0%,rgba(107,174,214,0.7) 7%,' +
+      'rgba(33,113,181,0.8) 20%,rgba(8,69,148,0.85) 33%,rgba(84,39,143,0.9) 53%,' +
+      'rgba(106,30,140,0.92) 80%,rgba(74,20,80,0.95) 100%)',
+    min: '0',
+    max: '1500',
+  },
+};
+
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
 // (全タブ常時マウントのSPAなので、片方のアンマウントで他方を壊さないよう removeProtocol しない)。
 let _pmtilesRegistered = false;
@@ -388,9 +413,19 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1] bg-gray-900/80 text-white text-xs px-3 py-1.5 rounded-full shadow pointer-events-none">
         地図をクリックして地点を指定
       </div>
-      {hover && (
-        <div className="absolute bottom-2 left-2 z-[2] pointer-events-none px-2 py-1 text-[11px] rounded bg-gray-900/70 text-white shadow whitespace-nowrap">
-          {hover}
+      {overlay !== 'none' && (
+        <div className="absolute bottom-2 left-2 z-[2] pointer-events-none bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-2 backdrop-blur-sm w-56">
+          <div className="text-[10px] font-medium text-gray-700 dark:text-gray-200 leading-tight">
+            {LEGEND[overlay].title}
+          </div>
+          <div className="h-2 w-full rounded mt-1" style={{ background: LEGEND[overlay].grad }} />
+          <div className="flex justify-between text-[9px] text-gray-500 dark:text-gray-400 mt-0.5">
+            <span>{LEGEND[overlay].min}</span>
+            <span>{LEGEND[overlay].max}</span>
+          </div>
+          <div className="text-[11px] mt-1 font-medium text-gray-900 dark:text-gray-100 min-h-[15px]">
+            {hover ?? <span className="text-gray-400 font-normal">カーソル位置の値を表示</span>}
+          </div>
         </div>
       )}
     </div>
