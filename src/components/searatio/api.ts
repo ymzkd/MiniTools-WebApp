@@ -27,12 +27,21 @@ export interface SeismicParams {
   nearest_km?: number;
 }
 
+// 地表面粗度区分(平12建告1454号)判定用の距離。最寄りの海岸線/対象湖岸線(対岸1500m以上)まで(m)。
+export interface ShoreInfo {
+  coast_m: number | null;
+  lake_m: number | null;
+  nearest_m: number | null;
+  nearest_kind: 'coast' | 'lake' | null;
+}
+
 export interface DesignResult {
   lat: number;
   lng: number;
   wind: WindParams | null;
   snow: SnowParams | null;
   seismic: SeismicParams | null;
+  shore: ShoreInfo | null;
   radius_km: number;
   sea_ratio: number;
   land_ratio: number;

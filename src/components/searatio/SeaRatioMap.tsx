@@ -8,7 +8,7 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'snow' | 'wind' | 'seismic' | 'depth';
+export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'depth';
 
 interface SeaRatioMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -22,8 +22,7 @@ interface SeaRatioMapProps {
 
 // ゾーン番号→色。色が濃いほど区分番号が大きい（元アプリと同じ向き）。薄く重ねる。
 // 積雪は青系(第1〜40区)、風速は赤系(第1〜9区)。
-const ZONE_FILL_COLOR: Record<'snow' | 'wind' | 'seismic', maplibregl.ExpressionSpecification> = {
-  snow: ['interpolate', ['linear'], ['get', 'zone'], 1, '#deebf7', 20, '#6baed6', 40, '#08306b'],
+const ZONE_FILL_COLOR: Record<'wind' | 'seismic', maplibregl.ExpressionSpecification> = {
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
   // 地震地域係数 Z（大きいほど地震荷重が大）。Z=0.7淡 → 1.0濃赤。
   seismic: ['interpolate', ['linear'], ['get', 'Z'], 0.7, '#fee08b', 0.8, '#fdae61', 0.9, '#f46d43', 1.0, '#d73027'],
@@ -49,8 +48,7 @@ const DEPTH_RELIEF_COLOR = [
 
 // ベクタタイル(区分)とラスタータイル(積雪深)の同一オリジン取得パス。jiban-api
 // /design/tiles を minitools の Express が Range 転送する。
-const ZONE_PMTILES: Record<'snow' | 'wind' | 'seismic', string> = {
-  snow: '/api/design/tiles/snow_zones.pmtiles',
+const ZONE_PMTILES: Record<'wind' | 'seismic', string> = {
   wind: '/api/design/tiles/wind_zones.pmtiles',
   seismic: '/api/design/tiles/seismic_zones.pmtiles',
 };
@@ -59,12 +57,6 @@ const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
 
 // 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
 const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string; min: string; max: string }> = {
-  snow: {
-    title: '積雪荷重 地域区分（平12建告1455号）',
-    grad: 'linear-gradient(to right, #deebf7, #6baed6, #08306b)',
-    min: '第1区',
-    max: '第40区',
-  },
   wind: {
     title: '基準風速 地域区分（平12建告1454号）',
     grad: 'linear-gradient(to right, #fee5d9, #fb6a4a, #a50f15)',
@@ -222,8 +214,7 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
   const applyOverlay = useCallback((kind: ZoneOverlay) => {
     const map = mapRef.current;
-    if (!map || !readyRef.current || !map.getLayer('zones-snow-fill')) return;
-    map.setLayoutProperty('zones-snow-fill', 'visibility', kind === 'snow' ? 'visible' : 'none');
+    if (!map || !readyRef.current || !map.getLayer('zones-wind-fill')) return;
     map.setLayoutProperty('zones-wind-fill', 'visibility', kind === 'wind' ? 'visible' : 'none');
     if (map.getLayer('zones-seismic-fill')) {
       map.setLayoutProperty('zones-seismic-fill', 'visibility', kind === 'seismic' ? 'visible' : 'none');
@@ -274,7 +265,7 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
       // ゾーン区分オーバーレイ（GSIタイルの上・解析円の下に薄く重ねる）。初期は非表示。
       // PMTilesベクタソースを2種(積雪/風速)。可視になったタイルだけ Range 取得される。
       const origin = window.location.origin;
-      (['snow', 'wind', 'seismic'] as const).forEach((kind) => {
+      (['wind', 'seismic'] as const).forEach((kind) => {
         map.addSource(`zones-${kind}`, {
           type: 'vector',
           url: `pmtiles://${origin}${ZONE_PMTILES[kind]}`,
@@ -353,18 +344,14 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         setHover(null);
         return;
       }
-      if (ov === 'snow' || ov === 'wind' || ov === 'seismic') {
+      if (ov === 'wind' || ov === 'seismic') {
         const fs = map.queryRenderedFeatures(e.point, { layers: [`zones-${ov}-fill`] });
         if (fs.length) {
           const p = fs[0].properties || {};
           const text =
-            ov === 'snow'
-              ? p.zone === 0
-                ? '積雪区分: 第0区（積雪なし）'
-                : `積雪区分: 第${p.zone}区`
-              : ov === 'wind'
-                ? `風速区分: 第${p.zone}区 Vo${p.Vo} m/s`
-                : `地震区分: 第${p.zone}区 Z${p.Z}`;
+            ov === 'wind'
+              ? `風速区分: 第${p.zone}区 Vo${p.Vo} m/s`
+              : `地震区分: 第${p.zone}区 Z${p.Z}`;
           setHover(text);
         } else {
           setHover(null);

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Gauge, EyeOff } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, EyeOff } from 'lucide-react';
 import SeaRatioMap from './SeaRatioMap';
 import type { ZoneOverlay } from './SeaRatioMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
@@ -8,10 +8,9 @@ import type { DesignResult } from './api';
 // 地図上のオーバーレイ切替アイコン
 const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?: string }>; label: string }[] = [
   { val: 'none', Icon: EyeOff, label: 'オフ' },
-  { val: 'snow', Icon: Snowflake, label: '積雪区分' },
   { val: 'wind', Icon: Wind, label: '風速区分' },
   { val: 'seismic', Icon: Activity, label: '地震地域係数' },
-  { val: 'depth', Icon: Gauge, label: '積雪深マップ' },
+  { val: 'depth', Icon: Snowflake, label: '積雪深マップ' },
 ];
 
 interface SeaRatioAppProps {
@@ -128,6 +127,7 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
   const snow = design?.snow ?? null;
   const wind = design?.wind ?? null;
   const seismic = design?.seismic ?? null;
+  const shore = design?.shore ?? null;
   const seaRatio = design?.sea_ratio ?? null;
   const landRatio = design?.land_ratio ?? null;
 
@@ -311,6 +311,32 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                   </p>
                 )}
               </div>
+
+              {/* 地表面粗度区分（判定用の距離のみ） */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  海岸線・湖岸線までの距離（平12建告1454号）
+                </h3>
+                {shore && shore.nearest_m != null ? (
+                  <>
+                    <Metric
+                      label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
+                      value={fmtDist(shore.nearest_m)}
+                    />
+                    <table className="w-full text-sm mt-2">
+                      <tbody>
+                        <Row k="海岸線まで" v={fmtDist(shore.coast_m)} />
+                        <Row k="湖岸線まで（対岸≥1.5km）" v={fmtDist(shore.lake_m)} />
+                      </tbody>
+                    </table>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      地表面粗度区分の判定用の距離のみ（区分の確定・個別パラメータは設計者判断）。
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-400">取得できませんでした</p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -347,6 +373,12 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
     </div>
   );
 };
+
+// 距離[m] を見やすく整形（1km未満は m、以上は km）。null は「—」。
+function fmtDist(m: number | null | undefined): string {
+  if (m == null) return '—';
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(m < 10000 ? 2 : 1)} km`;
+}
 
 const Metric: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg py-2">
