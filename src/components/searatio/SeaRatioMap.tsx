@@ -16,7 +16,8 @@ interface SeaRatioMapProps {
   // この値が変わったとき（住所検索・座標入力・初期表示）だけ円全体が収まるよう表示範囲を合わせる。
   // 地図クリックでは変えない＝クリックのたびに勝手にズームしないようにするため。
   viewVersion: number;
-  overlay: ZoneOverlay; // 薄いオーバーレイ（none / 積雪区分 / 風速区分 / 積雪深）
+  overlay: ZoneOverlay; // 薄いオーバーレイ（none / 風速区分 / 地震 / 積雪深）
+  shorePoint: LatLng | null; // 最寄りの海岸線/湖岸線の点（中心からの測線を表示）
   onPick: (lat: number, lng: number) => void;
 }
 
@@ -197,6 +198,7 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
   radiusKm,
   viewVersion,
   overlay,
+  shorePoint,
   onPick,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -205,6 +207,8 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
   const firstFitRef = useRef(false);
   const overlayRef = useRef(overlay);
   overlayRef.current = overlay;
+  const shorePointRef = useRef(shorePoint);
+  shorePointRef.current = shorePoint;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
   // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
@@ -312,6 +316,15 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         source: 'circle',
         paint: { 'line-color': '#2563eb', 'line-width': 2 },
       });
+      // 海岸線/湖岸線までの測線（中心→最寄り点）と最寄り点マーカー。
+      map.addSource('shore', { type: 'geojson', data: EMPTY_FC });
+      map.addLayer({
+        id: 'shore-line',
+        type: 'line',
+        source: 'shore',
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [2, 1.5] },
+      });
       map.addLayer({
         id: 'marker',
         type: 'circle',
@@ -323,9 +336,22 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           'circle-stroke-width': 2,
         },
       });
+      map.addLayer({
+        id: 'shore-pt',
+        type: 'circle',
+        source: 'shore',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 4,
+          'circle-color': '#f59e0b',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1.5,
+        },
+      });
       readyRef.current = true;
       // 初期データ反映。表示範囲合わせは「実サイズが付いてから」一度だけ（下の maybeInitialFit）。
       updateData(map, center, radiusKm);
+      updateShore(map, center, shorePointRef.current);
       maybeInitialFit();
       applyOverlay(overlayRef.current); // マウント時にオーバーレイ選択済みなら反映
     });
@@ -404,6 +430,13 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
     applyOverlay(overlay);
   }, [overlay, applyOverlay]);
 
+  // 中心・最寄り点が変わったら測線を更新
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    updateShore(map, center, shorePoint);
+  }, [center, shorePoint]);
+
   return (
     <div className="h-full w-full relative">
       <div
@@ -446,6 +479,37 @@ function updateData(map: maplibregl.Map, center: LatLng, radiusKm: number) {
     type: 'Feature',
     properties: {},
     geometry: { type: 'Point', coordinates: [center.lng, center.lat] },
+  });
+}
+
+// 中心→最寄りの海岸線/湖岸線の点 の測線（と最寄り点）を反映。shorePoint が無ければ消す。
+function updateShore(map: maplibregl.Map, center: LatLng, shorePoint: LatLng | null) {
+  const src = map.getSource('shore') as maplibregl.GeoJSONSource | undefined;
+  if (!src) return;
+  if (!shorePoint) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  src.setData({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [center.lng, center.lat],
+            [shorePoint.lng, shorePoint.lat],
+          ],
+        },
+      },
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'Point', coordinates: [shorePoint.lng, shorePoint.lat] },
+      },
+    ],
   });
 }
 

@@ -289,6 +289,26 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
 
+              {/* 海岸線・湖岸線までの距離（地表面粗度区分の判定用。風荷重設計の一部なので風速の直下に） */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  海岸線・湖岸線までの距離（平12建告1454号）
+                </h3>
+                {shore && shore.nearest_m != null ? (
+                  <>
+                    <Metric
+                      label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
+                      value={fmtDist(shore.nearest_m)}
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      地表面粗度区分の判定用の距離（地図上に測線を表示）。区分の確定・個別パラメータは設計者判断。
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-400">取得できませんでした</p>
+                )}
+              </div>
+
               {/* 地震地域係数 */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
@@ -311,32 +331,6 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
                   </p>
                 )}
               </div>
-
-              {/* 地表面粗度区分（判定用の距離のみ） */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
-                  海岸線・湖岸線までの距離（平12建告1454号）
-                </h3>
-                {shore && shore.nearest_m != null ? (
-                  <>
-                    <Metric
-                      label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
-                      value={fmtDist(shore.nearest_m)}
-                    />
-                    <table className="w-full text-sm mt-2">
-                      <tbody>
-                        <Row k="海岸線まで" v={fmtDist(shore.coast_m)} />
-                        <Row k="湖岸線まで（対岸≥1.5km）" v={fmtDist(shore.lake_m)} />
-                      </tbody>
-                    </table>
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      地表面粗度区分の判定用の距離のみ（区分の確定・個別パラメータは設計者判断）。
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm text-gray-400">取得できませんでした</p>
-                )}
-              </div>
             </div>
           </div>
 
@@ -347,6 +341,11 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
               radiusKm={radiusKm}
               viewVersion={viewVersion}
               overlay={overlay}
+              shorePoint={
+                shore && shore.nearest_lat != null && shore.nearest_lng != null
+                  ? { lat: shore.nearest_lat, lng: shore.nearest_lng }
+                  : null
+              }
               onPick={handleMapPick}
             />
             <div className="absolute top-3 left-3 z-[2] flex flex-col gap-1 bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-1 backdrop-blur-sm">
