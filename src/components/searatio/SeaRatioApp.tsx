@@ -277,29 +277,26 @@ const SeaRatioApp: React.FC<SeaRatioAppProps> = ({ onSuccess, onError }) => {
 };
 
 // オーバーレイの凡例（地図の塗り色と対応するグラデーションバー）。
-// 積雪深バンドの凡例（地図の step 色と一致）。下限cm→色。
-const DEPTH_LEGEND: [number, string][] = [
-  [5, '#c6dbef'], [20, '#9ecae1'], [50, '#6baed6'], [100, '#4292c6'], [150, '#2171b5'],
-  [200, '#08519c'], [300, '#08306b'], [500, '#54278f'], [800, '#3f007d'], [1200, '#2d004b'],
-];
+// 積雪深(連続カラー)の凡例グラデーション。raster-color ramp(0..1500cm)と一致。
+const DEPTH_GRADIENT =
+  'linear-gradient(to right,' +
+  'rgba(198,219,239,0.45) 0%,rgba(158,202,225,0.55) 3%,rgba(107,174,214,0.6) 7%,' +
+  'rgba(66,146,198,0.65) 13%,rgba(33,113,181,0.7) 20%,rgba(8,69,148,0.74) 33%,' +
+  'rgba(84,39,143,0.78) 53%,rgba(106,30,140,0.82) 80%,rgba(74,20,80,0.85) 100%)';
 
 const ZoneLegend: React.FC<{ overlay: Exclude<ZoneOverlay, 'none'> }> = ({ overlay }) => {
   if (overlay === 'depth') {
     return (
       <div className="pt-1">
-        <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-          {DEPTH_LEGEND.map(([lo, c], i) => {
-            const hi = DEPTH_LEGEND[i + 1]?.[0];
-            return (
-              <span key={lo} className="inline-flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-300">
-                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
-                {hi ? `${lo}–${hi}` : `${lo}+`}
-              </span>
-            );
-          })}
+        <div className="h-2 w-full rounded" style={{ background: DEPTH_GRADIENT }} />
+        <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+          <span>0</span>
+          <span>300</span>
+          <span>800</span>
+          <span>1500 cm</span>
         </div>
         <p className="text-[10px] text-gray-400 mt-1">
-          垂直積雪量 d=(α·H+β·rs+γ)×100 [cm]（標高は国土地理院DEM）。約5cm未満は非表示
+          垂直積雪量 d=(α·H+β·rs+γ)×100 [cm]（標高は国土地理院DEM）。無段階カラー・約5cm未満は透明
         </p>
       </div>
     );

@@ -27,22 +27,33 @@ const ZONE_FILL_COLOR: Record<'snow' | 'wind', maplibregl.ExpressionSpecificatio
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
 };
 
-// 積雪深バンド(d=バンド下限cm)の色（青→紫。build_snow_depth.py の BANDS と一致）。
-const DEPTH_FILL_COLOR: maplibregl.ExpressionSpecification = [
-  'step', ['get', 'd'],
-  '#c6dbef', 20, '#9ecae1', 50, '#6baed6', 100, '#4292c6', 150, '#2171b5',
-  200, '#08519c', 300, '#08306b', 500, '#54278f', 800, '#3f007d', 1200, '#2d004b',
-];
+// 積雪深は「値ラスター」。各ピクセルに d を 8bit エンコード(L=round(d/DMAX*255))。
+// maplibre の raster-color で GPU 連続着色するため、段差/境界のない無段階カラーになる。
+//   raster-color-mix=[DMAX,0,0,0] → raster-value≈d[cm]、range=[0,DMAX]、ramp で着色。
+const DEPTH_DMAX = 1500; // build_snow_depth.py の DMAX と一致
+// raster-value はこの maplibre 型定義に未収載だが実行時に有効(v4 raster-color)。castで通す。
+const DEPTH_COLOR_RAMP = [
+  'interpolate', ['linear'], ['raster-value'],
+  0, 'rgba(0,0,0,0)',
+  5, 'rgba(198,219,239,0.45)',
+  50, 'rgba(158,202,225,0.55)',
+  100, 'rgba(107,174,214,0.6)',
+  200, 'rgba(66,146,198,0.65)',
+  300, 'rgba(33,113,181,0.7)',
+  500, 'rgba(8,69,148,0.74)',
+  800, 'rgba(84,39,143,0.78)',
+  1200, 'rgba(106,30,140,0.82)',
+  1500, 'rgba(74,20,80,0.85)',
+] as unknown as maplibregl.ExpressionSpecification;
 
-// ベクタタイル(PMTiles)の同一オリジン取得パス。jiban-api /design/tiles を minitools の
-// Express が Range 転送する。tippecanoe の -l 名が source-layer になる。
+// ベクタタイル(区分)とラスタータイル(積雪深)の同一オリジン取得パス。jiban-api
+// /design/tiles を minitools の Express が Range 転送する。
 const ZONE_PMTILES: Record<'snow' | 'wind', string> = {
   snow: '/api/design/tiles/snow_zones.pmtiles',
   wind: '/api/design/tiles/wind_zones.pmtiles',
 };
 const ZONE_SOURCE_LAYER = 'zones';
 const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
-const DEPTH_SOURCE_LAYER = 'snow_depth';
 
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
 // (全タブ常時マウントのSPAなので、片方のアンマウントで他方を壊さないよう removeProtocol しない)。
@@ -185,18 +196,25 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           paint: { 'fill-color': ZONE_FILL_COLOR[kind], 'fill-opacity': 0.62 },
         });
       });
-      // 積雪深マップ（深さバンド）。source-layer は tippecanoe の -l snow_depth。
+      // 積雪深マップ（値ラスター → raster-color で無段階連続着色）。
       map.addSource('zones-depth', {
-        type: 'vector',
+        type: 'raster',
         url: `pmtiles://${origin}${DEPTH_PMTILES}`,
+        tileSize: 256,
       });
       map.addLayer({
         id: 'zones-depth-fill',
-        type: 'fill',
+        type: 'raster',
         source: 'zones-depth',
-        'source-layer': DEPTH_SOURCE_LAYER,
         layout: { visibility: 'none' },
-        paint: { 'fill-color': DEPTH_FILL_COLOR, 'fill-opacity': 0.62 },
+        // raster-color/-range/-mix はこの型定義に未収載のため cast(実行時に有効)。
+        paint: {
+          'raster-color': DEPTH_COLOR_RAMP,
+          'raster-color-range': [0, DEPTH_DMAX],
+          'raster-color-mix': [DEPTH_DMAX, 0, 0, 0],
+          'raster-resampling': 'linear',
+          'raster-opacity': 0.85,
+        } as unknown as maplibregl.RasterLayerSpecification['paint'],
       });
 
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
