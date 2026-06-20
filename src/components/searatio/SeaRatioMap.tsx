@@ -77,7 +77,12 @@ async function loadDepthTile(z: number, x: number, y: number): Promise<Uint8Clam
     if (!_depthPM) _depthPM = new pmtiles.PMTiles(`${window.location.origin}${DEPTH_PMTILES}`);
     const r = await _depthPM.getZxy(z, x, y);
     if (r) {
-      const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }));
+      // 値ラスターなので色変換/プリマルチを無効化して画素値を正確に読む（R は terrarium の
+      // 上位バイト=×256 なので 1 ずれると 256cm 狂う）。
+      const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }), {
+        premultiplyAlpha: 'none',
+        colorSpaceConversion: 'none',
+      });
       const cv = document.createElement('canvas');
       cv.width = 256;
       cv.height = 256;
@@ -176,8 +181,8 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
   overlayRef.current = overlay;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
-  // カーソル位置のオーバーレイ値ツールチップ
-  const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
+  // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
+  const [hover, setHover] = useState<string | null>(null);
   const hoverTokenRef = useRef(0);
 
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
@@ -318,10 +323,10 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
           const text =
             ov === 'snow'
               ? p.zone === 0
-                ? '積雪: 第0区（積雪なし）'
-                : `積雪: 第${p.zone}区`
-              : `風速: 第${p.zone}区 Vo${p.Vo}`;
-          setHover({ x: e.point.x, y: e.point.y, text });
+                ? '積雪区分: 第0区（積雪なし）'
+                : `積雪区分: 第${p.zone}区`
+              : `風速区分: 第${p.zone}区 Vo${p.Vo} m/s`;
+          setHover(text);
         } else {
           setHover(null);
         }
@@ -329,12 +334,10 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
       }
       // depth: 非同期デコード（古い応答は token で破棄）
       const token = ++hoverTokenRef.current;
-      const px = e.point.x;
-      const py = e.point.y;
       depthAtLngLat(e.lngLat.lng, e.lngLat.lat)
         .then((d) => {
           if (token !== hoverTokenRef.current) return;
-          setHover(d != null ? { x: px, y: py, text: `積雪深: 約 ${Math.round(d)} cm` } : null);
+          setHover(d != null ? `積雪深: 約 ${Math.round(d)} cm` : '積雪深: ほぼ0');
         })
         .catch(() => {});
     });
@@ -386,11 +389,8 @@ const SeaRatioMap: React.FC<SeaRatioMapProps> = ({
         地図をクリックして地点を指定
       </div>
       {hover && (
-        <div
-          className="absolute z-[3] pointer-events-none px-2 py-1 text-xs rounded bg-gray-900/85 text-white shadow whitespace-nowrap"
-          style={{ left: hover.x + 14, top: hover.y + 14 }}
-        >
-          {hover.text}
+        <div className="absolute bottom-2 left-2 z-[2] pointer-events-none px-2 py-1 text-[11px] rounded bg-gray-900/70 text-white shadow whitespace-nowrap">
+          {hover}
         </div>
       )}
     </div>
