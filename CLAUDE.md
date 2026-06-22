@@ -15,7 +15,7 @@ Tools (tab id → path → directory):
 3. **PDF Converter** (`pdf` → `/pdf` → `pdf/`) — PDF conversion utilities
 4. **Markdown Editor** (`markdown` → `/markdown` → `markdown/`) — markdown editing/preview
 5. **Boring Data** (`boring` → `/boring` → `boring/`) — geotechnical boring-log search over a full-height map (jiban-api backed)
-6. **Hazard Map** (`hazard` → `/hazard` → `hazard/`) — point lookup of 海率/標高 and design zones (基準風速/積雪/地震/積雪深) on a map (jiban-api `/api/design` backed). Legacy `/searatio` path still resolves here. PDF report export lives in `hazard/report/` and is reached only via a dynamic `import()` from the export button (keeps the heavy `@react-pdf/renderer` out of the initial bundle); the Japanese font is `public/fonts/NotoSansJP-Regular.otf`, and the map snapshot is grabbed via a `capturePng()` imperative handle on `HazardMap`.
+6. **Hazard Map** (`hazard` → `/hazard` → `hazard/`) — point lookup of 海率/標高 and design zones (基準風速/積雪/地震/積雪深) on a map (jiban-api `/api/design` backed). Legacy `/searatio` path still resolves here. PDF report export lives in `hazard/report/` (layout follows a provided design template — serif headings, 3 accent-colored load cards, formula box, shoreline schematic) and is reached only via a dynamic `import()` from the export button (keeps the heavy `@react-pdf/renderer` out of the initial bundle); fonts are `public/fonts/NotoSans{JP-Regular,JP-Bold}.otf` + `NotoSerifJP-SemiBold.otf` (lazy-fetched at generation, glyph-subset embedded), and the map snapshot is grabbed via a `capturePng()` imperative handle on `HazardMap`.
 7. **Section Calc** (`section` → `/section` → `section/`) — section property calculator
 8. **Steel Stress** (`steel` → `/steel` → `steel/`) — steel stress calculator
 
