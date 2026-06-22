@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, FileDown, Loader2 } from 'lucide-react';
 import HazardMap from './HazardMap';
-import type { ZoneOverlay } from './HazardMap';
+import type { ZoneOverlay, HazardMapHandle } from './HazardMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult } from './api';
+import type { HazardReportData } from './report/types';
 
 // 地図上のオーバーレイ切替アイコン
 const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?: string }>; label: string }[] = [
@@ -40,6 +41,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const [design, setDesign] = useState<DesignResult | null>(null);
   const [elevation, setElevation] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  // PDFレポート出力中フラグ（ボタンの多重実行防止 + スピナー表示）
+  const [exporting, setExporting] = useState(false);
+  // 地図のキャプチャ用ハンドル（レポート出力時にだけ使う）
+  const mapRef = useRef<HazardMapHandle>(null);
   // 選択地点の住所（リバースジオコーディング）
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [placeLoading, setPlaceLoading] = useState(false);
@@ -144,6 +149,75 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       ? snowDepthCm(snow, elevation, seaRatio)
       : null;
 
+  // PDFレポート出力。重い react-pdf は押下時に動的 import し（初期表示に乗せない）、
+  // 地図キャプチャと並行させる。クリック時点の state をスナップショットとして渡す。
+  const handleExport = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const [{ generateHazardPdf }, mapImage] = await Promise.all([
+        import('./report/generate'),
+        mapRef.current?.capturePng() ?? Promise.resolve(null),
+      ]);
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const generatedAt =
+        `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+        `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+      const data: HazardReportData = {
+        generatedAt,
+        point,
+        placeName,
+        elevation,
+        seaRatio,
+        landRatio,
+        radiusKm,
+        snow: snow
+          ? {
+              usable: snowUsable,
+              noSnow: !!snow.no_snow,
+              zone: snow.zone,
+              alpha: snow.alpha,
+              beta: snow.beta,
+              gamma: snow.gamma,
+              R: snow.R,
+              depthCm: depth,
+            }
+          : null,
+        wind: wind ? { usable: windUsable, zone: wind.zone, Vo: wind.Vo } : null,
+        shore: shore ? { nearestM: shore.nearest_m, nearestKind: shore.nearest_kind } : null,
+        seismic: seismic ? { usable: seismicUsable, zone: seismic.zone, Z: seismic.Z } : null,
+        mapImage,
+      };
+
+      await generateHazardPdf(data);
+      onSuccess?.('PDFレポートを出力しました');
+    } catch {
+      onError?.('PDFレポートの生成に失敗しました');
+    } finally {
+      setExporting(false);
+    }
+  }, [
+    exporting,
+    point,
+    placeName,
+    elevation,
+    seaRatio,
+    landRatio,
+    radiusKm,
+    snow,
+    wind,
+    shore,
+    seismic,
+    snowUsable,
+    windUsable,
+    seismicUsable,
+    depth,
+    onSuccess,
+    onError,
+  ]);
+
   const inputCls =
     'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
@@ -151,13 +225,31 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     <div className="h-full flex flex-col">
       {/* ヘッダー */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-          <TriangleAlert className="w-5 h-5 text-amber-500" />
-          Hazard Map
-        </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深を表示します。
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <TriangleAlert className="w-5 h-5 text-amber-500" />
+              Hazard Map
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深を表示します。
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting || loading}
+            title="表示中の地点の設計用荷重をPDFレポートとして出力します"
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+          >
+            {exporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            {exporting ? '生成中…' : 'PDFレポート'}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-hidden min-h-0">
@@ -338,6 +430,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           {/* 右: 地図 + オーバーレイ切替アイコン */}
           <div className="lg:col-span-2 h-[400px] lg:h-full lg:min-h-0 relative">
             <HazardMap
+              ref={mapRef}
               center={point}
               radiusKm={radiusKm}
               viewVersion={viewVersion}

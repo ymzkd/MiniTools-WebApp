@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
@@ -19,6 +19,12 @@ interface HazardMapProps {
   overlay: ZoneOverlay; // 薄いオーバーレイ（none / 風速区分 / 地震 / 積雪深）
   shorePoint: LatLng | null; // 最寄りの海岸線/湖岸線の点（中心からの測線を表示）
   onPick: (lat: number, lng: number) => void;
+}
+
+// PDFレポート用に、現在の地図表示をPNG(dataURL)で取り出すためのハンドル。
+// 親(HazardMapApp)が ref 経由でレポート出力時にだけ呼ぶ。常時コストは無い。
+export interface HazardMapHandle {
+  capturePng: () => Promise<string | null>;
 }
 
 // ゾーン番号→色。色が濃いほど区分番号が大きい（元アプリと同じ向き）。薄く重ねる。
@@ -203,14 +209,10 @@ function buildStyle(): maplibregl.StyleSpecification {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const HazardMap: React.FC<HazardMapProps> = ({
-  center,
-  radiusKm,
-  viewVersion,
-  overlay,
-  shorePoint,
-  onPick,
-}) => {
+const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap(
+  { center, radiusKm, viewVersion, overlay, shorePoint, onPick },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
@@ -224,6 +226,38 @@ const HazardMap: React.FC<HazardMapProps> = ({
   // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
   const [hover, setHover] = useState<string | null>(null);
   const hoverTokenRef = useRef(0);
+
+  // レポート出力時にだけ呼ばれる地図キャプチャ。triggerRepaint で確実に新しいフレームを
+  // 描かせ、idle（タイル読込・アニメーション完了）になってから canvas を PNG 化する。
+  // preserveDrawingBuffer:true（地図生成オプション）と併用して読み出しを確実にする。
+  useImperativeHandle(
+    ref,
+    () => ({
+      capturePng: () =>
+        new Promise<string | null>((resolve) => {
+          const map = mapRef.current;
+          if (!map) {
+            resolve(null);
+            return;
+          }
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            try {
+              resolve(map.getCanvas().toDataURL('image/png'));
+            } catch {
+              resolve(null);
+            }
+          };
+          map.once('idle', finish);
+          // idle が発火しないケースの保険（既に idle 等）。
+          setTimeout(finish, 2000);
+          map.triggerRepaint();
+        }),
+    }),
+    []
+  );
 
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
   const applyOverlay = useCallback((kind: ZoneOverlay) => {
@@ -254,6 +288,9 @@ const HazardMap: React.FC<HazardMapProps> = ({
       center: [center.lng, center.lat],
       zoom: 10,
       attributionControl: { compact: true },
+      // PDFレポート用に getCanvas().toDataURL() で確実にキャプチャするため必要。
+      // 単一の小さな地図で、描画はインタラクション時のみ。アイドル時の追加コストは無い。
+      canvasContextAttributes: { preserveDrawingBuffer: true },
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
@@ -498,7 +535,7 @@ const HazardMap: React.FC<HazardMapProps> = ({
       )}
     </div>
   );
-};
+});
 
 function updateData(map: maplibregl.Map, center: LatLng, radiusKm: number) {
   const circle = map.getSource('circle') as maplibregl.GeoJSONSource | undefined;
