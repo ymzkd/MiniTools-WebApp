@@ -122,6 +122,7 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
         <div style={{ position: 'absolute', bottom: '8px', left: '9px', right: '9px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <div style={{ fontSize: '9px', color: 'rgb(122,119,111)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>
             対象地点（赤点）／ 海率算定円 R = {data.radiusKm} km（破線）
+            {shoreM != null ? `／ 最寄りの海岸線・湖岸線への測線（橙破線）` : ''}
           </div>
           <div style={{ fontSize: '8.5px', color: 'rgb(154,151,143)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>© 国土地理院</div>
         </div>

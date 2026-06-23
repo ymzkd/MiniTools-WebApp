@@ -243,6 +243,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         new Promise<string | null>((resolve) => {
           const center = centerRef.current;
           const radiusKm = radiusRef.current;
+          const shore = shorePointRef.current;
           // 横長カード（マップ全幅）に合わせたアスペクトで高解像度に描く。
           const container = document.createElement('div');
           Object.assign(container.style, {
@@ -290,11 +291,25 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
               m.addSource('cap-circle', { type: 'geojson', data: circle });
               m.addLayer({ id: 'cap-circle-fill', type: 'fill', source: 'cap-circle', paint: { 'fill-color': '#5a6f93', 'fill-opacity': 0.08 } });
               m.addLayer({ id: 'cap-circle-line', type: 'line', source: 'cap-circle', paint: { 'line-color': '#5a6f93', 'line-width': 1.5, 'line-dasharray': [2, 2] } });
+              // 最寄りの海岸線/湖岸線への測線＋最寄り点（ライブ地図と同じ橙の破線）
+              if (shore) {
+                const shoreFc: GeoJSON.FeatureCollection = {
+                  type: 'FeatureCollection',
+                  features: [
+                    { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[center.lng, center.lat], [shore.lng, shore.lat]] } },
+                    { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [shore.lng, shore.lat] } },
+                  ],
+                };
+                m.addSource('cap-shore', { type: 'geojson', data: shoreFc });
+                m.addLayer({ id: 'cap-shore-line', type: 'line', source: 'cap-shore', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [2, 1.5] } });
+                m.addLayer({ id: 'cap-shore-pt', type: 'circle', source: 'cap-shore', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 4, 'circle-color': '#f59e0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+              }
               m.addSource('cap-marker', { type: 'geojson', data: marker });
               m.addLayer({ id: 'cap-marker', type: 'circle', source: 'cap-marker', paint: { 'circle-radius': 5, 'circle-color': '#c0392b', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } });
-              // 円全体が収まるよう表示範囲を合わせる
+              // 円全体（と測線の最寄り点）が収まるよう表示範囲を合わせる
               const b = new maplibregl.LngLatBounds();
               for (const c of circleCoords(center.lat, center.lng, radiusKm)) b.extend(c as [number, number]);
+              if (shore) b.extend([shore.lng, shore.lat]);
               m.fitBounds(b, { padding: 30, animate: false, maxZoom: 14 });
               m.once('idle', grab);
               setTimeout(grab, 4000); // タイル待ちの保険
