@@ -227,33 +227,82 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
   const [hover, setHover] = useState<string | null>(null);
   const hoverTokenRef = useRef(0);
 
-  // レポート出力時にだけ呼ばれる地図キャプチャ。triggerRepaint で確実に新しいフレームを
-  // 描かせ、idle（タイル読込・アニメーション完了）になってから canvas を PNG 化する。
-  // preserveDrawingBuffer:true（地図生成オプション）と併用して読み出しを確実にする。
+  // capturePng が常に最新の中心・半径を参照できるようにする。
+  const centerRef = useRef(center);
+  centerRef.current = center;
+  const radiusRef = useRef(radiusKm);
+  radiusRef.current = radiusKm;
+
+  // レポート出力用の地図キャプチャ。ライブ地図には一切触れず、画面外に専用の地図を
+  // 生成して「オーバーレイなし・指定地点中心・積雪算定円が全体に収まるズーム」で描画し、
+  // PNG 化する。これによりページ本体のズーム/位置/オーバーレイ表示は完全に維持される。
   useImperativeHandle(
     ref,
     () => ({
       capturePng: () =>
         new Promise<string | null>((resolve) => {
-          const map = mapRef.current;
-          if (!map) {
-            resolve(null);
-            return;
-          }
+          const center = centerRef.current;
+          const radiusKm = radiusRef.current;
+          // 横長カード（マップ全幅）に合わせたアスペクトで高解像度に描く。
+          const container = document.createElement('div');
+          Object.assign(container.style, {
+            position: 'fixed', left: '-10000px', top: '0', width: '1100px', height: '480px',
+          } as Partial<CSSStyleDeclaration>);
+          document.body.appendChild(container);
+
+          let map: maplibregl.Map | null = null;
           let done = false;
-          const finish = () => {
+          const cleanup = () => {
+            try { map?.remove(); } catch { /* noop */ }
+            try { container.remove(); } catch { /* noop */ }
+          };
+          const finish = (val: string | null) => {
             if (done) return;
             done = true;
-            try {
-              resolve(map.getCanvas().toDataURL('image/png'));
-            } catch {
-              resolve(null);
-            }
+            try { resolve(val); } finally { cleanup(); }
           };
-          map.once('idle', finish);
-          // idle が発火しないケースの保険（既に idle 等）。
-          setTimeout(finish, 2000);
-          map.triggerRepaint();
+          const grab = () => {
+            try { finish(map!.getCanvas().toDataURL('image/png')); }
+            catch { finish(null); }
+          };
+
+          try {
+            map = new maplibregl.Map({
+              container,
+              style: buildStyle(), // ベース(GSI)のみ。オーバーレイは一切追加しない。
+              center: [center.lng, center.lat],
+              zoom: 8,
+              interactive: false,
+              attributionControl: false,
+              canvasContextAttributes: { preserveDrawingBuffer: true },
+            });
+            map.on('error', () => finish(null));
+            map.on('load', () => {
+              const m = map!;
+              const circle: GeoJSON.Feature = {
+                type: 'Feature', properties: {},
+                geometry: { type: 'Polygon', coordinates: [circleCoords(center.lat, center.lng, radiusKm)] },
+              };
+              const marker: GeoJSON.Feature = {
+                type: 'Feature', properties: {},
+                geometry: { type: 'Point', coordinates: [center.lng, center.lat] },
+              };
+              m.addSource('cap-circle', { type: 'geojson', data: circle });
+              m.addLayer({ id: 'cap-circle-fill', type: 'fill', source: 'cap-circle', paint: { 'fill-color': '#5a6f93', 'fill-opacity': 0.08 } });
+              m.addLayer({ id: 'cap-circle-line', type: 'line', source: 'cap-circle', paint: { 'line-color': '#5a6f93', 'line-width': 1.5, 'line-dasharray': [2, 2] } });
+              m.addSource('cap-marker', { type: 'geojson', data: marker });
+              m.addLayer({ id: 'cap-marker', type: 'circle', source: 'cap-marker', paint: { 'circle-radius': 5, 'circle-color': '#c0392b', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } });
+              // 円全体が収まるよう表示範囲を合わせる
+              const b = new maplibregl.LngLatBounds();
+              for (const c of circleCoords(center.lat, center.lng, radiusKm)) b.extend(c as [number, number]);
+              m.fitBounds(b, { padding: 30, animate: false, maxZoom: 14 });
+              m.once('idle', grab);
+              setTimeout(grab, 4000); // タイル待ちの保険
+            });
+            setTimeout(() => finish(null), 9000); // 全体の保険
+          } catch {
+            finish(null);
+          }
         }),
     }),
     []
@@ -288,9 +337,6 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       center: [center.lng, center.lat],
       zoom: 10,
       attributionControl: { compact: true },
-      // PDFレポート用に getCanvas().toDataURL() で確実にキャプチャするため必要。
-      // 単一の小さな地図で、描画はインタラクション時のみ。アイドル時の追加コストは無い。
-      canvasContextAttributes: { preserveDrawingBuffer: true },
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,

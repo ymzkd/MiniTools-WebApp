@@ -34,10 +34,7 @@ function CardShell({
     <div style={{ flex: 1, border: '1px solid rgb(217,214,207)', display: 'flex', flexDirection: 'column' }}>
       <div style={{ height: '3px', background: accent }} />
       <div style={{ padding: '9px 12px 8px', borderBottom: '1px solid rgb(226,223,216)' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <div style={{ fontFamily: MINCHO, fontWeight: 600, fontSize: '15px' }}>{title}</div>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: accent }} />
-        </div>
+        <div style={{ fontFamily: MINCHO, fontWeight: 600, fontSize: '15px' }}>{title}</div>
         <div style={{ fontSize: '9px', color: 'rgb(154,151,143)', marginTop: '2px' }}>{law}</div>
       </div>
       {children}
@@ -111,55 +108,22 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
         </div>
       </div>
 
-      {/* 地図 ＋ 海岸線距離 */}
-      <div style={{ marginTop: '12px', display: 'flex', gap: '10px', height: '300px' }}>
-        {/* 地図 */}
-        <div style={{ flex: '1.85 1 0', border: '1px solid rgb(217,214,207)', position: 'relative', background: 'rgb(241,239,233)', overflow: 'hidden' }}>
-          {data.mapImage ? (
-            <img src={data.mapImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '236px', height: '236px', border: '1.5px dashed rgb(90,111,147)', borderRadius: '50%', background: 'rgba(90,111,147,0.07)' }} />
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '9px', height: '9px', borderRadius: '50%', background: 'rgb(192,57,43)' }} />
-              <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, transform: 'translateY(20px)', textAlign: 'center', fontSize: '11px', color: 'rgb(122,119,111)' }}>地図を取得できませんでした</div>
-            </>
-          )}
-          <div style={{ position: 'absolute', bottom: '8px', left: '9px', right: '9px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <div style={{ fontSize: '9px', color: 'rgb(122,119,111)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>
-              対象地点（赤点）／ 海率算定円 R = {data.radiusKm} km（破線）
-            </div>
-            <div style={{ fontSize: '8.5px', color: 'rgb(154,151,143)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>© 国土地理院</div>
+      {/* 地図（全幅。指定地点中心・積雪算定円が全体に収まるよう描画） */}
+      <div style={{ marginTop: '12px', height: '300px', border: '1px solid rgb(217,214,207)', position: 'relative', background: 'rgb(241,239,233)', overflow: 'hidden' }}>
+        {data.mapImage ? (
+          <img src={data.mapImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '236px', height: '236px', border: '1.5px dashed rgb(90,111,147)', borderRadius: '50%', background: 'rgba(90,111,147,0.07)' }} />
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '9px', height: '9px', borderRadius: '50%', background: 'rgb(192,57,43)' }} />
+            <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, transform: 'translateY(20px)', textAlign: 'center', fontSize: '11px', color: 'rgb(122,119,111)' }}>地図を取得できませんでした</div>
+          </>
+        )}
+        <div style={{ position: 'absolute', bottom: '8px', left: '9px', right: '9px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          <div style={{ fontSize: '9px', color: 'rgb(122,119,111)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>
+            対象地点（赤点）／ 海率算定円 R = {data.radiusKm} km（破線）
           </div>
-        </div>
-        {/* 海岸線距離 */}
-        <div style={{ flex: '1 1 0', border: '1px solid rgb(217,214,207)', background: '#fff', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '7px 11px', borderBottom: '1px solid rgb(226,223,216)', fontSize: '10px', letterSpacing: '0.1em', color: 'rgb(58,56,51)', fontWeight: 500 }}>
-            海岸線・湖岸線までの距離
-          </div>
-          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-            {shoreM != null ? (
-              <>
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgb(223,233,240) 0%, rgb(207,224,234) 100%)', clipPath: 'polygon(100% 0, 100% 100%, 18% 100%)' }} />
-                <div style={{ position: 'absolute', inset: 0, background: 'rgb(241,237,228)', clipPath: 'polygon(0 0, 100% 0, 18% 100%, 0 100%)' }} />
-                <svg viewBox="0 0 200 130" preserveAspectRatio="none" style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }}>
-                  <line x1="160" y1="-10" x2="36" y2="140" stroke="#3f6f8f" strokeWidth="1.6" />
-                  <line x1="58" y1="52" x2="116" y2="86" stroke="#c0392b" strokeWidth="1.3" strokeDasharray="4 3" />
-                  <circle cx="58" cy="52" r="4" fill="#c0392b" />
-                </svg>
-                <div style={{ position: 'absolute', left: '14px', top: '30px', fontSize: '9px', color: 'rgb(138,106,74)', fontWeight: 500 }}>陸</div>
-                <div style={{ position: 'absolute', right: '16px', bottom: '18px', fontSize: '9px', color: 'rgb(63,111,143)', fontWeight: 500 }}>海</div>
-                <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', background: '#fff', border: '1px solid rgb(217,214,207)', padding: '3px 8px', fontVariantNumeric: 'tabular-nums', fontSize: '13px', fontWeight: 700, color: 'rgb(36,59,83)' }}>
-                  {shoreM < 1000 ? Math.round(shoreM) : (shoreM / 1000).toFixed(shoreM < 10000 ? 2 : 1)}
-                  <span style={{ fontSize: '9px', fontWeight: 500, color: 'rgb(107,104,98)', marginLeft: '2px' }}>{shoreM < 1000 ? 'm' : 'km'}</span>
-                </div>
-              </>
-            ) : (
-              <div style={muted}>取得できませんでした</div>
-            )}
-          </div>
-          <div style={{ padding: '6px 11px', borderTop: '1px solid rgb(226,223,216)', fontSize: '8.5px', color: 'rgb(154,151,143)', lineHeight: 1.5 }}>
-            最寄りの海岸線・湖岸線までの直線距離。地表面粗度区分の判定の目安。
-          </div>
+          <div style={{ fontSize: '8.5px', color: 'rgb(154,151,143)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>© 国土地理院</div>
         </div>
       </div>
 
