@@ -149,14 +149,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       ? snowDepthCm(snow, elevation, seaRatio)
       : null;
 
-  // PDFレポート出力。重い react-pdf は押下時に動的 import し（初期表示に乗せない）、
-  // 地図キャプチャと並行させる。クリック時点の state をスナップショットとして渡す。
+  // PDFレポート出力。レポート描画モジュールは押下時に動的 import し（初期表示に乗せない）、
+  // 地図キャプチャと並行させる。クリック時点の state をスナップショットとして渡し、
+  // ブラウザの「印刷 → PDFに保存」で出力する（フォントはユーザーのローカル書体を使用）。
   const handleExport = useCallback(async () => {
     if (exporting) return;
     setExporting(true);
     try {
-      const [{ generateHazardPdf }, mapImage] = await Promise.all([
-        import('./report/generate'),
+      const [{ printHazardReport }, mapImage] = await Promise.all([
+        import('./report/print'),
         mapRef.current?.capturePng() ?? Promise.resolve(null),
       ]);
       const now = new Date();
@@ -191,8 +192,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         mapImage,
       };
 
-      await generateHazardPdf(data);
-      onSuccess?.('PDFレポートを出力しました');
+      await printHazardReport(data);
+      onSuccess?.('印刷ダイアログを開きました（送信先で「PDFに保存」を選択してください）');
     } catch {
       onError?.('PDFレポートの生成に失敗しました');
     } finally {
