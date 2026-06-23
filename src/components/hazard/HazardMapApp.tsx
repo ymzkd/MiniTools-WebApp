@@ -1,9 +1,17 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay } from './HazardMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
-import type { DesignResult } from './api';
+import type { DesignResult, Authority, AuthorityType } from './api';
+
+// 特定行政庁の区分(type)の日本語ラベル。
+const AUTHORITY_TYPE_LABEL: Record<AuthorityType, string> = {
+  prefecture: '都道府県知事',
+  city_full: '建築主事設置市',
+  city_limited: '限定特定行政庁',
+  special_ward: '特別区',
+};
 
 // 地図上のオーバーレイ切替アイコン。カテゴリごとに1つのアイコンを持ち、同じアイコンを
 // 押すたびに category 内の variant をループで巡回する（例: 積雪アイコン → 積雪深 →
@@ -28,7 +36,16 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
       { val: 'snow_zones', label: '積雪地域区分' },
     ],
   },
-  { key: 'urban', Icon: Building2, label: '都市計画区域', variants: [{ val: 'urban', label: '都市計画区域' }] },
+  {
+    key: 'urban',
+    Icon: Building2,
+    label: '都市計画区域',
+    // 押すたびに 都市計画区域(外形) ↔ 特定行政庁(建築基準法の所管庁分布) をループ切替。
+    variants: [
+      { val: 'urban', label: '都市計画区域' },
+      { val: 'authority', label: '特定行政庁' },
+    ],
+  },
 ];
 
 interface HazardMapAppProps {
@@ -158,6 +175,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const shore = design?.shore ?? null;
   const seaRatio = design?.sea_ratio ?? null;
   const landRatio = design?.land_ratio ?? null;
+  const building = design?.building_authority ?? null;
 
   // 標高が取れる＝陸とみなす。区域ポリゴン外(海岸線変化の埋立地等)でも、陸なら
   // 最寄り区分(nearest)を採用して計算する。陸と判定できなければ採用しない＝海上扱い。
@@ -183,7 +201,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           Hazard Map
         </h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深を表示します。
+          地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁を表示します。
         </p>
       </div>
 
@@ -359,6 +377,38 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                   </p>
                 )}
               </div>
+
+              {/* 特定行政庁（建築基準法） */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                  特定行政庁（建築基準法）
+                </h3>
+                {building && (building.all || building.small) ? (
+                  <div className="space-y-2">
+                    {building.split ? (
+                      <>
+                        <AuthorityCard scaleLabel="小規模" sub="法6条1項一〜三号以外の規模" au={building.small} />
+                        <AuthorityCard scaleLabel="大規模" sub="法6条1項一〜三号の規模" au={building.large} />
+                        <p className="text-[11px] text-gray-400">
+                          建築物の規模で所管が分かれる地点です（限定特定行政庁・特別区）。規模の境界は施行令148条/149条の現行条文によります。
+                        </p>
+                      </>
+                    ) : (
+                      <AuthorityCard au={building.all} />
+                    )}
+                    {building.nearest ? (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-500">
+                        区域外のため最寄りの庁を表示（約{building.nearest_km?.toFixed(1)}km）。
+                      </p>
+                    ) : null}
+                    <p className="text-[11px] text-gray-400">
+                      庁区分: 令和7年4月1日現在（全国建築審査会協議会）。URLは参考値のため最終確認は各庁の窓口で。
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">取得できませんでした（海上など）</p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -496,5 +546,48 @@ const Row: React.FC<{ k: string; v: string }> = ({ k, v }) => (
     <td className="py-1 text-right font-medium text-gray-900 dark:text-gray-100">{v}</td>
   </tr>
 );
+
+// 1つの特定行政庁を、庁名・区分・公式URLリンクで表示する。規模分割地点では小規模/大規模の
+// それぞれに scaleLabel（小規模/大規模）を付けて2枚並べる。
+const AuthorityCard: React.FC<{ au?: Authority; scaleLabel?: string; sub?: string }> = ({
+  au,
+  scaleLabel,
+  sub,
+}) => {
+  if (!au) return null;
+  return (
+    <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="min-w-0">
+          {scaleLabel ? (
+            <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 mr-1">
+              {scaleLabel}
+            </span>
+          ) : null}
+          <span className="text-sm font-bold text-gray-900 dark:text-gray-100">{au.name}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+            {AUTHORITY_TYPE_LABEL[au.type] ?? au.type}
+          </span>
+        </div>
+        {au.url ? (
+          <a
+            href={au.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 inline-flex items-center gap-0.5 text-xs text-blue-500 hover:underline"
+            title={au.url}
+          >
+            公式ページ
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        ) : null}
+      </div>
+      <div className="text-[11px] text-gray-400 mt-0.5">
+        {au.legal_basis}
+        {sub ? ` ・ ${sub}` : ''}
+      </div>
+    </div>
+  );
+};
 
 export default HazardMapApp;
