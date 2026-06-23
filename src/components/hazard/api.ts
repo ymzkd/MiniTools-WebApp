@@ -36,6 +36,27 @@ export interface ShoreInfo {
   nearest_lat: number | null;
 }
 
+// 特定行政庁(建築基準法)。区分(type)= 都道府県知事 / 全規模を置く市 / 限定特定行政庁 / 特別区。
+export type AuthorityType = 'prefecture' | 'city_full' | 'city_limited' | 'special_ward';
+export interface Authority {
+  authority_id: string;
+  name: string;
+  type: AuthorityType;
+  legal_basis: string;
+  url: string | null;
+}
+// 単独所管なら all、規模で分かれる地点(限定/特別区)は small(区市町村側)/large(知事側)の両方。
+export interface BuildingAuthority {
+  pref: string | null;
+  split: boolean;
+  all?: Authority; // split=false
+  small?: Authority; // split=true（区市町村長・区長）
+  large?: Authority; // split=true（都道府県知事・都知事）
+  scale_rule?: string;
+  nearest?: boolean; // 区域外で最寄り庁を補完したとき
+  nearest_km?: number;
+}
+
 export interface DesignResult {
   lat: number;
   lng: number;
@@ -43,6 +64,7 @@ export interface DesignResult {
   snow: SnowParams | null;
   seismic: SeismicParams | null;
   shore: ShoreInfo | null;
+  building_authority: BuildingAuthority | null;
   radius_km: number;
   sea_ratio: number;
   land_ratio: number;
