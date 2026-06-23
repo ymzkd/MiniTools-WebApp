@@ -8,7 +8,7 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth' | 'snow_zones';
+export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth' | 'snow_zones' | 'authority';
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -76,6 +76,27 @@ const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
 const URBAN_SOURCE_LAYER = 'urban';
 const URBAN_FILL_COLOR = '#9ca3af'; // gray-400
 
+// 特定行政庁(建築基準法)の分布。authority_zones.pmtiles(source-layer='zones')を庁の区分(type)で
+// 4色に塗り分ける。属性は build_authority_geojson.py のフラット属性(p_type/p_name/split/l_name…)。
+const AUTHORITY_PMTILES = '/api/design/tiles/authority_zones.pmtiles';
+const AUTHORITY_SOURCE_LAYER = 'zones';
+// 区分(type)→色。知事=緑 / 建築主事設置市=青 / 限定特定行政庁=橙 / 特別区=紫。
+const AUTHORITY_TYPE_COLOR: maplibregl.ExpressionSpecification = [
+  'match', ['get', 'p_type'],
+  'prefecture', '#66bd63',
+  'city_full', '#3182bd',
+  'city_limited', '#fdae61',
+  'special_ward', '#8856a7',
+  '#bdbdbd',
+];
+// 区分(type)の日本語ラベル（凡例/ホバー用）。
+const AUTHORITY_TYPE_LABEL: Record<string, string> = {
+  prefecture: '都道府県知事',
+  city_full: '建築主事設置市',
+  city_limited: '限定特定行政庁',
+  special_ward: '特別区',
+};
+
 // 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
 const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string; min: string; max: string }> = {
   wind: {
@@ -112,6 +133,15 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
       'linear-gradient(to right,#1f77b4,#ff7f0e,#2ca02c,#d62728,#9467bd,' +
       '#8c564b,#e377c2,#17becf,#bcbd22,#393b79)',
     min: '区分ごとに配色',
+    max: '',
+  },
+  authority: {
+    title: '特定行政庁（建築基準法）',
+    // 庁の区分で色分け（知事=緑 / 主事設置市=青 / 限定=橙 / 特別区=紫）の4色ハードストップ。
+    grad:
+      'linear-gradient(to right,#66bd63 0 25%,#3182bd 25% 50%,' +
+      '#fdae61 50% 75%,#8856a7 75% 100%)',
+    min: '知事 / 市 / 限定 / 特別区',
     max: '',
   },
 };
@@ -264,6 +294,9 @@ const HazardMap: React.FC<HazardMapProps> = ({
     if (map.getLayer('zones-urban-fill')) {
       map.setLayoutProperty('zones-urban-fill', 'visibility', kind === 'urban' ? 'visible' : 'none');
     }
+    if (map.getLayer('zones-authority-fill')) {
+      map.setLayoutProperty('zones-authority-fill', 'visibility', kind === 'authority' ? 'visible' : 'none');
+    }
     if (map.getLayer('zones-depth-fill')) {
       map.setLayoutProperty('zones-depth-fill', 'visibility', kind === 'depth' ? 'visible' : 'none');
     }
@@ -355,6 +388,20 @@ const HazardMap: React.FC<HazardMapProps> = ({
         'source-layer': URBAN_SOURCE_LAYER,
         layout: { visibility: 'none' },
         paint: { 'fill-color': URBAN_FILL_COLOR, 'fill-opacity': 0.45 },
+      });
+
+      // 特定行政庁（建築基準法）の分布。庁の区分(type)で4色に塗り分け。
+      map.addSource('zones-authority', {
+        type: 'vector',
+        url: `pmtiles://${origin}${AUTHORITY_PMTILES}`,
+      });
+      map.addLayer({
+        id: 'zones-authority-fill',
+        type: 'fill',
+        source: 'zones-authority',
+        'source-layer': AUTHORITY_SOURCE_LAYER,
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': AUTHORITY_TYPE_COLOR, 'fill-opacity': 0.5 },
       });
 
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
@@ -451,6 +498,19 @@ const HazardMap: React.FC<HazardMapProps> = ({
         if (fs.length) {
           const p = fs[0].properties || {};
           setHover(`積雪区分: 第${p.zone}区 (α${p.alpha} β${p.beta} γ${p.gamma})`);
+        } else {
+          setHover(null);
+        }
+        return;
+      }
+      if (ov === 'authority') {
+        const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-authority-fill'] });
+        if (fs.length) {
+          const p = fs[0].properties || {};
+          const typeLabel = AUTHORITY_TYPE_LABEL[p.p_type as string] ?? '';
+          // 規模分割地点は小規模側(主たる庁)を表示し、大規模側を併記。
+          const large = p.split ? `／大規模:${p.l_name}` : '';
+          setHover(`特定行政庁: ${p.p_name}${typeLabel ? `（${typeLabel}）` : ''}${large}`);
         } else {
           setHover(null);
         }
