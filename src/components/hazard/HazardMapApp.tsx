@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, FileDown, Loader2 } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, Printer, Loader2 } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle } from './HazardMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
@@ -240,15 +240,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
             type="button"
             onClick={handleExport}
             disabled={exporting || loading}
-            title="表示中の地点の設計用荷重をPDFレポートとして出力します"
+            title="表示中の地点の設計用荷重レポートを印刷（プリンタまたはPDFに保存）します"
             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
           >
             {exporting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <FileDown className="w-4 h-4" />
+              <Printer className="w-4 h-4" />
             )}
-            {exporting ? '生成中…' : 'PDFレポート'}
+            {exporting ? '準備中…' : '印刷'}
           </button>
         </div>
       </div>
