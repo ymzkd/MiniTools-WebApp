@@ -5,13 +5,30 @@ import type { ZoneOverlay } from './HazardMap';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult } from './api';
 
-// 地図上のオーバーレイ切替アイコン
-const OVERLAY_ITEMS: { val: ZoneOverlay; Icon: React.ComponentType<{ className?: string }>; label: string }[] = [
-  { val: 'none', Icon: EyeOff, label: 'オフ' },
-  { val: 'wind', Icon: Wind, label: '風速区分' },
-  { val: 'seismic', Icon: Activity, label: '地震地域係数' },
-  { val: 'depth', Icon: Snowflake, label: '積雪深マップ' },
-  { val: 'urban', Icon: Building2, label: '都市計画区域' },
+// 地図上のオーバーレイ切替アイコン。カテゴリごとに1つのアイコンを持ち、同じアイコンを
+// 押すたびに category 内の variant をループで巡回する（例: 積雪アイコン → 積雪深 →
+// 積雪地域区分 → 積雪深 …）。「オフ」だけは独立したボタンとして常に残す。
+type OverlayVariant = Exclude<ZoneOverlay, 'none'>;
+interface OverlayCategory {
+  key: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  label: string; // カテゴリ名（単一 variant のときの既定表示）
+  variants: { val: OverlayVariant; label: string }[];
+}
+const OVERLAY_CATEGORIES: OverlayCategory[] = [
+  { key: 'wind', Icon: Wind, label: '風速区分', variants: [{ val: 'wind', label: '風速区分' }] },
+  { key: 'seismic', Icon: Activity, label: '地震地域係数', variants: [{ val: 'seismic', label: '地震地域係数' }] },
+  {
+    key: 'snow',
+    Icon: Snowflake,
+    label: '積雪',
+    // 押すたびに 積雪深(連続ラスター) ↔ 積雪地域区分(告示の区分ポリゴン) をループ切替。
+    variants: [
+      { val: 'depth', label: '積雪深マップ' },
+      { val: 'snow_zones', label: '積雪地域区分' },
+    ],
+  },
+  { key: 'urban', Icon: Building2, label: '都市計画区域', variants: [{ val: 'urban', label: '都市計画区域' }] },
 ];
 
 interface HazardMapAppProps {
@@ -85,6 +102,16 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
 
   const handleMapPick = useCallback((lat: number, lng: number) => {
     setPoint({ lat, lng });
+  }, []);
+
+  // カテゴリのアイコンを押したときの切替。未選択なら先頭 variant、選択中なら次の
+  // variant をループで巡回する（末尾でオフにはしない）。オフは別ボタンが担当。
+  const cycleCategory = useCallback((cat: OverlayCategory) => {
+    setOverlay((cur) => {
+      const idx = cat.variants.findIndex((v) => v.val === cur);
+      const next = idx === -1 ? 0 : (idx + 1) % cat.variants.length;
+      return cat.variants[next].val;
+    });
   }, []);
 
   // 検索：カンマ区切りの「緯度,経度」ならそこへ移動、そうでなければ住所・地名でジオコーディング。
@@ -350,22 +377,62 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               onPick={handleMapPick}
             />
             <div className="absolute top-3 left-3 z-[2] flex flex-col gap-1 bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-1 backdrop-blur-sm">
-              {OVERLAY_ITEMS.map(({ val, Icon, label }) => (
-                <button
-                  key={val}
-                  type="button"
-                  title={label}
-                  aria-label={label}
-                  onClick={() => setOverlay(val)}
-                  className={`inline-flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
-                    overlay === val
-                      ? 'bg-blue-500 text-white'
-                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <Icon className="w-5 h-5" />
-                </button>
-              ))}
+              {/* オフは独立したボタン（カテゴリのループには含めない） */}
+              <button
+                type="button"
+                title="オフ"
+                aria-label="オフ"
+                onClick={() => setOverlay('none')}
+                className={`inline-flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
+                  overlay === 'none'
+                    ? 'bg-blue-500 text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <EyeOff className="w-5 h-5" />
+              </button>
+              {OVERLAY_CATEGORIES.map((cat) => {
+                const activeIdx = cat.variants.findIndex((v) => v.val === overlay);
+                const active = activeIdx !== -1;
+                const multi = cat.variants.length > 1;
+                const curLabel = active ? cat.variants[activeIdx].label : cat.label;
+                const title = multi
+                  ? `${curLabel}（クリックで切替: ${cat.variants.map((v) => v.label).join(' / ')}）`
+                  : cat.label;
+                return (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    title={title}
+                    aria-label={curLabel}
+                    onClick={() => cycleCategory(cat)}
+                    className={`inline-flex flex-col items-center justify-center gap-0.5 w-9 h-9 rounded-md transition-colors ${
+                      active
+                        ? 'bg-blue-500 text-white'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <cat.Icon className="w-5 h-5" />
+                    {/* 複数 variant のカテゴリは現在位置をドットで示し「押すと切替わる」ことを伝える */}
+                    {multi && (
+                      <span className="flex gap-0.5">
+                        {cat.variants.map((v, i) => (
+                          <span
+                            key={v.val}
+                            className={`block w-1 h-1 rounded-full ${
+                              active && i === activeIdx
+                                ? 'bg-white'
+                                : active
+                                  ? 'bg-white/40'
+                                  : 'bg-gray-400/60'
+                            }`}
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

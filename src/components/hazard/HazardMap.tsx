@@ -8,7 +8,7 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth';
+export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth' | 'snow_zones';
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -23,10 +23,23 @@ interface HazardMapProps {
 
 // ゾーン番号→色。色が濃いほど区分番号が大きい（元アプリと同じ向き）。薄く重ねる。
 // 積雪は青系(第1〜40区)、風速は赤系(第1〜9区)。
-const ZONE_FILL_COLOR: Record<'wind' | 'seismic', maplibregl.ExpressionSpecification> = {
+const ZONE_FILL_COLOR: Record<'wind' | 'seismic' | 'snow_zones', maplibregl.ExpressionSpecification> = {
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
   // 地震地域係数 Z（大きいほど地震荷重が大）。Z=0.7淡 → 1.0濃赤。
   seismic: ['interpolate', ['linear'], ['get', 'Z'], 0.7, '#fee08b', 0.8, '#fdae61', 0.9, '#f46d43', 1.0, '#d73027'],
+  // 積雪荷重の地域区分（平12建告1455号、第0〜40区）。連続値ではなく離散区分なので、
+  // 隣り合う区が必ず別色になるよう高コントラスト10色を zone%10 で循環割当する。
+  // 第0区＝積雪なしは中立グレー。zone は離散なので match（補間しない）。
+  snow_zones: [
+    'match', ['get', 'zone'],
+    0, '#d9d9d9',
+    [
+      'match', ['%', ['get', 'zone'], 10],
+      0, '#1f77b4', 1, '#ff7f0e', 2, '#2ca02c', 3, '#d62728', 4, '#9467bd',
+      5, '#8c564b', 6, '#e377c2', 7, '#17becf', 8, '#bcbd22', 9, '#393b79',
+      '#888888',
+    ],
+  ] as unknown as maplibregl.ExpressionSpecification,
 };
 
 // 積雪深は「値ラスター」: タイルは d[cm] を terrarium 標高エンコードで格納。maplibre v5 の
@@ -49,10 +62,13 @@ const DEPTH_RELIEF_COLOR = [
 
 // ベクタタイル(区分)とラスタータイル(積雪深)の同一オリジン取得パス。jiban-api
 // /design/tiles を minitools の Express が Range 転送する。
-const ZONE_PMTILES: Record<'wind' | 'seismic', string> = {
+const ZONE_PMTILES: Record<'wind' | 'seismic' | 'snow_zones', string> = {
   wind: '/api/design/tiles/wind_zones.pmtiles',
   seismic: '/api/design/tiles/seismic_zones.pmtiles',
+  snow_zones: '/api/design/tiles/snow_zones.pmtiles',
 };
+// init で生成するベクタ区分レイヤ一覧（source-layer はいずれも 'zones'）。
+const VECTOR_ZONE_KINDS = ['wind', 'seismic', 'snow_zones'] as const;
 const ZONE_SOURCE_LAYER = 'zones';
 const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
 // 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
@@ -88,6 +104,15 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
       'rgba(106,30,140,0.92) 80%,rgba(74,20,80,0.95) 100%)',
     min: '0',
     max: '1500',
+  },
+  snow_zones: {
+    title: '積雪 地域区分（平12建告1455号）',
+    // 区分ごとに色分け（連続スケールではない）。帯は多色で「カテゴリ配色」であることを示す。
+    grad:
+      'linear-gradient(to right,#1f77b4,#ff7f0e,#2ca02c,#d62728,#9467bd,' +
+      '#8c564b,#e377c2,#17becf,#bcbd22,#393b79)',
+    min: '区分ごとに配色',
+    max: '',
   },
 };
 
@@ -233,6 +258,9 @@ const HazardMap: React.FC<HazardMapProps> = ({
     if (map.getLayer('zones-seismic-fill')) {
       map.setLayoutProperty('zones-seismic-fill', 'visibility', kind === 'seismic' ? 'visible' : 'none');
     }
+    if (map.getLayer('zones-snow_zones-fill')) {
+      map.setLayoutProperty('zones-snow_zones-fill', 'visibility', kind === 'snow_zones' ? 'visible' : 'none');
+    }
     if (map.getLayer('zones-urban-fill')) {
       map.setLayoutProperty('zones-urban-fill', 'visibility', kind === 'urban' ? 'visible' : 'none');
     }
@@ -282,7 +310,7 @@ const HazardMap: React.FC<HazardMapProps> = ({
       // ゾーン区分オーバーレイ（GSIタイルの上・解析円の下に薄く重ねる）。初期は非表示。
       // PMTilesベクタソースを2種(積雪/風速)。可視になったタイルだけ Range 取得される。
       const origin = window.location.origin;
-      (['wind', 'seismic'] as const).forEach((kind) => {
+      VECTOR_ZONE_KINDS.forEach((kind) => {
         map.addSource(`zones-${kind}`, {
           type: 'vector',
           url: `pmtiles://${origin}${ZONE_PMTILES[kind]}`,
@@ -416,6 +444,16 @@ const HazardMap: React.FC<HazardMapProps> = ({
       if (ov === 'urban') {
         const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-urban-fill'] });
         setHover(fs.length ? '都市計画区域: 区域内' : '都市計画区域: 区域外');
+        return;
+      }
+      if (ov === 'snow_zones') {
+        const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-snow_zones-fill'] });
+        if (fs.length) {
+          const p = fs[0].properties || {};
+          setHover(`積雪区分: 第${p.zone}区 (α${p.alpha} β${p.beta} γ${p.gamma})`);
+        } else {
+          setHover(null);
+        }
         return;
       }
       // depth: 非同期デコード（古い応答は token で破棄）
