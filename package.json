@@ -11,6 +11,9 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@myriaddreamin/typst-ts-renderer": "^0.7.0",
+    "@myriaddreamin/typst-ts-web-compiler": "^0.7.0",
+    "@myriaddreamin/typst.ts": "^0.7.0",
     "@types/katex": "^0.16.7",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^24.1.0",

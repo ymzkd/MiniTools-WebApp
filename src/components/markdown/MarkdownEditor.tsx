@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -6,14 +6,52 @@ import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Copy, FileText } from 'lucide-react';
+import { Copy, FileText, FileCode } from 'lucide-react';
 import { useTheme as useSystemTheme } from '../../hooks/useTheme';
 import 'katex/dist/katex.min.css';
+
+type EditorMode = 'markdown' | 'typst';
+
+const DEFAULT_TYPST = `// Typst エディタ — 数式やテーブルをリアルタイムにプレビュー
+// width: auto で内容にあわせて用紙サイズが調整されます
+#set page(width: auto, height: auto, margin: 1.5em)
+// 同梱フォント（欧文: DejaVu Serif / 和文: IPAGothic / 数式: STIX Two Math）
+#set text(size: 12pt, lang: "ja", font: ("DejaVu Serif", "IPAGothic"))
+#show raw: set text(font: "DejaVu Sans Mono")
+#show math.equation: set text(font: "STIX Two Math")
+
+= Typst プレビュー
+
+Typst の *数式* や _テーブル_ をプレビューしながら調整できます。
+
+ブロック数式:
+
+$ sum_(i=1)^n i = (n (n+1)) / 2 $
+
+== テーブルの例
+
+#table(
+  columns: 3,
+  align: (left, center, right),
+  stroke: 0.5pt,
+  table.header([*項目*], [*記号*], [*値*]),
+  [幅],       [$b$], [300 mm],
+  [高さ],     [$h$], [500 mm],
+  [断面積],   [$A$], [$150000 "mm"^2$],
+  [断面係数], [$Z$], [$1.25 times 10^7 "mm"^3$],
+)
+`;
 
 const MarkdownEditor: React.FC = () => {
   const { isDark } = useSystemTheme();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
+  const [mode, setMode] = useState<EditorMode>('markdown');
+  const [typst, setTypst] = useState<string>(DEFAULT_TYPST);
+  const [typstSvg, setTypstSvg] = useState<string>('');
+  const [typstError, setTypstError] = useState<string | null>(null);
+  const [typstLoading, setTypstLoading] = useState<boolean>(false);
+  const compileSeq = useRef<number>(0);
   const [markdown, setMarkdown] = useState<string>(
     `# マークダウンエディタ
 
@@ -69,10 +107,40 @@ function hello() {
   );
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
 
+  // 現在のモードに応じた編集対象テキストと更新関数
+  const content = mode === 'markdown' ? markdown : typst;
+  const setContent = mode === 'markdown' ? setMarkdown : setTypst;
+
+  // Typst モードでは入力をデバウンスしてSVGにコンパイルする
+  useEffect(() => {
+    if (mode !== 'typst') return;
+    const seq = ++compileSeq.current;
+    setTypstLoading(true);
+    const handle = setTimeout(async () => {
+      try {
+        // Typst コンパイラ（重い）はモード利用時にのみ動的ロードする
+        const { compileTypstToSvg } = await import('./typstCompiler');
+        const svg = await compileTypstToSvg(typst);
+        if (compileSeq.current !== seq) return;
+        setTypstSvg(svg);
+        setTypstError(null);
+      } catch (err) {
+        if (compileSeq.current !== seq) return;
+        setTypstError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (compileSeq.current === seq) setTypstLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [typst, mode]);
+
   // コメント部分をハイライト表示するためのマークアップを生成
   const renderHighlightedText = (text: string) => {
-    // HTMLコメントの正規表現（<!-- ... -->）
-    const commentRegex = /(<!--[\s\S]*?-->)/g;
+    // モードに応じたコメント記法を検出（Markdown: <!-- -->, Typst: // と /* */）
+    const commentRegex =
+      mode === 'typst'
+        ? /(\/\*[\s\S]*?\*\/|\/\/[^\n]*)/g
+        : /(<!--[\s\S]*?-->)/g;
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
     let match;
@@ -124,7 +192,7 @@ function hello() {
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(markdown);
+      await navigator.clipboard.writeText(content);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (err) {
@@ -134,7 +202,7 @@ function hello() {
 
   const handleClear = () => {
     if (confirm('テキストをクリアしますか？')) {
-      setMarkdown('');
+      setContent('');
     }
   };
 
@@ -193,9 +261,9 @@ function hello() {
     const { selectionStart, selectionEnd, value } = textarea;
     const selectedText = value.substring(selectionStart, selectionEnd);
 
-    // 選択テキストが既にコメントで囲まれているかチェック
-    const commentStart = '<!-- ';
-    const commentEnd = ' -->';
+    // 選択テキストが既にコメントで囲まれているかチェック（モード別の記法）
+    const commentStart = mode === 'typst' ? '/* ' : '<!-- ';
+    const commentEnd = mode === 'typst' ? ' */' : ' -->';
 
     textarea.focus();
 
@@ -316,22 +384,24 @@ function hello() {
       return;
     }
 
-    // Ctrl/Cmd + B: 太字
+    // Ctrl/Cmd + B: 太字（Markdown: **、Typst: *）
     if (modKey && e.key === 'b') {
       e.preventDefault();
-      wrapSelection('**', '**');
+      const sym = mode === 'typst' ? '*' : '**';
+      wrapSelection(sym, sym);
       return;
     }
 
-    // Ctrl/Cmd + I: イタリック
+    // Ctrl/Cmd + I: イタリック（Markdown: *、Typst: _）
     if (modKey && e.key === 'i') {
       e.preventDefault();
-      wrapSelection('*', '*');
+      const sym = mode === 'typst' ? '_' : '*';
+      wrapSelection(sym, sym);
       return;
     }
 
-    // Ctrl/Cmd + K: リンク
-    if (modKey && e.key === 'k') {
+    // Ctrl/Cmd + K: リンク（Markdown のみ）
+    if (modKey && e.key === 'k' && mode === 'markdown') {
       e.preventDefault();
       const selectedText = value.substring(selectionStart, selectionEnd);
       if (selectedText) {
@@ -375,17 +445,48 @@ function hello() {
       <div className="mb-6 print:hidden">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
-            <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            {mode === 'markdown' ? (
+              <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            ) : (
+              <FileCode className="w-8 h-8 text-teal-600 dark:text-teal-400" />
+            )}
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-                Markdown Editor
+                {mode === 'markdown' ? 'Markdown Editor' : 'Typst Editor'}
               </h1>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                リアルタイムプレビュー付きマークダウンエディタ（数式対応）
+                {mode === 'markdown'
+                  ? 'リアルタイムプレビュー付きマークダウンエディタ（数式対応）'
+                  : 'リアルタイムプレビュー付き Typst エディタ（数式・テーブル対応）'}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {/* Markdown / Typst モード切替 */}
+            <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden mr-2">
+              <button
+                onClick={() => setMode('markdown')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${
+                  mode === 'markdown'
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Markdown
+              </button>
+              <button
+                onClick={() => setMode('typst')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors ${
+                  mode === 'typst'
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600'
+                }`}
+              >
+                <FileCode className="w-4 h-4" />
+                Typst
+              </button>
+            </div>
             <button
               onClick={handleCopy}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
@@ -416,7 +517,9 @@ function hello() {
               エディタ
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              マークダウンテキストを入力してください
+              {mode === 'markdown'
+                ? 'マークダウンテキストを入力してください'
+                : 'Typst ソースを入力してください'}
             </p>
           </div>
           {/* エディタコンテナ（ハイライトoverlayとtextareaを重ねて表示） */}
@@ -430,20 +533,20 @@ function hello() {
                          transition-colors duration-200"
               style={{ color: 'transparent', lineHeight: '1.25rem' }}
             >
-              {renderHighlightedText(markdown || ' ')}
+              {renderHighlightedText(content || ' ')}
             </div>
             {/* 実際のtextarea（テキストをほぼ透明に） */}
             <textarea
               ref={textareaRef}
-              value={markdown}
-              onChange={(e) => setMarkdown(e.target.value)}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
               onKeyDown={handleKeyDown}
               onScroll={handleScroll}
               className="relative w-full h-full p-4 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
                        bg-transparent font-mono text-sm resize-none min-h-[600px]
                        whitespace-pre-wrap break-words"
-              placeholder="ここにマークダウンを入力..."
+              placeholder={mode === 'markdown' ? 'ここにマークダウンを入力...' : 'ここに Typst ソースを入力...'}
               spellCheck={false}
               style={{
                 // textareaのテキストをほぼ透明にして、背景のハイライトレイヤーの色を完全に表示
@@ -457,7 +560,7 @@ function hello() {
             />
           </div>
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            文字数: {markdown.length}
+            文字数: {content.length}
           </div>
         </div>
 
@@ -474,6 +577,7 @@ function hello() {
           <div className="flex-1 p-6 border-2 border-gray-300 dark:border-gray-600 rounded-lg
                         bg-gray-50 dark:bg-gray-700 overflow-auto min-h-[600px] transition-colors duration-200
                         print:border-0 print:rounded-none print:min-h-0 print:overflow-visible print:bg-white print:p-8">
+            {mode === 'markdown' ? (
             <div className="prose prose-sm sm:prose lg:prose-lg max-w-none print:text-sm
                           print:[&_.katex]:!text-black print:[&_.katex_*]:!text-black
                           [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:text-gray-900 dark:[&_h1]:text-gray-100 print:[&_h1]:!text-black print:[&_h1]:!text-xl [&_h1]:mb-4 [&_h1]:mt-6 print:[&_h1]:mb-3 print:[&_h1]:mt-4 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-gray-300 dark:[&_h1]:border-gray-600 print:[&_h1]:border-gray-400
@@ -537,12 +641,37 @@ function hello() {
                 {markdown}
               </ReactMarkdown>
             </div>
+            ) : (
+              <div className="flex flex-col items-stretch gap-3 print:gap-2">
+                {/* コンパイルエラー表示（直前の正常プレビューは残す） */}
+                {typstError && (
+                  <pre className="text-left text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded p-3 whitespace-pre-wrap break-words font-mono print:hidden">
+                    {typstError}
+                  </pre>
+                )}
+                {typstSvg ? (
+                  <div className="w-full flex justify-center bg-white rounded p-4 overflow-auto [&_svg]:max-w-full [&_svg]:h-auto print:p-0 print:overflow-visible">
+                    <div dangerouslySetInnerHTML={{ __html: typstSvg }} />
+                  </div>
+                ) : !typstError ? (
+                  <div className="text-gray-500 dark:text-gray-400 text-sm py-12 text-center">
+                    {typstLoading
+                      ? 'コンパイル中…（初回はコンパイラの読み込みに時間がかかります）'
+                      : 'プレビューを準備しています…'}
+                  </div>
+                ) : null}
+                {typstLoading && typstSvg && (
+                  <div className="text-xs text-gray-400 text-center print:hidden">更新中…</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* ヘルプセクション */}
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 print:hidden">
+        {mode === 'markdown' ? (
         <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
             💡 マークダウン記法
@@ -554,6 +683,20 @@ function hello() {
             <li>• GitHub Flavored Markdown（GFM）対応: テーブル、タスクリスト、取り消し線など</li>
           </ul>
         </div>
+        ) : (
+        <div className="p-4 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-800">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            💡 Typst 記法
+          </h3>
+          <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+            <li>• 見出し: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">= 見出し</code> / <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">== 小見出し</code></li>
+            <li>• 強調: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">*太字*</code> / <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">_斜体_</code></li>
+            <li>• インライン数式: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">$x^2$</code> / ブロック: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">$ x^2 $</code>（前後に空白）</li>
+            <li>• テーブル: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">#table(columns: 3, ...)</code></li>
+            <li>• 用紙を内容に合わせる: <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded">#set page(width: auto, height: auto)</code></li>
+          </ul>
+        </div>
+        )}
 
         <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -561,11 +704,13 @@ function hello() {
           </h3>
           <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Tab</kbd> インデント追加 / <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Shift+Tab</kbd> インデント解除</li>
-            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+B</kbd> 太字</li>
-            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+I</kbd> イタリック</li>
-            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+K</kbd> リンク</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+B</kbd> 太字（{mode === 'typst' ? '*…*' : '**…**'}）</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+I</kbd> イタリック（{mode === 'typst' ? '_…_' : '*…*'}）</li>
+            {mode === 'markdown' && (
+              <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+K</kbd> リンク</li>
+            )}
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+E</kbd> インラインコード</li>
-            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+/</kbd> コメントトグル（追加/解除）</li>
+            <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+/</kbd> コメントトグル（{mode === 'typst' ? '/* … */' : '<!-- … -->'}）</li>
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Enter</kbd> 新規行挿入</li>
             <li>• <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Z</kbd> 元に戻す / <kbd className="px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">Ctrl/Cmd+Shift+Z</kbd> やり直す</li>
           </ul>

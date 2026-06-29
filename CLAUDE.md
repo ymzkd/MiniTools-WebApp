@@ -13,7 +13,7 @@ Tools (tab id → path → directory):
 1. **Matrix Editor** (`matrix` → `/matrix` → `matrix/`) — visual LaTeX matrix editing with real-time KaTeX preview
 2. **Figure Layout** (`figure` → `/figure` → `figure/`) — academic figure arrangement with drag-and-drop + KaTeX captions
 3. **PDF Converter** (`pdf` → `/pdf` → `pdf/`) — PDF conversion utilities
-4. **Markdown Editor** (`markdown` → `/markdown` → `markdown/`) — markdown editing/preview
+4. **Markdown Editor** (`markdown` → `/markdown` → `markdown/`) — markdown editing/preview, with a **Typst mode** toggle (Markdown ↔ Typst). Typst is compiled to SVG in-browser via `@myriaddreamin/typst.ts` (WASM, lazy-loaded); fonts are self-hosted in `src/assets/typst-fonts/` (incl. Japanese IPAGothic + STIX Two Math) so it works offline without CDN fonts. See `markdown/typstCompiler.ts`.
 5. **Boring Data** (`boring` → `/boring` → `boring/`) — geotechnical boring-log search over a full-height map (jiban-api backed)
 6. **Hazard Map** (`hazard` → `/hazard` → `hazard/`) — point lookup of 海率/標高 and design zones (基準風速/積雪/地震/積雪深) on a map (jiban-api `/api/design` backed). Legacy `/searatio` path still resolves here.
 7. **Section Calc** (`section` → `/section` → `section/`) — section property calculator
