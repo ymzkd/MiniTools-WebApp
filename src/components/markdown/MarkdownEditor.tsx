@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -9,6 +9,59 @@ import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/pris
 import { Copy, FileText } from 'lucide-react';
 import { useTheme as useSystemTheme } from '../../hooks/useTheme';
 import 'katex/dist/katex.min.css';
+
+// 1行で書かれたブロック数式（例: `$$ ... $$`）を、`$$` を独立した行に持つ
+// 複数行のブロック形式へ正規化する。
+//
+// remark-math (v6) は単一行の `$$...$$` を「インライン数式」として扱うため、
+// `\tag` のようなディスプレイ数式専用コマンドが KaTeX でエラーになり描画されない。
+// （`\tag` を含まない式はインラインでも描画されるため、症状が分かりにくい。）
+// ここで明示的にディスプレイ用のブロック形式へ展開することで、
+// 1行記法でも複数行記法でも同じように描画できるようにする（描画の冗長性）。
+const normalizeBlockMath = (src: string): string => {
+  const lines = src.split('\n');
+  const out: string[] = [];
+  let fenceMarker = ''; // コードフェンス（``` / ~~~）内かどうかの追跡
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // コードフェンスの開始/終了を検出し、フェンス内は一切変換しない
+    const fenceMatch = trimmed.match(/^(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0];
+      if (!fenceMarker) {
+        fenceMarker = marker;
+      } else if (marker === fenceMarker) {
+        fenceMarker = '';
+      }
+      out.push(line);
+      continue;
+    }
+
+    // 行全体が `$$...$$`（前後に中身がある単一のブロック数式）の場合のみ展開する。
+    // 内側にさらに `$$` を含む場合（複数式が並ぶ等）は対象外として安全側に倒す。
+    if (
+      !fenceMarker &&
+      trimmed.startsWith('$$') &&
+      trimmed.endsWith('$$') &&
+      trimmed.length > 4
+    ) {
+      const inner = trimmed.slice(2, -2).trim();
+      if (inner.length > 0 && !inner.includes('$$')) {
+        const indent = line.slice(0, line.length - line.trimStart().length);
+        out.push(`${indent}$$`);
+        out.push(`${indent}${inner}`);
+        out.push(`${indent}$$`);
+        continue;
+      }
+    }
+
+    out.push(line);
+  }
+
+  return out.join('\n');
+};
 
 const MarkdownEditor: React.FC = () => {
   const { isDark } = useSystemTheme();
@@ -68,6 +121,9 @@ function hello() {
 `
   );
   const [copySuccess, setCopySuccess] = useState<boolean>(false);
+
+  // プレビュー用に1行ブロック数式を正規化したマークダウン（編集中のテキストには影響しない）
+  const previewMarkdown = useMemo(() => normalizeBlockMath(markdown), [markdown]);
 
   // コメント部分をハイライト表示するためのマークアップを生成
   const renderHighlightedText = (text: string) => {
@@ -534,7 +590,7 @@ function hello() {
                   }
                 }}
               >
-                {markdown}
+                {previewMarkdown}
               </ReactMarkdown>
             </div>
           </div>
