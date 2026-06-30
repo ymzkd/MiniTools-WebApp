@@ -218,7 +218,6 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
       {/* フッター */}
       <div style={{ marginTop: '12px', borderTop: '1px solid rgb(217,214,207)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
         <div style={{ flex: 1, fontSize: '8px', color: 'rgb(154,151,143)', lineHeight: 1.5 }}>
-          免責: 本レポートは設計検討の補助を目的とした参考情報です。地域区分・各係数は告示・データの境界付近で誤差を含む場合があり、最終的な設計用荷重の決定は資格ある技術者による確認・判断が必要です。
           データ出典: 国土数値情報（都市地域A09・行政区域N03・湖沼W09／国土交通省・CC BY 4.0）/ 国土地理院（標高・背景地図）/ OpenStreetMap（住所検索 Nominatim・ODbL）。
         </div>
         <div style={{ textAlign: 'right', fontSize: '9px', color: 'rgb(107,104,98)', lineHeight: 1.7, whiteSpace: 'nowrap' }}>
