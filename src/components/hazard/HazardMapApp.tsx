@@ -329,13 +329,13 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 <div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">緯度</div>
                   <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
-                    {point.lat.toFixed(6)}
+                    {point.lat.toFixed(3)}
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">経度</div>
                   <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
-                    {point.lng.toFixed(6)}
+                    {point.lng.toFixed(3)}
                   </div>
                 </div>
               </div>

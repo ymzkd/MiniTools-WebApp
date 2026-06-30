@@ -93,8 +93,8 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
               {data.placeName ?? '所在地情報なし（海上など）'}
             </div>
             <div style={{ display: 'flex', gap: '22px', marginTop: '7px', fontSize: '11.5px', fontVariantNumeric: 'tabular-nums' }}>
-              <div><span style={{ color: 'rgb(154,151,143)' }}>緯度</span>&nbsp; <b style={{ fontWeight: 500 }}>{point.lat.toFixed(6)}</b></div>
-              <div><span style={{ color: 'rgb(154,151,143)' }}>経度</span>&nbsp; <b style={{ fontWeight: 500 }}>{point.lng.toFixed(6)}</b></div>
+              <div><span style={{ color: 'rgb(154,151,143)' }}>緯度</span>&nbsp; <b style={{ fontWeight: 500 }}>{point.lat.toFixed(3)}</b></div>
+              <div><span style={{ color: 'rgb(154,151,143)' }}>経度</span>&nbsp; <b style={{ fontWeight: 500 }}>{point.lng.toFixed(3)}</b></div>
             </div>
           </div>
           <div style={{ flex: '1 1 0', display: 'flex' }}>
