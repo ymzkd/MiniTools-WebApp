@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
@@ -19,6 +19,12 @@ interface HazardMapProps {
   overlay: ZoneOverlay; // 薄いオーバーレイ（none / 風速区分 / 地震 / 積雪深）
   shorePoint: LatLng | null; // 最寄りの海岸線/湖岸線の点（中心からの測線を表示）
   onPick: (lat: number, lng: number) => void;
+}
+
+// PDFレポート用に、現在の地図表示をPNG(dataURL)で取り出すためのハンドル。
+// 親(HazardMapApp)が ref 経由でレポート出力時にだけ呼ぶ。常時コストは無い。
+export interface HazardMapHandle {
+  capturePng: () => Promise<string | null>;
 }
 
 // ゾーン番号→色。色が濃いほど区分番号が大きい（元アプリと同じ向き）。薄く重ねる。
@@ -258,14 +264,10 @@ function buildStyle(): maplibregl.StyleSpecification {
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const HazardMap: React.FC<HazardMapProps> = ({
-  center,
-  radiusKm,
-  viewVersion,
-  overlay,
-  shorePoint,
-  onPick,
-}) => {
+const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap(
+  { center, radiusKm, viewVersion, overlay, shorePoint, onPick },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
@@ -279,6 +281,102 @@ const HazardMap: React.FC<HazardMapProps> = ({
   // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
   const [hover, setHover] = useState<string | null>(null);
   const hoverTokenRef = useRef(0);
+
+  // capturePng が常に最新の中心・半径を参照できるようにする。
+  const centerRef = useRef(center);
+  centerRef.current = center;
+  const radiusRef = useRef(radiusKm);
+  radiusRef.current = radiusKm;
+
+  // レポート出力用の地図キャプチャ。ライブ地図には一切触れず、画面外に専用の地図を
+  // 生成して「オーバーレイなし・指定地点中心・積雪算定円が全体に収まるズーム」で描画し、
+  // PNG 化する。これによりページ本体のズーム/位置/オーバーレイ表示は完全に維持される。
+  useImperativeHandle(
+    ref,
+    () => ({
+      capturePng: () =>
+        new Promise<string | null>((resolve) => {
+          const center = centerRef.current;
+          const radiusKm = radiusRef.current;
+          const shore = shorePointRef.current;
+          // 横長カード（マップ全幅）に合わせたアスペクトで高解像度に描く。
+          const container = document.createElement('div');
+          Object.assign(container.style, {
+            position: 'fixed', left: '-10000px', top: '0', width: '1100px', height: '480px',
+          } as Partial<CSSStyleDeclaration>);
+          document.body.appendChild(container);
+
+          let map: maplibregl.Map | null = null;
+          let done = false;
+          const cleanup = () => {
+            try { map?.remove(); } catch { /* noop */ }
+            try { container.remove(); } catch { /* noop */ }
+          };
+          const finish = (val: string | null) => {
+            if (done) return;
+            done = true;
+            try { resolve(val); } finally { cleanup(); }
+          };
+          const grab = () => {
+            try { finish(map!.getCanvas().toDataURL('image/png')); }
+            catch { finish(null); }
+          };
+
+          try {
+            map = new maplibregl.Map({
+              container,
+              style: buildStyle(), // ベース(GSI)のみ。オーバーレイは一切追加しない。
+              center: [center.lng, center.lat],
+              zoom: 8,
+              interactive: false,
+              attributionControl: false,
+              canvasContextAttributes: { preserveDrawingBuffer: true },
+            });
+            map.on('error', () => finish(null));
+            map.on('load', () => {
+              const m = map!;
+              const circle: GeoJSON.Feature = {
+                type: 'Feature', properties: {},
+                geometry: { type: 'Polygon', coordinates: [circleCoords(center.lat, center.lng, radiusKm)] },
+              };
+              const marker: GeoJSON.Feature = {
+                type: 'Feature', properties: {},
+                geometry: { type: 'Point', coordinates: [center.lng, center.lat] },
+              };
+              m.addSource('cap-circle', { type: 'geojson', data: circle });
+              m.addLayer({ id: 'cap-circle-fill', type: 'fill', source: 'cap-circle', paint: { 'fill-color': '#5a6f93', 'fill-opacity': 0.08 } });
+              m.addLayer({ id: 'cap-circle-line', type: 'line', source: 'cap-circle', paint: { 'line-color': '#5a6f93', 'line-width': 1.5, 'line-dasharray': [2, 2] } });
+              // 最寄りの海岸線/湖岸線への測線＋最寄り点（ライブ地図と同じ橙の破線）
+              if (shore) {
+                const shoreFc: GeoJSON.FeatureCollection = {
+                  type: 'FeatureCollection',
+                  features: [
+                    { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[center.lng, center.lat], [shore.lng, shore.lat]] } },
+                    { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [shore.lng, shore.lat] } },
+                  ],
+                };
+                m.addSource('cap-shore', { type: 'geojson', data: shoreFc });
+                m.addLayer({ id: 'cap-shore-line', type: 'line', source: 'cap-shore', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [2, 1.5] } });
+                m.addLayer({ id: 'cap-shore-pt', type: 'circle', source: 'cap-shore', filter: ['==', ['geometry-type'], 'Point'], paint: { 'circle-radius': 4, 'circle-color': '#f59e0b', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+              }
+              m.addSource('cap-marker', { type: 'geojson', data: marker });
+              m.addLayer({ id: 'cap-marker', type: 'circle', source: 'cap-marker', paint: { 'circle-radius': 5, 'circle-color': '#c0392b', 'circle-stroke-width': 2, 'circle-stroke-color': '#ffffff' } });
+              // 円全体（と測線の最寄り点）が収まるよう表示範囲を合わせる
+              const b = new maplibregl.LngLatBounds();
+              for (const c of circleCoords(center.lat, center.lng, radiusKm)) b.extend(c as [number, number]);
+              if (shore) b.extend([shore.lng, shore.lat]);
+              m.fitBounds(b, { padding: 30, animate: false, maxZoom: 14 });
+              m.once('idle', grab);
+              setTimeout(grab, 4000); // タイル待ちの保険
+            });
+            setTimeout(() => finish(null), 9000); // 全体の保険
+          } catch {
+            finish(null);
+          }
+        }),
+    }),
+    []
+  );
 
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
   const applyOverlay = useCallback((kind: ZoneOverlay) => {
@@ -596,7 +694,7 @@ const HazardMap: React.FC<HazardMapProps> = ({
       )}
     </div>
   );
-};
+});
 
 function updateData(map: maplibregl.Map, center: LatLng, radiusKm: number) {
   const circle = map.getSource('circle') as maplibregl.GeoJSONSource | undefined;
