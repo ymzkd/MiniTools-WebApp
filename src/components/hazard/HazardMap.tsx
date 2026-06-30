@@ -8,7 +8,7 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth';
+export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth' | 'snow_zones' | 'authority';
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -29,10 +29,23 @@ export interface HazardMapHandle {
 
 // ゾーン番号→色。色が濃いほど区分番号が大きい（元アプリと同じ向き）。薄く重ねる。
 // 積雪は青系(第1〜40区)、風速は赤系(第1〜9区)。
-const ZONE_FILL_COLOR: Record<'wind' | 'seismic', maplibregl.ExpressionSpecification> = {
+const ZONE_FILL_COLOR: Record<'wind' | 'seismic' | 'snow_zones', maplibregl.ExpressionSpecification> = {
   wind: ['interpolate', ['linear'], ['get', 'zone'], 1, '#fee5d9', 5, '#fb6a4a', 9, '#a50f15'],
   // 地震地域係数 Z（大きいほど地震荷重が大）。Z=0.7淡 → 1.0濃赤。
   seismic: ['interpolate', ['linear'], ['get', 'Z'], 0.7, '#fee08b', 0.8, '#fdae61', 0.9, '#f46d43', 1.0, '#d73027'],
+  // 積雪荷重の地域区分（平12建告1455号、第0〜40区）。連続値ではなく離散区分なので、
+  // 隣り合う区が必ず別色になるよう高コントラスト10色を zone%10 で循環割当する。
+  // 第0区＝積雪なしは中立グレー。zone は離散なので match（補間しない）。
+  snow_zones: [
+    'match', ['get', 'zone'],
+    0, '#d9d9d9',
+    [
+      'match', ['%', ['get', 'zone'], 10],
+      0, '#1f77b4', 1, '#ff7f0e', 2, '#2ca02c', 3, '#d62728', 4, '#9467bd',
+      5, '#8c564b', 6, '#e377c2', 7, '#17becf', 8, '#bcbd22', 9, '#393b79',
+      '#888888',
+    ],
+  ] as unknown as maplibregl.ExpressionSpecification,
 };
 
 // 積雪深は「値ラスター」: タイルは d[cm] を terrarium 標高エンコードで格納。maplibre v5 の
@@ -55,16 +68,40 @@ const DEPTH_RELIEF_COLOR = [
 
 // ベクタタイル(区分)とラスタータイル(積雪深)の同一オリジン取得パス。jiban-api
 // /design/tiles を minitools の Express が Range 転送する。
-const ZONE_PMTILES: Record<'wind' | 'seismic', string> = {
+const ZONE_PMTILES: Record<'wind' | 'seismic' | 'snow_zones', string> = {
   wind: '/api/design/tiles/wind_zones.pmtiles',
   seismic: '/api/design/tiles/seismic_zones.pmtiles',
+  snow_zones: '/api/design/tiles/snow_zones.pmtiles',
 };
+// init で生成するベクタ区分レイヤ一覧（source-layer はいずれも 'zones'）。
+const VECTOR_ZONE_KINDS = ['wind', 'seismic', 'snow_zones'] as const;
 const ZONE_SOURCE_LAYER = 'zones';
 const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
 // 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
 const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
 const URBAN_SOURCE_LAYER = 'urban';
 const URBAN_FILL_COLOR = '#9ca3af'; // gray-400
+
+// 特定行政庁(建築基準法)の分布。authority_zones.pmtiles(source-layer='zones')を庁の区分(type)で
+// 4色に塗り分ける。属性は build_authority_geojson.py のフラット属性(p_type/p_name/split/l_name…)。
+const AUTHORITY_PMTILES = '/api/design/tiles/authority_zones.pmtiles';
+const AUTHORITY_SOURCE_LAYER = 'zones';
+// 区分(type)→色。知事=緑 / 建築主事設置市=青 / 限定特定行政庁=橙 / 特別区=紫。
+const AUTHORITY_TYPE_COLOR: maplibregl.ExpressionSpecification = [
+  'match', ['get', 'p_type'],
+  'prefecture', '#66bd63',
+  'city_full', '#3182bd',
+  'city_limited', '#fdae61',
+  'special_ward', '#8856a7',
+  '#bdbdbd',
+];
+// 区分(type)の日本語ラベル（凡例/ホバー用）。
+const AUTHORITY_TYPE_LABEL: Record<string, string> = {
+  prefecture: '都道府県知事',
+  city_full: '建築主事設置市',
+  city_limited: '限定特定行政庁',
+  special_ward: '特別区',
+};
 
 // 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
 const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string; min: string; max: string }> = {
@@ -94,6 +131,24 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
       'rgba(106,30,140,0.92) 80%,rgba(74,20,80,0.95) 100%)',
     min: '0',
     max: '1500',
+  },
+  snow_zones: {
+    title: '積雪 地域区分（平12建告1455号）',
+    // 区分ごとに色分け（連続スケールではない）。帯は多色で「カテゴリ配色」であることを示す。
+    grad:
+      'linear-gradient(to right,#1f77b4,#ff7f0e,#2ca02c,#d62728,#9467bd,' +
+      '#8c564b,#e377c2,#17becf,#bcbd22,#393b79)',
+    min: '区分ごとに配色',
+    max: '',
+  },
+  authority: {
+    title: '特定行政庁（建築基準法）',
+    // 庁の区分で色分け（知事=緑 / 主事設置市=青 / 限定=橙 / 特別区=紫）の4色ハードストップ。
+    grad:
+      'linear-gradient(to right,#66bd63 0 25%,#3182bd 25% 50%,' +
+      '#fdae61 50% 75%,#8856a7 75% 100%)',
+    min: '知事 / 市 / 限定 / 特別区',
+    max: '',
   },
 };
 
@@ -331,8 +386,14 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('zones-seismic-fill')) {
       map.setLayoutProperty('zones-seismic-fill', 'visibility', kind === 'seismic' ? 'visible' : 'none');
     }
+    if (map.getLayer('zones-snow_zones-fill')) {
+      map.setLayoutProperty('zones-snow_zones-fill', 'visibility', kind === 'snow_zones' ? 'visible' : 'none');
+    }
     if (map.getLayer('zones-urban-fill')) {
       map.setLayoutProperty('zones-urban-fill', 'visibility', kind === 'urban' ? 'visible' : 'none');
+    }
+    if (map.getLayer('zones-authority-fill')) {
+      map.setLayoutProperty('zones-authority-fill', 'visibility', kind === 'authority' ? 'visible' : 'none');
     }
     if (map.getLayer('zones-depth-fill')) {
       map.setLayoutProperty('zones-depth-fill', 'visibility', kind === 'depth' ? 'visible' : 'none');
@@ -380,7 +441,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       // ゾーン区分オーバーレイ（GSIタイルの上・解析円の下に薄く重ねる）。初期は非表示。
       // PMTilesベクタソースを2種(積雪/風速)。可視になったタイルだけ Range 取得される。
       const origin = window.location.origin;
-      (['wind', 'seismic'] as const).forEach((kind) => {
+      VECTOR_ZONE_KINDS.forEach((kind) => {
         map.addSource(`zones-${kind}`, {
           type: 'vector',
           url: `pmtiles://${origin}${ZONE_PMTILES[kind]}`,
@@ -425,6 +486,20 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         'source-layer': URBAN_SOURCE_LAYER,
         layout: { visibility: 'none' },
         paint: { 'fill-color': URBAN_FILL_COLOR, 'fill-opacity': 0.45 },
+      });
+
+      // 特定行政庁（建築基準法）の分布。庁の区分(type)で4色に塗り分け。
+      map.addSource('zones-authority', {
+        type: 'vector',
+        url: `pmtiles://${origin}${AUTHORITY_PMTILES}`,
+      });
+      map.addLayer({
+        id: 'zones-authority-fill',
+        type: 'fill',
+        source: 'zones-authority',
+        'source-layer': AUTHORITY_SOURCE_LAYER,
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': AUTHORITY_TYPE_COLOR, 'fill-opacity': 0.5 },
       });
 
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
@@ -514,6 +589,29 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       if (ov === 'urban') {
         const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-urban-fill'] });
         setHover(fs.length ? '都市計画区域: 区域内' : '都市計画区域: 区域外');
+        return;
+      }
+      if (ov === 'snow_zones') {
+        const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-snow_zones-fill'] });
+        if (fs.length) {
+          const p = fs[0].properties || {};
+          setHover(`積雪区分: 第${p.zone}区 (α${p.alpha} β${p.beta} γ${p.gamma})`);
+        } else {
+          setHover(null);
+        }
+        return;
+      }
+      if (ov === 'authority') {
+        const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-authority-fill'] });
+        if (fs.length) {
+          const p = fs[0].properties || {};
+          const typeLabel = AUTHORITY_TYPE_LABEL[p.p_type as string] ?? '';
+          // 規模分割地点は小規模側(主たる庁)を表示し、大規模側を併記。
+          const large = p.split ? `／大規模:${p.l_name}` : '';
+          setHover(`特定行政庁: ${p.p_name}${typeLabel ? `（${typeLabel}）` : ''}${large}`);
+        } else {
+          setHover(null);
+        }
         return;
       }
       // depth: 非同期デコード（古い応答は token で破棄）
