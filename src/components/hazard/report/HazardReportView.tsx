@@ -2,6 +2,8 @@
 // 提供されたデザインテンプレートを忠実に再現。ブラウザの「印刷 → PDFに保存」で出力するため、
 // フォントはユーザーのローカル書体（本文=ゴシック / 見出し=明朝）を font stack で参照する
 // （アプリ側のフォント取得は無し）。print.tsx が renderToStaticMarkup して iframe に流し込む。
+// 背景色は使わず、罫線・文字色・カード上端のアクセント罫で構成する（印刷の「背景のグラフィック」
+// 設定に依存せず常に同じ見た目で出力され、インクも節約できる）。
 import type { CSSProperties } from 'react';
 import type { HazardReportData } from './types';
 
@@ -31,8 +33,8 @@ function CardShell({
   title, law, accent, children,
 }: { title: string; law: string; accent: string; children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, border: '1px solid rgb(217,214,207)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: '3px', background: accent }} />
+    // アクセントは背景塗りでなくカード上端の色付き罫（border は印刷で必ず出る）。
+    <div style={{ flex: 1, border: '1px solid rgb(217,214,207)', borderTop: `3px solid ${accent}`, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '9px 12px 8px', borderBottom: '1px solid rgb(226,223,216)' }}>
         <div style={{ fontFamily: MINCHO, fontWeight: 600, fontSize: '15px' }}>{title}</div>
         <div style={{ fontSize: '9px', color: 'rgb(154,151,143)', marginTop: '2px' }}>{law}</div>
@@ -85,7 +87,7 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
       </div>
 
       {/* 所在地バー */}
-      <div style={{ marginTop: '12px', border: '1px solid rgb(217,214,207)', background: 'rgb(248,247,243)' }}>
+      <div style={{ marginTop: '12px', border: '1px solid rgb(217,214,207)' }}>
         <div style={{ display: 'flex', alignItems: 'stretch' }}>
           <div style={{ flex: '1.3 1 0', padding: '11px 14px', borderRight: '1px solid rgb(226,223,216)' }}>
             <div style={{ fontSize: '9.5px', letterSpacing: '0.16em', color: 'rgb(154,151,143)' }}>所在地 / LOCATION</div>
@@ -109,22 +111,23 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
       </div>
 
       {/* 地図（全幅。指定地点中心・積雪算定円が全体に収まるよう描画） */}
-      <div style={{ marginTop: '12px', height: '300px', border: '1px solid rgb(217,214,207)', position: 'relative', background: 'rgb(241,239,233)', overflow: 'hidden' }}>
+      <div style={{ marginTop: '12px', height: '300px', border: '1px solid rgb(217,214,207)', position: 'relative', overflow: 'hidden' }}>
         {data.mapImage ? (
           <img src={data.mapImage} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
           <>
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '236px', height: '236px', border: '1.5px dashed rgb(90,111,147)', borderRadius: '50%', background: 'rgba(90,111,147,0.07)' }} />
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '9px', height: '9px', borderRadius: '50%', background: 'rgb(192,57,43)' }} />
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '236px', height: '236px', border: '1.5px dashed rgb(90,111,147)', borderRadius: '50%' }} />
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: '9px', height: '9px', borderRadius: '50%', border: '2px solid rgb(192,57,43)' }} />
             <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, transform: 'translateY(20px)', textAlign: 'center', fontSize: '11px', color: 'rgb(122,119,111)' }}>地図を取得できませんでした</div>
           </>
         )}
+        {/* 地図キャプション（地図画像上の可読性のための薄い下地のみ残す） */}
         <div style={{ position: 'absolute', bottom: '8px', left: '9px', right: '9px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <div style={{ fontSize: '9px', color: 'rgb(122,119,111)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>
+          <div style={{ fontSize: '9px', color: 'rgb(122,119,111)', background: 'rgba(255,255,255,0.82)', padding: '2px 6px' }}>
             対象地点（赤点）／ 海率算定円 R = {data.radiusKm} km（破線）
             {shoreM != null ? `／ 最寄りの海岸線・湖岸線への測線（橙破線）` : ''}
           </div>
-          <div style={{ fontSize: '8.5px', color: 'rgb(154,151,143)', background: 'rgba(248,247,243,0.85)', padding: '2px 6px' }}>© 国土地理院</div>
+          <div style={{ fontSize: '8.5px', color: 'rgb(154,151,143)', background: 'rgba(255,255,255,0.82)', padding: '2px 6px' }}>© 国土地理院</div>
         </div>
       </div>
 
@@ -134,7 +137,7 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
         <CardShell title="設計用積雪量" law="平成12年建設省告示 第1455号" accent="rgb(63,94,140)">
           {snow && snow.usable ? (
             <>
-              <ValueBlock bg="rgb(243,245,249)" label="積雪深 d" value={snow.noSnow ? '0' : (snow.depthCm != null ? snow.depthCm.toFixed(0) : '—')} unit="cm" color="rgb(44,65,99)" />
+              <ValueBlock label="積雪深 d" value={snow.noSnow ? '0' : (snow.depthCm != null ? snow.depthCm.toFixed(0) : '—')} unit="cm" color="rgb(44,65,99)" />
               {snow.noSnow ? (
                 <div style={{ padding: '10px 12px', fontSize: '11px', color: 'rgb(107,104,98)' }}>積雪荷重の対象区域外（第0区・積雪なし）。</div>
               ) : (
@@ -146,7 +149,7 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
                     <Row k="γ（定数項）" v={String(snow.gamma)} />
                     <Row k="R（海率計算半径）" v={`${snow.R} km`} last />
                   </div>
-                  <div style={{ margin: 'auto 12px 12px', background: 'rgb(243,245,249)', border: '1px solid rgb(227,232,240)', padding: '8px 10px' }}>
+                  <div style={{ margin: 'auto 12px 12px', border: '1px solid rgb(227,232,240)', padding: '8px 10px' }}>
                     <div style={{ fontSize: '8.5px', letterSpacing: '0.1em', color: 'rgb(122,130,152)', marginBottom: '4px' }}>算定式</div>
                     <div style={{ fontSize: '10px', lineHeight: 1.6, color: 'rgb(44,65,99)', fontVariantNumeric: 'tabular-nums' }}>d =（α×標高＋β×海率＋γ）×100</div>
                     {data.elevation != null && data.seaRatio != null && snow.depthCm != null && (
@@ -167,12 +170,12 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
         <CardShell title="設計基準風速" law="平成12年建設省告示 第1454号" accent="rgb(63,125,120)">
           {wind && wind.usable ? (
             <>
-              <ValueBlock bg="rgb(240,245,244)" label="基準風速 V₀" value={String(wind.Vo)} unit="m/s" color="rgb(44,88,84)" />
+              <ValueBlock label="基準風速 V₀" value={String(wind.Vo)} unit="m/s" color="rgb(44,88,84)" />
               <div style={{ padding: '4px 12px 0', fontSize: '11px' }}>
                 <Row k="地域区分" v={`第 ${wind.zone} 区`} bold />
                 <Row k="海岸線まで" v={fmtDistKm(shoreM)} last />
               </div>
-              <div style={{ margin: '10px 12px 0', background: 'rgb(240,245,244)', border: '1px solid rgb(221,233,231)', padding: '8px 10px' }}>
+              <div style={{ margin: '10px 12px 0', border: '1px solid rgb(221,233,231)', padding: '8px 10px' }}>
                 <div style={{ fontSize: '8.5px', letterSpacing: '0.1em', color: 'rgb(111,141,137)', marginBottom: '4px' }}>海岸線・湖岸線までの距離（第1454号）</div>
                 <div style={{ fontSize: '9.5px', lineHeight: 1.6, color: 'rgb(65,97,93)' }}>地表面粗度区分の判定用の距離（地図上に測線を表示）。区分の確定・個別パラメータは設計者判断による。</div>
               </div>
@@ -189,12 +192,12 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
         <CardShell title="地震地域係数" law="昭和55年建設省告示 第1793号" accent="rgb(156,106,68)">
           {seismic && seismic.usable ? (
             <>
-              <ValueBlock bg="rgb(246,241,236)" label="地域係数 Z" value={seismic.Z.toFixed(1)} color="rgb(110,74,46)" />
+              <ValueBlock label="地域係数 Z" value={seismic.Z.toFixed(1)} color="rgb(110,74,46)" />
               <div style={{ padding: '4px 12px 0', fontSize: '11px' }}>
                 <Row k="地域区分" v={`第 ${seismic.zone} 区`} bold />
                 <Row k="係数 Z の範囲" v="0.7 〜 1.0" last />
               </div>
-              <div style={{ margin: '10px 12px 0', background: 'rgb(246,241,236)', border: '1px solid rgb(236,224,212)', padding: '8px 10px' }}>
+              <div style={{ margin: '10px 12px 0', border: '1px solid rgb(236,224,212)', padding: '8px 10px' }}>
                 <div style={{ fontSize: '8.5px', letterSpacing: '0.1em', color: 'rgb(156,126,99)', marginBottom: '4px' }}>区分の目安</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '9.5px', color: 'rgb(110,82,56)', fontVariantNumeric: 'tabular-nums' }}>
                   {[['第 1 区', 'Z = 1.0'], ['第 2 区', 'Z = 0.9'], ['第 3 区', 'Z = 0.8 / 0.7']].map(([a, b]) => (
@@ -239,9 +242,9 @@ function Metric({ label, value, unit, border }: { label: string; value: string; 
   );
 }
 
-function ValueBlock({ bg, label, value, unit, color }: { bg: string; label: string; value: string; unit?: string; color: string }) {
+function ValueBlock({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
   return (
-    <div style={{ padding: '11px 12px', textAlign: 'center', background: bg }}>
+    <div style={{ padding: '11px 12px', textAlign: 'center' }}>
       <div style={{ fontSize: '9px', letterSpacing: '0.14em', color: 'rgb(107,104,98)' }}>{label}</div>
       <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: '26px', fontWeight: 700, color, lineHeight: 1.05, marginTop: '2px' }}>
         {value}
