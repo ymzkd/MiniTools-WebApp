@@ -89,7 +89,8 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             setBoringData(data);
           } catch (e) {
             console.error('Failed to fetch boring data:', e);
-            onError?.('ボーリングデータの取得に失敗しました');
+            // 公開元にデータが無い場合など、中継プロキシが返した理由をそのまま見せる。
+            onError?.(e instanceof Error && e.message ? e.message : 'ボーリングデータの取得に失敗しました');
             setBoringData(null);
           }
         } else if (pdfUrl) {
