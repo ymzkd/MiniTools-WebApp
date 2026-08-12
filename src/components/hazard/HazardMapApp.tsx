@@ -26,7 +26,17 @@ interface OverlayCategory {
 }
 const OVERLAY_CATEGORIES: OverlayCategory[] = [
   { key: 'wind', Icon: Wind, label: '風速区分', variants: [{ val: 'wind', label: '風速区分' }] },
-  { key: 'seismic', Icon: Activity, label: '地震地域係数', variants: [{ val: 'seismic', label: '地震地域係数' }] },
+  {
+    key: 'seismic',
+    Icon: Activity,
+    label: '地震',
+    // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層下面標高(J-SHIS) をループ切替。
+    variants: [
+      { val: 'seismic', label: '地震地域係数' },
+      { val: 'amp', label: '地盤増幅率' },
+      { val: 'vs350', label: 'Vs350層下面標高' },
+    ],
+  },
   {
     key: 'snow',
     Icon: Snowflake,

@@ -8,7 +8,16 @@ interface LatLng {
   lng: number;
 }
 
-export type ZoneOverlay = 'none' | 'wind' | 'seismic' | 'urban' | 'depth' | 'snow_zones' | 'authority';
+export type ZoneOverlay =
+  | 'none'
+  | 'wind'
+  | 'seismic'
+  | 'urban'
+  | 'depth'
+  | 'snow_zones'
+  | 'authority'
+  | 'amp'
+  | 'vs350';
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -66,6 +75,42 @@ const DEPTH_RELIEF_COLOR = [
   1500, 'rgba(74,20,80,0.85)',
 ] as unknown as maplibregl.ExpressionSpecification;
 
+// 地盤増幅率(elevation = ARV×100)。0.5(良好地盤)緑 → 1.3前後 黄 → 2以上(増幅大)赤系。
+// データ実範囲は 0.50〜3.84。50 未満はデータなし側なので透明へ落とす。
+const AMP_RELIEF_COLOR = [
+  'interpolate', ['linear'], ['elevation'],
+  0, 'rgba(0,0,0,0)',
+  49, 'rgba(0,0,0,0)',
+  50, 'rgba(26,152,80,0.55)',
+  90, 'rgba(145,207,96,0.58)',
+  110, 'rgba(217,239,139,0.6)',
+  130, 'rgba(254,224,139,0.62)',
+  160, 'rgba(253,174,97,0.68)',
+  190, 'rgba(244,109,67,0.72)',
+  230, 'rgba(215,48,39,0.76)',
+  280, 'rgba(165,0,38,0.8)',
+  384, 'rgba(103,0,31,0.85)',
+] as unknown as maplibregl.ExpressionSpecification;
+
+// Vs350層下面標高(elevation = E1[m]+10000)。標高図の配色に合わせ、海面下(堆積盆地)は
+// 青系(深いほど濃紺)、海面上は緑→茶の段彩。データ実範囲は E1=-600〜+3700m。
+// 縁のGPU補間でデータなし(0)と混ざった中間値が全色を横断しないよう、9000 まで透明に保つ。
+const VS350_RELIEF_COLOR = [
+  'interpolate', ['linear'], ['elevation'],
+  0, 'rgba(0,0,0,0)',
+  9000, 'rgba(8,48,107,0)',
+  9400, 'rgba(8,48,107,0.78)',
+  9700, 'rgba(33,102,172,0.72)',
+  9900, 'rgba(67,147,195,0.65)',
+  9970, 'rgba(146,197,222,0.6)',
+  10000, 'rgba(209,229,240,0.55)',
+  10050, 'rgba(184,225,134,0.55)',
+  10300, 'rgba(127,188,65,0.58)',
+  10800, 'rgba(223,194,125,0.6)',
+  11500, 'rgba(191,129,45,0.65)',
+  13700, 'rgba(84,48,5,0.7)',
+] as unknown as maplibregl.ExpressionSpecification;
+
 // ベクタタイル(区分)とラスタータイル(積雪深)の同一オリジン取得パス。jiban-api
 // /design/tiles を minitools の Express が Range 転送する。
 const ZONE_PMTILES: Record<'wind' | 'seismic' | 'snow_zones', string> = {
@@ -77,6 +122,17 @@ const ZONE_PMTILES: Record<'wind' | 'seismic' | 'snow_zones', string> = {
 const VECTOR_ZONE_KINDS = ['wind', 'seismic', 'snow_zones'] as const;
 const ZONE_SOURCE_LAYER = 'zones';
 const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
+const DEPTH_NATIVE_Z = 12; // build_snow_depth.py のネイティブズーム
+
+// J-SHIS 地盤データの値ラスター(積雪深と同じ terrarium エンコード、0=データなし)。
+// jiban-api pipelines/jshis/build_jshis_tiles.py の出力とエンコードを一致させること。
+//   site_amp:     enc = ARV×100        (地盤増幅率 Vs=400m/s→地表, 250mメッシュ)
+//   vs350_bottom: enc = E1[m] + 10000  (深部地盤モデル第1層(Vs=350m/s)下面標高, 陸のみ)
+const AMP_PMTILES = '/api/design/tiles/site_amp.pmtiles';
+const AMP_NATIVE_Z = 12;
+const VS350_PMTILES = '/api/design/tiles/vs350_bottom.pmtiles';
+const VS350_NATIVE_Z = 10;
+const VS350_OFFSET = 10000;
 // 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
 const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
 const URBAN_SOURCE_LAYER = 'urban';
@@ -150,6 +206,24 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     min: '知事 / 市 / 限定 / 特別区',
     max: '',
   },
+  amp: {
+    title: '地盤増幅率（J-SHIS表層地盤 Vs=400m/s→地表）',
+    // AMP_RELIEF_COLOR の値位置(0.5〜3.84)を割合に換算した帯。
+    grad:
+      'linear-gradient(to right,#1a9850 0%,#91cf60 12%,#d9ef8b 18%,#fee08b 24%,' +
+      '#fdae61 33%,#f46d43 42%,#d73027 54%,#a50026 69%,#67001f 100%)',
+    min: '0.5',
+    max: '3.8',
+  },
+  vs350: {
+    title: 'Vs350層下面標高（J-SHIS深部地盤 第1層）',
+    // VS350_RELIEF_COLOR の値位置(-600〜+3700m)を割合に換算した帯。
+    grad:
+      'linear-gradient(to right,#08306b 0%,#2166ac 7%,#4393c3 12%,#92c5de 13%,' +
+      '#d1e5f0 14%,#b8e186 15%,#7fbc41 21%,#dfc27d 33%,#bf812d 49%,#543005 100%)',
+    min: '-600 m',
+    max: '+3700 m',
+  },
 };
 
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
@@ -161,57 +235,68 @@ function ensurePmtilesProtocol() {
   maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);
 }
 
-// ホバー時に積雪深(d[cm])をカーソル位置で読み出すため、深さPMTilesを直接デコードする。
-// 同一タイルは ImageData をキャッシュ(タイル内移動は再デコード不要)。
-let _depthPM: pmtiles.PMTiles | null = null;
-const _depthTileCache = new Map<string, Uint8ClampedArray | null>();
-const DEPTH_NATIVE_Z = 12; // build_snow_depth.py のネイティブズーム
+// ホバー時に値ラスター(積雪深/増幅率/Vs350下面標高)をカーソル位置で読み出すため、
+// PMTiles を直接デコードする汎用リーダー。同一タイルは ImageData をキャッシュ
+// (タイル内移動は再デコード不要)。返り値は terrarium 復号後の生エンコード値。
+function makeValueRasterReader(path: string, nativeZ: number) {
+  let pm: pmtiles.PMTiles | null = null;
+  const cache = new Map<string, Uint8ClampedArray | null>();
 
-async function loadDepthTile(z: number, x: number, y: number): Promise<Uint8ClampedArray | null> {
-  const key = `${z}/${x}/${y}`;
-  if (_depthTileCache.has(key)) return _depthTileCache.get(key)!;
-  let out: Uint8ClampedArray | null = null;
-  try {
-    if (!_depthPM) _depthPM = new pmtiles.PMTiles(`${window.location.origin}${DEPTH_PMTILES}`);
-    const r = await _depthPM.getZxy(z, x, y);
-    if (r) {
-      // 値ラスターなので色変換/プリマルチを無効化して画素値を正確に読む（R は terrarium の
-      // 上位バイト=×256 なので 1 ずれると 256cm 狂う）。
-      const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }), {
-        premultiplyAlpha: 'none',
-        colorSpaceConversion: 'none',
-      });
-      const cv = document.createElement('canvas');
-      cv.width = 256;
-      cv.height = 256;
-      const ctx = cv.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(bmp, 0, 0);
-        out = ctx.getImageData(0, 0, 256, 256).data;
+  async function loadTile(z: number, x: number, y: number): Promise<Uint8ClampedArray | null> {
+    const key = `${z}/${x}/${y}`;
+    if (cache.has(key)) return cache.get(key)!;
+    let out: Uint8ClampedArray | null = null;
+    try {
+      if (!pm) pm = new pmtiles.PMTiles(`${window.location.origin}${path}`);
+      const r = await pm.getZxy(z, x, y);
+      if (r) {
+        // 値ラスターなので色変換/プリマルチを無効化して画素値を正確に読む（R は terrarium の
+        // 上位バイト=×256 なので 1 ずれると値が 256 狂う）。
+        const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }), {
+          premultiplyAlpha: 'none',
+          colorSpaceConversion: 'none',
+        });
+        const cv = document.createElement('canvas');
+        cv.width = 256;
+        cv.height = 256;
+        const ctx = cv.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(bmp, 0, 0);
+          out = ctx.getImageData(0, 0, 256, 256).data;
+        }
       }
+    } catch {
+      out = null;
     }
-  } catch {
-    out = null;
+    cache.set(key, out);
+    return out;
   }
-  _depthTileCache.set(key, out);
-  return out;
+
+  // 緯度経度のエンコード値（terrarium 復号）。タイルなし/取得失敗は null。
+  return async function heightAt(lng: number, lat: number): Promise<number | null> {
+    const n = 2 ** nativeZ;
+    const xf = ((lng + 180) / 360) * n;
+    const latR = (lat * Math.PI) / 180;
+    const yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
+    const x = Math.floor(xf);
+    const y = Math.floor(yf);
+    const px = Math.min(255, Math.max(0, Math.floor((xf - x) * 256)));
+    const py = Math.min(255, Math.max(0, Math.floor((yf - y) * 256)));
+    const img = await loadTile(nativeZ, x, y);
+    if (!img) return null;
+    const i = (py * 256 + px) * 4;
+    return img[i] * 256 + img[i + 1] + img[i + 2] / 256 - 32768; // terrarium 復号
+  };
 }
 
-// 緯度経度の積雪深[cm]（terrarium 復号）。雪なし/タイルなしは null。
+const depthHeightAt = makeValueRasterReader(DEPTH_PMTILES, DEPTH_NATIVE_Z);
+const ampHeightAt = makeValueRasterReader(AMP_PMTILES, AMP_NATIVE_Z);
+const vs350HeightAt = makeValueRasterReader(VS350_PMTILES, VS350_NATIVE_Z);
+
+// 緯度経度の積雪深[cm]。雪なし/タイルなしは null。
 async function depthAtLngLat(lng: number, lat: number): Promise<number | null> {
-  const n = 2 ** DEPTH_NATIVE_Z;
-  const xf = ((lng + 180) / 360) * n;
-  const latR = (lat * Math.PI) / 180;
-  const yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
-  const x = Math.floor(xf);
-  const y = Math.floor(yf);
-  const px = Math.min(255, Math.max(0, Math.floor((xf - x) * 256)));
-  const py = Math.min(255, Math.max(0, Math.floor((yf - y) * 256)));
-  const img = await loadDepthTile(DEPTH_NATIVE_Z, x, y);
-  if (!img) return null;
-  const i = (py * 256 + px) * 4;
-  const d = img[i] * 256 + img[i + 1] + img[i + 2] / 256 - 32768; // terrarium 復号
-  return d > 0.5 ? d : null;
+  const d = await depthHeightAt(lng, lat);
+  return d != null && d > 0.5 ? d : null;
 }
 
 // 経度を [-180, 180] に正規化（メルカトルで地図を一周しても巨大な経度を上流へ送らない）。
@@ -398,6 +483,12 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('zones-depth-fill')) {
       map.setLayoutProperty('zones-depth-fill', 'visibility', kind === 'depth' ? 'visible' : 'none');
     }
+    if (map.getLayer('zones-amp-fill')) {
+      map.setLayoutProperty('zones-amp-fill', 'visibility', kind === 'amp' ? 'visible' : 'none');
+    }
+    if (map.getLayer('zones-vs350-fill')) {
+      map.setLayoutProperty('zones-vs350-fill', 'visibility', kind === 'vs350' ? 'visible' : 'none');
+    }
   }, []);
   // viewVersion 効果が最新の中心・半径を参照するための ref（中心変化では再fitしないため依存に入れない）
   const latestRef = useRef({ center, radiusKm });
@@ -473,6 +564,30 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           'color-relief-opacity': 0.9,
         },
       } as unknown as maplibregl.AddLayerObject);
+
+      // J-SHIS 地盤増幅率 / Vs350層下面標高（積雪深と同じ値ラスター方式）。
+      const valueRasters = [
+        { key: 'amp', url: AMP_PMTILES, ramp: AMP_RELIEF_COLOR },
+        { key: 'vs350', url: VS350_PMTILES, ramp: VS350_RELIEF_COLOR },
+      ] as const;
+      valueRasters.forEach(({ key, url, ramp }) => {
+        map.addSource(`zones-${key}`, {
+          type: 'raster-dem',
+          url: `pmtiles://${origin}${url}`,
+          tileSize: 256,
+          encoding: 'terrarium',
+        });
+        map.addLayer({
+          id: `zones-${key}-fill`,
+          type: 'color-relief',
+          source: `zones-${key}`,
+          layout: { visibility: 'none' },
+          paint: {
+            'color-relief-color': ramp,
+            'color-relief-opacity': 0.9,
+          },
+        } as unknown as maplibregl.AddLayerObject);
+      });
 
       // 都市計画区域（外形のみ・グレー塗り）。
       map.addSource('zones-urban', {
@@ -612,6 +727,31 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         } else {
           setHover(null);
         }
+        return;
+      }
+      if (ov === 'amp') {
+        // 値ラスター: 非同期デコード（古い応答は token で破棄）
+        const token = ++hoverTokenRef.current;
+        ampHeightAt(e.lngLat.lng, e.lngLat.lat)
+          .then((h) => {
+            if (token !== hoverTokenRef.current) return;
+            setHover(h != null && h > 0 ? `地盤増幅率: ${(h / 100).toFixed(2)}` : '地盤増幅率: データなし');
+          })
+          .catch(() => {});
+        return;
+      }
+      if (ov === 'vs350') {
+        const token = ++hoverTokenRef.current;
+        vs350HeightAt(e.lngLat.lng, e.lngLat.lat)
+          .then((h) => {
+            if (token !== hoverTokenRef.current) return;
+            setHover(
+              h != null && h > 0
+                ? `Vs350層下面標高: ${Math.round(h - VS350_OFFSET)} m`
+                : 'Vs350層下面標高: データなし（海など）'
+            );
+          })
+          .catch(() => {});
         return;
       }
       // depth: 非同期デコード（古い応答は token で破棄）
