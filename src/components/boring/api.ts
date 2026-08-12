@@ -505,6 +505,7 @@ interface NgiSearchItem {
   boring_length?: number;
   xml_url: string | null;   // 同一オリジン中継 /api/ngi/proxy/boring/xml/<id>（無い場合 null）
   log_url: string | null;   // 柱状図(PDF/PNG)中継、または港湾の直リンクPDF
+  view_url?: string | null; // 外部ビューアで柱状図を開くURL
   has_soiltest: boolean;
   soiltest_xml_url?: string;
   soiltest_log_url?: string;
@@ -527,6 +528,7 @@ function mapNgiItem(item: NgiSearchItem): MLITSearchResult {
       // 詳細取得は共通の link_boring_xml 経路（同一オリジンの中継プロキシ）に乗せる。
       'NGI:link_boring_xml': item.xml_url ?? undefined,
       'NGI:link_boring_pdf': item.log_url ?? undefined,
+      'NGI:link_boring_view': item.view_url ?? undefined,
     },
     location: { lat: item.lat, lng: item.lng },
     datasetName: '国土地盤情報(NGI)',

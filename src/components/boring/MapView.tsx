@@ -14,7 +14,7 @@ const SELECTED_COLOR = '#2563eb';
 // 低ズーム=ヒートマップ(密度)、中〜高ズーム=ソース色分けの円。クリックで個別地点を選択。
 // 地点データの取得はタイル側に寄せたので、ビューポート連動のAPI取得は行わない。
 // ?v= はタイル再生成時のキャッシュバスト用（中身が変わったら上げる）。
-const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=2';
+const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=3';
 const POINTS_LAYER = 'points'; // tippecanoe -l points
 
 interface MapViewProps {
@@ -31,6 +31,7 @@ interface TileProps {
   title?: string;
   xml_url?: string;
   log_url?: string; // PDF型柱状図のときだけ存在(画像型は無し)
+  view_url?: string; // 外部ビューアで柱状図を開くURL
   soil_xml_url?: string;
   soil_log_url?: string;
 }
@@ -53,12 +54,14 @@ function featureToResult(p: TileProps, lng: number, lat: number): MLITSearchResu
   const ngiId = (p.xml_url || p.log_url || '').match(/\/(\d+)$/)?.[1];
   return {
     id: p.id ?? `${lng},${lat}`,
-    title: p.title ?? p.id ?? '',
+    // publicweb 固有の点は調査名を持たない。XMLを取得した時点で本来の調査名に置き換わる。
+    title: p.title ?? '(調査名未取得)',
     source: isTokyo ? ('tokyo' as const) : ('mlit' as const),
     metadata: {
       'NGI:link_boring_xml': p.xml_url,
       // log_url は PDF型のみ存在。画像型では undefined になり「PDF柱状図を表示」は出さない。
       'NGI:link_boring_pdf': p.log_url,
+      'NGI:link_boring_view': p.view_url,
       ...(p.source_name ? { 'NGI:source_name': p.source_name } : {}),
       ...(ngiId ? { 'NGI:id': ngiId } : {}),
     },

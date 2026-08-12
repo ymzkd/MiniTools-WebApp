@@ -69,6 +69,14 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
 
   const ngiId = getNGIId();
 
+  // 外部ビューアのURL。上流によって踏めるURLが違うのでAPI/タイルが組んだ値を使う。
+  // 未提供（古いキャッシュ等）の場合だけ、従来どおり KuniJiban のURLを組み立てる。
+  const viewUrl =
+    selectedResult.metadata?.['NGI:link_boring_view'] ||
+    (ngiId
+      ? `https://www.kunijiban.pwri.go.jp/viewer/refer/?data=boring&type=view&id=${ngiId}`
+      : undefined);
+
   // ファイル名に使えない文字を除去
   const sanitizeFileName = (name: string): string =>
     name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'boring';
@@ -140,7 +148,7 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
           PDF柱状図のみの地点(港湾など)でもここから柱状図PDFを開ける。 */}
       {!loading &&
         (selectedResult.metadata?.['NGI:link_boring_pdf'] ||
-          ngiId ||
+          viewUrl ||
           selectedResult.metadata?.['NGI:link_boring_xml']) && (
           <div className="flex flex-wrap gap-2 px-4 pt-4">
             {selectedResult.metadata?.['NGI:link_boring_pdf'] && (
@@ -155,9 +163,9 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
               </a>
             )}
             {/* 外部ビューア（PDF柱状図ボタンがある場合は同じ柱状図なので出さない） */}
-            {ngiId && !selectedResult.metadata?.['NGI:link_boring_pdf'] && (
+            {viewUrl && !selectedResult.metadata?.['NGI:link_boring_pdf'] && (
               <a
-                href={`https://www.kunijiban.pwri.go.jp/viewer/refer/?data=boring&type=view&id=${ngiId}`}
+                href={viewUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"

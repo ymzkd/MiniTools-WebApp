@@ -37,6 +37,9 @@ export interface MLITSearchResult {
     'NGI:address'?: string;
     'NGI:survey_finish'?: string;
     'NGI:link_boring_xml'?: string;
+    // 「外部サイトで柱状図を表示」で開くURL。上流(KuniJiban / publicweb)ごとに
+    // 踏めるURLが違うのでAPI/タイル側で組み立てたものを使う。
+    'NGI:link_boring_view'?: string;
     'NGI:boring_xml_version'?: string;
     'NGI:boring_elevation'?: string;
     [key: string]: string | undefined;  // 他のメタデータフィールド
