@@ -145,9 +145,11 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
       )}
 
       {/* 外部リンク（柱状図PDF / 外部ビューア / XML）。インライン柱状図(data)の有無に依らず表示。
-          PDF柱状図のみの地点(港湾など)でもここから柱状図PDFを開ける。 */}
-      {!loading &&
-        (selectedResult.metadata?.['NGI:link_boring_pdf'] ||
+          PDF柱状図のみの地点(港湾など)でもここから柱状図PDFを開ける。
+          これらのURLは検索結果の時点で確定しており XML の取得を待つ必要がない。
+          NGIC(publicweb)由来の地点は XML 取得に最大25秒かかるため、loading で隠すと
+          その間ボタンが出ず操作できない。 */}
+      {(selectedResult.metadata?.['NGI:link_boring_pdf'] ||
           viewUrl ||
           selectedResult.metadata?.['NGI:link_boring_xml']) && (
           <div className="flex flex-wrap gap-2 px-4 pt-4">
