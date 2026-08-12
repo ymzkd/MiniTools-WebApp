@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Download, FileText, Droplet, Calendar, Building2, Hash, ExternalLink, Mountain, Code, Database } from 'lucide-react';
 import type { BoringData, MLITSearchResult } from './types';
+import { describeFetchFailure } from './api';
 
 interface BoringLogViewerProps {
   data: BoringData | null;
@@ -15,6 +16,9 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
   loading,
   onClose,
 }) => {
+  // XMLダウンロード失敗の理由（公開元にデータが無い等）をボタン下に出す。
+  const [downloadError, setDownloadError] = React.useState<string | null>(null);
+
   if (!selectedResult) {
     return null;
   }
@@ -73,9 +77,15 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
   // 同一オリジンの中継URL(/api/ngi, /api/tokyo)をBlob化してdownload属性で保存する。
   // 取得に失敗した場合は従来どおり新規タブで開く（フォールバック）。
   const handleDownload = async (url: string, filename: string) => {
+    setDownloadError(null);
     try {
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // 公開元にデータが無い等（中継プロキシが404）。HTMLエラーページを .xml として
+      // 保存させてしまわないよう、ここで止めて理由を表示する。
+      if (!response.ok) {
+        setDownloadError(await describeFetchFailure(response));
+        return;
+      }
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -167,6 +177,9 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                 <Download className="w-4 h-4" />
                 XMLファイルをダウンロード
               </button>
+            )}
+            {downloadError && (
+              <p className="w-full text-sm text-red-600 dark:text-red-400">{downloadError}</p>
             )}
           </div>
         )}

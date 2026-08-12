@@ -137,7 +137,10 @@ app.use('/api/ngi', async (req, res) => {
     const fwd = { accept: req.headers['accept'] || '*/*' }
     if (req.headers['range']) fwd['range'] = req.headers['range']
     if (req.headers['if-none-match']) fwd['if-none-match'] = req.headers['if-none-match']
-    const upstream = await fetch(target, { method: req.method, headers: fwd })
+    // 画像型柱状図(/ngi/proxy/*/log/*)は jiban-api が公開ビューアの閲覧ページへ 302 を返す。
+    // fetch は既定でリダイレクトを追ってしまい、相対パスのCSS/画像が /api/ngi 配下を指す
+    // 壊れたHTMLになる。redirect:'manual' で 302 のまま Location をブラウザへ返す。
+    const upstream = await fetch(target, { method: req.method, headers: fwd, redirect: 'manual' })
     res.status(upstream.status)
     for (const h of [
       'content-type',
@@ -146,6 +149,7 @@ app.use('/api/ngi', async (req, res) => {
       'accept-ranges',
       'etag',
       'last-modified',
+      'location',
     ]) {
       const v = upstream.headers.get(h)
       if (v) res.setHeader(h, v)

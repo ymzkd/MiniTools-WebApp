@@ -730,6 +730,21 @@ export function parseBoringXML(xmlString: string, id: string, location: GeoLocat
 }
 
 // XMLファイルのフェッチと解析
+// 中継プロキシ(jiban-api)のエラー本文は {"detail": "..."} のJSON。公開元にデータが無い
+// (404)場合はその説明をそのままユーザーに見せたいので、本文があれば拾って文言にする。
+export async function describeFetchFailure(response: Response): Promise<string> {
+  let detail = '';
+  try {
+    const body = await response.clone().json();
+    if (body && typeof body.detail === 'string') detail = body.detail;
+  } catch {
+    // JSONでなければ本文は使わない（HTMLエラーページ等）
+  }
+  if (detail) return detail;
+  if (response.status === 404) return '公開元にこのデータがありません（404）';
+  return `取得に失敗しました: ${response.status} ${response.statusText}`;
+}
+
 export async function fetchAndParseBoringData(
   xmlUrl: string,
   id: string,
@@ -746,7 +761,7 @@ export async function fetchAndParseBoringData(
     const response = await fetch(fetchUrl);
 
     if (!response.ok) {
-      throw new Error(`XMLファイルの取得に失敗: ${response.status} ${response.statusText}`);
+      throw new Error(await describeFetchFailure(response));
     }
 
     // Shift_JIS エンコーディングで読み込み
