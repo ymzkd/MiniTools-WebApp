@@ -182,10 +182,10 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
         </div>
       </div>
 
-      {/* フッター: データ提供 */}
+      {/* フッター: データソース */}
       <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 px-4 py-2">
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-          データ提供:
+          データソース:
           <a
             href="https://data-platform.mlit.go.jp/"
             target="_blank"
@@ -202,6 +202,15 @@ const BoringDataApp: React.FC<BoringDataAppProps> = ({ onSuccess, onError }) => 
             className="text-blue-500 hover:underline"
           >
             国土地盤情報検索サイト (KuniJiban)
+          </a>
+          {' / '}
+          <a
+            href="https://ngic.or.jp/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            国土地盤情報センター (NGIC)
           </a>
           {' / '}
           <a
