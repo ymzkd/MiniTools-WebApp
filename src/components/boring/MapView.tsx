@@ -14,7 +14,7 @@ const SELECTED_COLOR = '#2563eb';
 // 低ズーム=ヒートマップ(密度)、中〜高ズーム=ソース色分けの円。クリックで個別地点を選択。
 // 地点データの取得はタイル側に寄せたので、ビューポート連動のAPI取得は行わない。
 // ?v= はタイル再生成時のキャッシュバスト用（中身が変わったら上げる）。
-const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=2';
+const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=3';
 const POINTS_LAYER = 'points'; // tippecanoe -l points
 
 interface MapViewProps {
