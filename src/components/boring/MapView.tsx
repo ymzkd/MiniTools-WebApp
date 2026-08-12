@@ -7,14 +7,15 @@ import type { GeoLocation, MLITSearchResult } from './types';
 // 近接ピック(クリック周辺の地点をリスト化)のピクセル閾値
 const PICK_PX = 12;
 const TOKYO_COLOR = '#f59e0b';
-const NGI_COLOR = '#ef4444';
+const NGI_COLOR = '#ef4444';        // 国土地盤のうち KuniJiban 掲載分
+const NGI_ONLY_COLOR = '#7c3aed';   // NGIC(publicweb)にしか無い分
 const SELECTED_COLOR = '#2563eb';
 
 // 全地点を単一PMTiles(/api/ngi/tiles/points.pmtiles)から描画する。
 // 低ズーム=ヒートマップ(密度)、中〜高ズーム=ソース色分けの円。クリックで個別地点を選択。
 // 地点データの取得はタイル側に寄せたので、ビューポート連動のAPI取得は行わない。
 // ?v= はタイル再生成時のキャッシュバスト用（中身が変わったら上げる）。
-const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=3';
+const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=4';
 const POINTS_LAYER = 'points'; // tippecanoe -l points
 
 interface MapViewProps {
@@ -29,6 +30,7 @@ interface TileProps {
   source_name?: string; // NGIの提供元(KuniJiban / 岐阜県 / 水戸市 等)
   id?: string;
   title?: string;
+  kj?: number; // 1=KuniJiban掲載 / 0=NGIC(publicweb)にしか無い
   xml_url?: string;
   log_url?: string; // PDF型柱状図のときだけ存在(画像型は無し)
   view_url?: string; // 外部ビューアで柱状図を開くURL
@@ -128,7 +130,14 @@ function buildStyle(): maplibregl.StyleSpecification {
         'source-layer': POINTS_LAYER,
         minzoom: 0,
         paint: {
-          'circle-color': ['match', ['get', 'source'], 'tokyo', TOKYO_COLOR, NGI_COLOR],
+          // KuniJiban 掲載分は直リンクで軽く開けるが、NGICのみの分は中継プロキシ経由で
+          // 公開元のレート制限を受け、表示までに時間がかかることがある。体感が違うので色を分ける。
+          'circle-color': [
+            'case',
+            ['==', ['get', 'source'], 'tokyo'], TOKYO_COLOR,
+            ['==', ['get', 'kj'], 0], NGI_ONLY_COLOR,
+            NGI_COLOR,
+          ],
           // 地図に埋もれず目立つよう、各ズームで一回り大きめの半径にする。
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3.5, 8, 5, 11, 6, 14, 7.5, 17, 10],
           'circle-stroke-color': '#ffffff',
@@ -282,7 +291,11 @@ const MapView: React.FC<MapViewProps> = ({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
-            <span className="text-gray-700 dark:text-gray-300">国土地盤(NGI)</span>
+            <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban掲載)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-violet-600 border border-white shadow"></div>
+            <span className="text-gray-700 dark:text-gray-300">国土地盤(NGICのみ・表示が遅い)</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
