@@ -35,7 +35,7 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     variants: [
       { val: 'seismic', label: '地震地域係数' },
       { val: 'amp', label: '地盤増幅率' },
-      { val: 'vs350', label: 'Vs400層上面深さ' },
+      { val: 'vs350', label: '工学的基盤深さ' },
     ],
   },
   {
@@ -265,7 +265,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           : null,
         wind: wind ? { usable: windUsable, zone: wind.zone, Vo: wind.Vo } : null,
         shore: shore ? { nearestM: shore.nearest_m, nearestKind: shore.nearest_kind } : null,
-        seismic: seismic ? { usable: seismicUsable, zone: seismic.zone, Z: seismic.Z } : null,
+        seismic: seismic
+          ? {
+              usable: seismicUsable,
+              zone: seismic.zone,
+              Z: seismic.Z,
+              amp: jshis?.amp ?? null,
+              vs400DepthM: jshis?.depth ?? null,
+            }
+          : null,
         mapImage,
       };
 
@@ -292,6 +300,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     windUsable,
     seismicUsable,
     depth,
+    jshis,
     onSuccess,
     onError,
   ]);
@@ -499,12 +508,12 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                         value={jshis?.amp != null ? jshis.amp.toFixed(2) : '—'}
                       />
                       <Metric
-                        label="Vs400層上面深さ"
+                        label="工学的基盤深さ"
                         value={jshis?.depth != null ? `${Math.round(jshis.depth)} m` : '—'}
                       />
                     </div>
                     <p className="text-[11px] text-gray-400 mt-1">
-                      地盤増幅率（工学的基盤→地表）とVs400m/s層上面深さは
+                      地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは
                       J-SHIS（表層地盤・深部地盤）による参考値。
                     </p>
                   </>

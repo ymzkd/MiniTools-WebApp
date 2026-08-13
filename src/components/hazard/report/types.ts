@@ -37,11 +37,15 @@ export interface HazardReportData {
     nearestKind: 'coast' | 'lake' | null;
   } | null;
 
-  /** 地震地域係数（昭55建告1793号） */
+  /** 地震地域係数（昭55建告1793号）＋ J-SHIS地盤値（参考） */
   seismic: {
     usable: boolean;
     zone: number;
     Z: number;
+    /** 地盤増幅率(工学的基盤Vs400m/sから地表)。J-SHIS表層地盤。データなしは null */
+    amp: number | null;
+    /** 工学的基盤(Vs400m/s)深さ[m]。J-SHIS深部地盤。データなしは null */
+    vs400DepthM: number | null;
   } | null;
 
   /** 地図スナップショット（PNG dataURL）。取得失敗時は null。 */

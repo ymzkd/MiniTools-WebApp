@@ -203,7 +203,7 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '',
   },
   amp: {
-    title: '地盤増幅率（工学的基盤→地表）',
+    title: '地盤増幅率(工学的基盤Vs400m/sから地表)',
     // AMP_RELIEF_COLOR の値位置(0.5〜3.84)を割合に換算した帯。
     grad:
       'linear-gradient(to right,#1a9850 0%,#91cf60 12%,#d9ef8b 18%,#fee08b 24%,' +
@@ -212,8 +212,8 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '3.8',
   },
   vs350: {
-    // 深部地盤モデル第1層(Vs=350m/s)の下面 = Vs400m/s層の上面。UI表記は後者に統一。
-    title: 'Vs400m/s層上面深さ',
+    // 深部地盤モデル第1層(Vs=350m/s)の下面 = Vs400m/s層の上面 = 工学的基盤。UI表記は後者に統一。
+    title: '工学的基盤(Vs400m/s)深さ',
     // VS350_RELIEF_COLOR の値位置(0〜440m)を割合に換算した帯（浅い側に刻みが寄る）。
     grad:
       'linear-gradient(to right,#f7fcf0 0%,#e0f3db 1%,#ccebc5 2%,#a8ddb5 5%,' +
@@ -680,8 +680,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
             if (token !== hoverTokenRef.current) return;
             setHover(
               h != null && h > 0
-                ? `Vs400m/s層上面深さ: ${Math.round(h - VS350_OFFSET)} m`
-                : 'Vs400m/s層上面深さ: データなし（海など）'
+                ? `工学的基盤深さ: ${Math.round(h - VS350_OFFSET)} m`
+                : '工学的基盤深さ: データなし（海など）'
             );
           })
           .catch(() => {});

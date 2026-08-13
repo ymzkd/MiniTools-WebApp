@@ -195,7 +195,9 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
               <ValueBlock label="地域係数 Z" value={seismic.Z.toFixed(1)} color="rgb(110,74,46)" />
               <div style={{ padding: '4px 12px 0', fontSize: '11px' }}>
                 <Row k="地域区分" v={`第 ${seismic.zone} 区`} bold />
-                <Row k="係数 Z の範囲" v="0.7 〜 1.0" last />
+                <Row k="係数 Z の範囲" v="0.7 〜 1.0" />
+                <Row k="地盤増幅率（基盤→地表）" v={seismic.amp != null ? seismic.amp.toFixed(2) : '—'} />
+                <Row k="工学的基盤(Vs400m/s)深さ" v={seismic.vs400DepthM != null ? `${Math.round(seismic.vs400DepthM)} m` : '—'} last />
               </div>
               <div style={{ margin: '10px 12px 0', border: '1px solid rgb(236,224,212)', padding: '8px 10px' }}>
                 <div style={{ fontSize: '8.5px', letterSpacing: '0.1em', color: 'rgb(156,126,99)', marginBottom: '4px' }}>区分の目安</div>
@@ -206,7 +208,7 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
                 </div>
               </div>
               <div style={{ marginTop: 'auto', padding: '10px 12px 12px' }}>
-                <div style={{ fontSize: '9px', color: 'rgb(154,151,143)', lineHeight: 1.6 }}>地震力の算定に用いる地域別の低減係数。値が大きいほど想定地震動が大きい。</div>
+                <div style={{ fontSize: '9px', color: 'rgb(154,151,143)', lineHeight: 1.6 }}>地震力の算定に用いる地域別の低減係数。値が大きいほど想定地震動が大きい。地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは J-SHIS による参考値。</div>
               </div>
             </>
           ) : (
@@ -218,7 +220,7 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
       {/* フッター */}
       <div style={{ marginTop: '12px', borderTop: '1px solid rgb(217,214,207)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
         <div style={{ flex: 1, fontSize: '8px', color: 'rgb(154,151,143)', lineHeight: 1.5 }}>
-          データ出典: 国土数値情報（都市地域A09・行政区域N03・湖沼W09／国土交通省・CC BY 4.0）/ 国土地理院（標高・背景地図）/ OpenStreetMap（住所検索 Nominatim・ODbL）。
+          データ出典: 国土数値情報（都市地域A09・行政区域N03・湖沼W09／国土交通省・CC BY 4.0）/ 国土地理院（標高・背景地図）/ OpenStreetMap（住所検索 Nominatim・ODbL）/ 地震ハザードステーション（表層地盤・深部地盤／防災科研 J-SHIS）。
         </div>
         <div style={{ textAlign: 'right', fontSize: '9px', color: 'rgb(107,104,98)', lineHeight: 1.7, whiteSpace: 'nowrap' }}>
           <div style={{ fontFamily: MINCHO, fontWeight: 600, color: 'rgb(36,59,83)' }}>Hazard Map</div>
