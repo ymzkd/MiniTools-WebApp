@@ -92,23 +92,21 @@ const AMP_RELIEF_COLOR = [
   384, 'rgba(103,0,31,0.85)',
 ] as unknown as maplibregl.ExpressionSpecification;
 
-// Vs350層下面標高(elevation = E1[m]+10000)。標高図の配色に合わせ、海面下(堆積盆地)は
-// 青系(深いほど濃紺)、海面上は緑→茶の段彩。データ実範囲は E1=-600〜+3700m。
-// 縁のGPU補間でデータなし(0)と混ざった中間値が全色を横断しないよう、9000 まで透明に保つ。
+// Vs350層下面深さ(elevation = D1[m]+1)。浅い=淡 → 深い=濃青 の単系統(GnBu)。
+// データ実範囲は 0〜440m だが中央値0・p99=88m と強く偏るので、浅い側に刻みを寄せる。
+// 深さ0m(山地で層なし)も淡色で「データあり」と示し、データなし(0)は透明。
 const VS350_RELIEF_COLOR = [
   'interpolate', ['linear'], ['elevation'],
   0, 'rgba(0,0,0,0)',
-  9000, 'rgba(8,48,107,0)',
-  9400, 'rgba(8,48,107,0.78)',
-  9700, 'rgba(33,102,172,0.72)',
-  9900, 'rgba(67,147,195,0.65)',
-  9970, 'rgba(146,197,222,0.6)',
-  10000, 'rgba(209,229,240,0.55)',
-  10050, 'rgba(184,225,134,0.55)',
-  10300, 'rgba(127,188,65,0.58)',
-  10800, 'rgba(223,194,125,0.6)',
-  11500, 'rgba(191,129,45,0.65)',
-  13700, 'rgba(84,48,5,0.7)',
+  1, 'rgba(247,252,240,0.4)',
+  6, 'rgba(224,243,219,0.45)',
+  11, 'rgba(204,235,197,0.5)',
+  21, 'rgba(168,221,181,0.55)',
+  41, 'rgba(123,204,196,0.6)',
+  81, 'rgba(78,179,211,0.65)',
+  151, 'rgba(43,140,190,0.7)',
+  251, 'rgba(8,104,172,0.75)',
+  441, 'rgba(8,64,129,0.8)',
 ] as unknown as maplibregl.ExpressionSpecification;
 
 // ベクタタイル(区分)とラスタータイル(積雪深)の同一オリジン取得パス。jiban-api
@@ -126,13 +124,14 @@ const DEPTH_NATIVE_Z = 12; // build_snow_depth.py のネイティブズーム
 
 // J-SHIS 地盤データの値ラスター(積雪深と同じ terrarium エンコード、0=データなし)。
 // jiban-api pipelines/jshis/build_jshis_tiles.py の出力とエンコードを一致させること。
-//   site_amp:     enc = ARV×100        (地盤増幅率 Vs=400m/s→地表, 250mメッシュ)
-//   vs350_bottom: enc = E1[m] + 10000  (深部地盤モデル第1層(Vs=350m/s)下面標高, 陸のみ)
+//   site_amp:    enc = ARV×100     (地盤増幅率 Vs=400m/s→地表, 250mメッシュ)
+//   vs350_depth: enc = D1[m] + 1   (深部地盤モデル第1層(Vs=350m/s)下面の地表からの深さ, 陸のみ。
+//                                   深さ0m=層なしも有効値なのでデータなし(0)と区別する)
 const AMP_PMTILES = '/api/design/tiles/site_amp.pmtiles';
 const AMP_NATIVE_Z = 12;
-const VS350_PMTILES = '/api/design/tiles/vs350_bottom.pmtiles';
+const VS350_PMTILES = '/api/design/tiles/vs350_depth.pmtiles';
 const VS350_NATIVE_Z = 10;
-const VS350_OFFSET = 10000;
+const VS350_OFFSET = 1;
 // 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
 const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
 const URBAN_SOURCE_LAYER = 'urban';
@@ -216,13 +215,13 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '3.8',
   },
   vs350: {
-    title: 'Vs350層下面標高（J-SHIS深部地盤 第1層）',
-    // VS350_RELIEF_COLOR の値位置(-600〜+3700m)を割合に換算した帯。
+    title: 'Vs350層下面深さ（J-SHIS深部地盤 第1層）',
+    // VS350_RELIEF_COLOR の値位置(0〜440m)を割合に換算した帯（浅い側に刻みが寄る）。
     grad:
-      'linear-gradient(to right,#08306b 0%,#2166ac 7%,#4393c3 12%,#92c5de 13%,' +
-      '#d1e5f0 14%,#b8e186 15%,#7fbc41 21%,#dfc27d 33%,#bf812d 49%,#543005 100%)',
-    min: '-600 m',
-    max: '+3700 m',
+      'linear-gradient(to right,#f7fcf0 0%,#e0f3db 1%,#ccebc5 2%,#a8ddb5 5%,' +
+      '#7bccc4 9%,#4eb3d3 18%,#2b8cbe 34%,#0868ac 57%,#084081 100%)',
+    min: '0 m',
+    max: '440 m',
   },
 };
 
@@ -747,8 +746,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
             if (token !== hoverTokenRef.current) return;
             setHover(
               h != null && h > 0
-                ? `Vs350層下面標高: ${Math.round(h - VS350_OFFSET)} m`
-                : 'Vs350層下面標高: データなし（海など）'
+                ? `Vs350層下面深さ: ${Math.round(h - VS350_OFFSET)} m`
+                : 'Vs350層下面深さ: データなし（海など）'
             );
           })
           .catch(() => {});

@@ -30,11 +30,11 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     key: 'seismic',
     Icon: Activity,
     label: '地震',
-    // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層下面標高(J-SHIS) をループ切替。
+    // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層深さ(J-SHIS) をループ切替。
     variants: [
       { val: 'seismic', label: '地震地域係数' },
       { val: 'amp', label: '地盤増幅率' },
-      { val: 'vs350', label: 'Vs350層下面標高' },
+      { val: 'vs350', label: 'Vs350層深さ' },
     ],
   },
   {
