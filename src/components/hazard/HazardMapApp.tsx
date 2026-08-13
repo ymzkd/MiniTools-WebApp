@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2 } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle } from './HazardMap';
+import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
@@ -26,7 +27,17 @@ interface OverlayCategory {
 }
 const OVERLAY_CATEGORIES: OverlayCategory[] = [
   { key: 'wind', Icon: Wind, label: '風速区分', variants: [{ val: 'wind', label: '風速区分' }] },
-  { key: 'seismic', Icon: Activity, label: '地震地域係数', variants: [{ val: 'seismic', label: '地震地域係数' }] },
+  {
+    key: 'seismic',
+    Icon: Activity,
+    label: '地震',
+    // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層深さ(J-SHIS) をループ切替。
+    variants: [
+      { val: 'seismic', label: '地震地域係数' },
+      { val: 'amp', label: '地盤増幅率' },
+      { val: 'vs350', label: '工学的基盤深さ' },
+    ],
+  },
   {
     key: 'snow',
     Icon: Snowflake,
@@ -82,6 +93,27 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 選択地点の住所（リバースジオコーディング）
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [placeLoading, setPlaceLoading] = useState(false);
+
+  // 選択地点の J-SHIS 地盤値（地盤増幅率・Vs400m/s層上面深さ）。値ラスターPMTilesから
+  // 直接読む(APIを介さない)。null=読込中または海などのデータなし。
+  const [jshis, setJshis] = useState<{ amp: number | null; depth: number | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setJshis(null);
+    Promise.all([
+      ampAtLngLat(point.lng, point.lat),
+      vs400DepthAtLngLat(point.lng, point.lat),
+    ])
+      .then(([amp, depth]) => {
+        if (!cancelled) setJshis({ amp, depth });
+      })
+      .catch(() => {
+        if (!cancelled) setJshis({ amp: null, depth: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [point.lat, point.lng]);
 
   // 地点が変わったら住所を取得（デバウンス。Nominatim への過負荷を避ける）
   useEffect(() => {
@@ -233,7 +265,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           : null,
         wind: wind ? { usable: windUsable, zone: wind.zone, Vo: wind.Vo } : null,
         shore: shore ? { nearestM: shore.nearest_m, nearestKind: shore.nearest_kind } : null,
-        seismic: seismic ? { usable: seismicUsable, zone: seismic.zone, Z: seismic.Z } : null,
+        seismic: seismic
+          ? {
+              usable: seismicUsable,
+              zone: seismic.zone,
+              Z: seismic.Z,
+              amp: jshis?.amp ?? null,
+              vs400DepthM: jshis?.depth ?? null,
+            }
+          : null,
         mapImage,
       };
 
@@ -260,6 +300,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     windUsable,
     seismicUsable,
     depth,
+    jshis,
     onSuccess,
     onError,
   ]);
@@ -448,7 +489,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
 
-              {/* 地震地域係数 */}
+              {/* 地震地域係数 + J-SHIS地盤値 */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
                   地震地域係数（昭55建告1793号）
@@ -460,9 +501,21 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                         <Row k="地域区分" v={`第${seismic.zone}区`} />
                       </tbody>
                     </table>
-                    <div className="mt-2">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
                       <Metric label="地震地域係数 Z" value={`${seismic.Z}`} />
+                      <Metric
+                        label="地盤増幅率"
+                        value={jshis?.amp != null ? jshis.amp.toFixed(2) : '—'}
+                      />
+                      <Metric
+                        label="工学的基盤深さ"
+                        value={jshis?.depth != null ? `${Math.round(jshis.depth)} m` : '—'}
+                      />
                     </div>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは
+                      J-SHIS（表層地盤・深部地盤）による参考値。
+                    </p>
                   </>
                 ) : (
                   <p className="text-sm text-gray-400">
@@ -615,6 +668,16 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
             OpenStreetMap
           </a>
           <span className="ml-1">（住所検索 Nominatim・ODbL）</span>
+          {' / '}
+          <a
+            href="https://www.j-shis.bosai.go.jp/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            地震ハザードステーション
+          </a>
+          <span className="ml-1">（表層地盤・深部地盤／防災科研 J-SHIS）</span>
         </p>
       </div>
     </div>
