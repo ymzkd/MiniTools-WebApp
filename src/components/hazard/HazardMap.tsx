@@ -2,6 +2,15 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as pmtiles from 'pmtiles';
+import {
+  DEPTH_PMTILES,
+  AMP_PMTILES,
+  VS350_PMTILES,
+  VS350_OFFSET,
+  depthAtLngLat,
+  ampHeightAt,
+  vs350HeightAt,
+} from './valueRaster';
 
 interface LatLng {
   lat: number;
@@ -119,19 +128,7 @@ const ZONE_PMTILES: Record<'wind' | 'seismic' | 'snow_zones', string> = {
 // init で生成するベクタ区分レイヤ一覧（source-layer はいずれも 'zones'）。
 const VECTOR_ZONE_KINDS = ['wind', 'seismic', 'snow_zones'] as const;
 const ZONE_SOURCE_LAYER = 'zones';
-const DEPTH_PMTILES = '/api/design/tiles/snow_depth.pmtiles';
-const DEPTH_NATIVE_Z = 12; // build_snow_depth.py のネイティブズーム
-
-// J-SHIS 地盤データの値ラスター(積雪深と同じ terrarium エンコード、0=データなし)。
-// jiban-api pipelines/jshis/build_jshis_tiles.py の出力とエンコードを一致させること。
-//   site_amp:    enc = ARV×100     (地盤増幅率 Vs=400m/s→地表, 250mメッシュ)
-//   vs350_depth: enc = D1[m] + 1   (深部地盤モデル第1層(Vs=350m/s)下面の地表からの深さ, 陸のみ。
-//                                   深さ0m=層なしも有効値なのでデータなし(0)と区別する)
-const AMP_PMTILES = '/api/design/tiles/site_amp.pmtiles';
-const AMP_NATIVE_Z = 12;
-const VS350_PMTILES = '/api/design/tiles/vs350_depth.pmtiles';
-const VS350_NATIVE_Z = 10;
-const VS350_OFFSET = 1;
+// 値ラスターの取得パス・点読み出しは valueRaster.ts に集約（左パネルでも使うため）。
 // 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
 const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
 const URBAN_SOURCE_LAYER = 'urban';
@@ -206,7 +203,7 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '',
   },
   amp: {
-    title: '地盤増幅率（J-SHIS表層地盤 Vs=400m/s→地表）',
+    title: '地盤増幅率（工学的基盤→地表）',
     // AMP_RELIEF_COLOR の値位置(0.5〜3.84)を割合に換算した帯。
     grad:
       'linear-gradient(to right,#1a9850 0%,#91cf60 12%,#d9ef8b 18%,#fee08b 24%,' +
@@ -215,7 +212,8 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '3.8',
   },
   vs350: {
-    title: 'Vs350層下面深さ（J-SHIS深部地盤 第1層）',
+    // 深部地盤モデル第1層(Vs=350m/s)の下面 = Vs400m/s層の上面。UI表記は後者に統一。
+    title: 'Vs400m/s層上面深さ',
     // VS350_RELIEF_COLOR の値位置(0〜440m)を割合に換算した帯（浅い側に刻みが寄る）。
     grad:
       'linear-gradient(to right,#f7fcf0 0%,#e0f3db 1%,#ccebc5 2%,#a8ddb5 5%,' +
@@ -232,70 +230,6 @@ function ensurePmtilesProtocol() {
   if (_pmtilesRegistered) return;
   _pmtilesRegistered = true;
   maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);
-}
-
-// ホバー時に値ラスター(積雪深/増幅率/Vs350下面標高)をカーソル位置で読み出すため、
-// PMTiles を直接デコードする汎用リーダー。同一タイルは ImageData をキャッシュ
-// (タイル内移動は再デコード不要)。返り値は terrarium 復号後の生エンコード値。
-function makeValueRasterReader(path: string, nativeZ: number) {
-  let pm: pmtiles.PMTiles | null = null;
-  const cache = new Map<string, Uint8ClampedArray | null>();
-
-  async function loadTile(z: number, x: number, y: number): Promise<Uint8ClampedArray | null> {
-    const key = `${z}/${x}/${y}`;
-    if (cache.has(key)) return cache.get(key)!;
-    let out: Uint8ClampedArray | null = null;
-    try {
-      if (!pm) pm = new pmtiles.PMTiles(`${window.location.origin}${path}`);
-      const r = await pm.getZxy(z, x, y);
-      if (r) {
-        // 値ラスターなので色変換/プリマルチを無効化して画素値を正確に読む（R は terrarium の
-        // 上位バイト=×256 なので 1 ずれると値が 256 狂う）。
-        const bmp = await createImageBitmap(new Blob([r.data], { type: 'image/png' }), {
-          premultiplyAlpha: 'none',
-          colorSpaceConversion: 'none',
-        });
-        const cv = document.createElement('canvas');
-        cv.width = 256;
-        cv.height = 256;
-        const ctx = cv.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(bmp, 0, 0);
-          out = ctx.getImageData(0, 0, 256, 256).data;
-        }
-      }
-    } catch {
-      out = null;
-    }
-    cache.set(key, out);
-    return out;
-  }
-
-  // 緯度経度のエンコード値（terrarium 復号）。タイルなし/取得失敗は null。
-  return async function heightAt(lng: number, lat: number): Promise<number | null> {
-    const n = 2 ** nativeZ;
-    const xf = ((lng + 180) / 360) * n;
-    const latR = (lat * Math.PI) / 180;
-    const yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
-    const x = Math.floor(xf);
-    const y = Math.floor(yf);
-    const px = Math.min(255, Math.max(0, Math.floor((xf - x) * 256)));
-    const py = Math.min(255, Math.max(0, Math.floor((yf - y) * 256)));
-    const img = await loadTile(nativeZ, x, y);
-    if (!img) return null;
-    const i = (py * 256 + px) * 4;
-    return img[i] * 256 + img[i + 1] + img[i + 2] / 256 - 32768; // terrarium 復号
-  };
-}
-
-const depthHeightAt = makeValueRasterReader(DEPTH_PMTILES, DEPTH_NATIVE_Z);
-const ampHeightAt = makeValueRasterReader(AMP_PMTILES, AMP_NATIVE_Z);
-const vs350HeightAt = makeValueRasterReader(VS350_PMTILES, VS350_NATIVE_Z);
-
-// 緯度経度の積雪深[cm]。雪なし/タイルなしは null。
-async function depthAtLngLat(lng: number, lat: number): Promise<number | null> {
-  const d = await depthHeightAt(lng, lat);
-  return d != null && d > 0.5 ? d : null;
 }
 
 // 経度を [-180, 180] に正規化（メルカトルで地図を一周しても巨大な経度を上流へ送らない）。
@@ -746,8 +680,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
             if (token !== hoverTokenRef.current) return;
             setHover(
               h != null && h > 0
-                ? `Vs350層下面深さ: ${Math.round(h - VS350_OFFSET)} m`
-                : 'Vs350層下面深さ: データなし（海など）'
+                ? `Vs400m/s層上面深さ: ${Math.round(h - VS350_OFFSET)} m`
+                : 'Vs400m/s層上面深さ: データなし（海など）'
             );
           })
           .catch(() => {});
