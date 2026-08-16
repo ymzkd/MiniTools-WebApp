@@ -205,6 +205,38 @@ app.use('/api/design', async (req, res) => {
   }
 })
 
+// J-SHIS 地震動ハザード(応答スペクトル・震源別影響度)API（jiban-api /jshis/*）への薄いリバースプロキシ。
+// /api/jshis/* → jiban-api /jshis/*
+//   spectrum: 地点の応答スペクトル(即時)
+//   contrib : 震源別影響度。jiban-api がバックグラウンド取得し、未完なら 202 pending を返す
+//             (フロントが wait 付きでポーリング)。202 も含めステータスをそのまま透過する。
+app.use('/api/jshis', async (req, res) => {
+  if (!JIBAN_API_URL) {
+    return res.status(503).json({ error: 'J-SHIS API not configured' })
+  }
+  try {
+    const target =
+      JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/jshis/, '/jshis')
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers: { accept: req.headers['accept'] || '*/*' },
+    })
+    res.status(upstream.status)
+    for (const h of ['content-type', 'cache-control']) {
+      const v = upstream.headers.get(h)
+      if (v) res.setHeader(h, v)
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    return res.send(buf)
+  } catch (error) {
+    console.error('J-SHIS jiban proxy error:', error)
+    return res.status(502).json({
+      error: 'Bad gateway to jiban API',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    })
+  }
+})
+
 // Static assets + SPA fallback (final middleware works across Express 4/5).
 const distDir = path.join(__dirname, 'dist')
 app.use(express.static(distDir))
