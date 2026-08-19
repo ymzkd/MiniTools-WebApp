@@ -31,8 +31,9 @@ export type ZoneOverlay =
   | 'vs350'
   | 'faults';
 
-// 地震系オーバーレイ(seismic/amp/vs350/faults)の表示中は J-SHIS 震源断層(線・面)と、選択地点への
-// 影響度上位の震源のハイライトを重ねる(判定は jshisApi.isSeismicOverlay)。
+// 地震系オーバーレイ(seismic/amp/vs350/faults)の表示中は、選択地点への影響度上位の震源を
+// ハイライト表示する(判定は jshisApi.isSeismicOverlay)。全断層(下塗り・面・断層線)を描くのは
+// 'faults'(震源断層)のときだけ — 他のオーバーレイでは全国の断層が重なって読みづらいため。
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -511,10 +512,16 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('zones-vs350-fill')) {
       map.setLayoutProperty('zones-vs350-fill', 'visibility', kind === 'vs350' ? 'visible' : 'none');
     }
-    // 震源断層(線・面)とハイライトは地震系オーバーレイのときだけ
-    const showFaults = isSeismicOverlay(kind) ? 'visible' : 'none';
-    for (const id of [...FAULT_BASE_LAYERS, ...FAULT_HL_LAYERS]) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showFaults);
+    // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ。他の地震系オーバーレイ
+    // (地域係数/増幅率/工学的基盤深さ)では全国の断層が常時重なると読みづらいので、選択地点への
+    // 影響度上位の震源(ハイライト)だけを重ねる。
+    const showAll = kind === 'faults' ? 'visible' : 'none';
+    const showHighlight = isSeismicOverlay(kind) ? 'visible' : 'none';
+    for (const id of FAULT_BASE_LAYERS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showAll);
+    }
+    for (const id of FAULT_HL_LAYERS) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showHighlight);
     }
   }, []);
   // ハイライト対象(fid 群と色)。初期化時にも参照するため ref に保持。
@@ -771,7 +778,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         return;
       }
       // 地震系オーバーレイではカーソル下の震源断層名も併記する(面は点、線は 5px 幅で拾う)。
-      const faultTxt = isSeismicOverlay(ov) ? faultTextAt(map, e.point) : null;
+      const faultTxt = isSeismicOverlay(ov) ? faultTextAt(map, e.point, ov) : null;
       const withFault = (t: string | null): string | null => (t && faultTxt ? `${t} ｜ ${faultTxt}` : t ?? faultTxt);
       if (ov === 'faults') {
         setHover(faultTxt);
@@ -967,7 +974,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
               </div>
               {isSeismicOverlay(overlay) && (
                 <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
-                  ＋震源断層（線・面）と影響度上位の震源を重ねて表示
+                  ＋選択地点への影響度上位の震源のみ重ねて表示（全断層は「震源断層」で表示）
                 </div>
               )}
             </>
@@ -999,21 +1006,28 @@ function updateData(map: maplibregl.Map, center: LatLng, radiusKm: number) {
 
 // カーソル位置の震源断層名(地震系オーバーレイのホバー用)。面は点で、線は 5px 四方の矩形で拾う。
 // 重なる要素(同一領域の複数モデル等)は先頭＋件数で示す。
-function faultTextAt(map: maplibregl.Map, pt: maplibregl.Point): string | null {
+// 参照するレイヤは「そのオーバーレイで実際に描いているもの」に合わせる:
+//   'faults'      … 全断層(faults/traces)。非表示レイヤは queryRenderedFeatures が拾わないため。
+//   その他の地震系 … 影響度上位のハイライトのみ(faults-hl-*)。レイヤ丸ごとの震源(南海トラフ等)は
+//                    dissolve 面(groups)なので fid を持たず layer で重複排除する。
+function faultTextAt(map: maplibregl.Map, pt: maplibregl.Point, overlay: ZoneOverlay): string | null {
   if (!map.getLayer('faults-fill')) return null;
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [
     [pt.x - 5, pt.y - 5],
     [pt.x + 5, pt.y + 5],
   ];
-  const lines = map.queryRenderedFeatures(box, { layers: ['faults-traces'] });
-  const polys = map.queryRenderedFeatures(pt, { layers: ['faults-fill'] });
-  const seen = new Set<number>();
+  const lineLayers = overlay === 'faults' ? ['faults-traces'] : ['faults-hl-traces'];
+  const fillLayers =
+    overlay === 'faults' ? ['faults-fill'] : ['faults-hl-fill', 'faults-hl-groups-fill'];
+  const lines = map.queryRenderedFeatures(box, { layers: lineLayers.filter((l) => map.getLayer(l)) });
+  const polys = map.queryRenderedFeatures(pt, { layers: fillLayers.filter((l) => map.getLayer(l)) });
+  const seen = new Set<string>();
   const names: string[] = [];
   for (const f of [...lines, ...polys]) {
     const p = f.properties || {};
-    const fid = Number(p.fid);
-    if (seen.has(fid)) continue;
-    seen.add(fid);
+    const key = p.fid != null ? `f${p.fid}` : `l${p.layer ?? p.name ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const mag = p.mag != null && p.mag !== '' ? ` ${p.mag_kind ?? 'M'}${Number(p.mag).toFixed(1)}` : '';
     names.push(`${p.name ?? p.code ?? ''}${mag}`);
   }
