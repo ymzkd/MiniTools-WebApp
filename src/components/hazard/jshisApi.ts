@@ -102,9 +102,15 @@ export interface ContribProgress {
 }
 
 /**
- * 震源別影響度を取得。サーバが 202(pending) を返す間は wait 付きで再要求し続ける。
+ * 震源別影響度を取得。取得完了まで「短時間で返るリクエスト」を繰り返す(ショートポーリング)。
  * onPending で経過秒を通知(UIの進捗表示用)。signal で中断可(地点変更時)。
  * maxTotalMs を超えたら Error('timeout')。
+ *
+ * **接続を保持しないこと**が重要: `wait` を大きくしてサーバ側で待たせる(ロングポーリング)と、
+ * その間ブラウザの同時接続(HTTP/1.1 は 1ホスト6本)を1本占有し続ける。地図タイル(PMTiles の
+ * Range 取得)や /api/design/lookup など**同一オリジンの他のリクエストが接続待ちで数十秒詰まる**
+ * (実測: long-poll 6本の裏で /api/design/lookup が 19 秒待たされた)。そのため `wait=0` で
+ * 即座に 202 を受け取り、接続を解放してから次のポーリングまで待つ。
  */
 export async function fetchContrib(
   lat: number,
@@ -113,10 +119,8 @@ export async function fetchContrib(
 ): Promise<ContribResult> {
   const { signal, onPending, maxTotalMs = 6 * 60 * 1000 } = opts;
   const t0 = Date.now();
-  // 初回は短く待って(pending をすぐ知らせる)、以降は長め(サーバ側 wait 上限 25 秒)に待つ。
-  let wait = 3;
   for (;;) {
-    const res = await fetch(`/api/jshis/contrib?lat=${lat}&lng=${lng}&wait=${wait}`, {
+    const res = await fetch(`/api/jshis/contrib?lat=${lat}&lng=${lng}&wait=0`, {
       signal,
       headers: { accept: 'application/json' },
     });
@@ -129,24 +133,34 @@ export async function fetchContrib(
         /* noop */
       }
       onPending?.({ elapsedS: elapsed });
-      if (Date.now() - t0 > maxTotalMs) throw new Error('timeout');
-      wait = 20;
-      await new Promise<void>((resolve, reject) => {
-        const t = setTimeout(resolve, 1500);
-        signal?.addEventListener(
-          'abort',
-          () => {
-            clearTimeout(t);
-            reject(new DOMException('aborted', 'AbortError'));
-          },
-          { once: true }
-        );
-      });
+      const waited = Date.now() - t0;
+      if (waited > maxTotalMs) throw new Error('timeout');
+      // 取得は J-SHIS 側の計算待ちで 1〜2 分かかる。序盤は細かく、以降は間隔を空ける。
+      await sleep(waited < 30_000 ? 2000 : 4000, signal);
       continue;
     }
     if (!res.ok) throw new Error(`jshis contrib error: ${res.status}`);
     return (await res.json()) as ContribResult;
   }
+}
+
+/** signal で中断できる sleep。 */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('aborted', 'AbortError'));
+      return;
+    }
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new DOMException('aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 // ---------------------------------------------------------------- 系列色

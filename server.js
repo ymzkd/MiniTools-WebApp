@@ -209,17 +209,23 @@ app.use('/api/design', async (req, res) => {
 // /api/jshis/* → jiban-api /jshis/*
 //   spectrum: 地点の応答スペクトル(即時)
 //   contrib : 震源別影響度。jiban-api がバックグラウンド取得し、未完なら 202 pending を返す
-//             (フロントが wait 付きでポーリング)。202 も含めステータスをそのまま透過する。
+//             (フロントは wait=0 のショートポーリングで待つ)。202 も含めステータスを透過する。
+// クライアントが切断(地点変更で fetch を abort)したら上流も中断する。放置すると上流の
+// リクエストだけが残り、接続とワーカーを無駄に占有するため（取得ジョブ自体は jiban-api 側で
+// shield されており継続・キャッシュされる）。
 app.use('/api/jshis', async (req, res) => {
   if (!JIBAN_API_URL) {
     return res.status(503).json({ error: 'J-SHIS API not configured' })
   }
+  const ac = new AbortController()
+  res.on('close', () => ac.abort())
   try {
     const target =
       JIBAN_API_URL.replace(/\/$/, '') + req.originalUrl.replace(/^\/api\/jshis/, '/jshis')
     const upstream = await fetch(target, {
       method: req.method,
       headers: { accept: req.headers['accept'] || '*/*' },
+      signal: ac.signal,
     })
     res.status(upstream.status)
     for (const h of ['content-type', 'cache-control']) {
@@ -229,6 +235,7 @@ app.use('/api/jshis', async (req, res) => {
     const buf = Buffer.from(await upstream.arrayBuffer())
     return res.send(buf)
   } catch (error) {
+    if (ac.signal.aborted) return // クライアント切断。応答先が無いので何もしない
     console.error('J-SHIS jiban proxy error:', error)
     return res.status(502).json({
       error: 'Bad gateway to jiban API',
