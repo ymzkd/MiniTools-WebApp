@@ -26,12 +26,6 @@ export const PROB_COLOR_VAR: Record<ProbKey, string> = {
   '0.10': 'var(--viz-o2)',
   '0.39': 'var(--viz-o1)',
 };
-// 地震系オーバーレイ(HazardMap の ZoneOverlay のうち、震源断層と影響度ハイライトを重ねるもの)。
-// 'faults' は断層だけを見せる variant。
-export const SEISMIC_OVERLAYS: ReadonlySet<string> = new Set(['seismic', 'amp', 'vs350', 'faults']);
-export function isSeismicOverlay(o: string): boolean {
-  return SEISMIC_OVERLAYS.has(o);
-}
 /** 50年超過確率 → おおよその再現期間(年)。凡例の補足用(2%≈2475年, 5%≈975年, 10%≈475年, 39%≈100年)。 */
 export const PROB_RETURN_YEARS: Record<ProbKey, number> = {
   '0.02': 2475,

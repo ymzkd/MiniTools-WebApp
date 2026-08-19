@@ -11,7 +11,6 @@ import {
   ampHeightAt,
   vs350HeightAt,
 } from './valueRaster';
-import { isSeismicOverlay } from './jshisApi';
 import type { MapHighlight } from './jshisApi';
 
 interface LatLng {
@@ -31,9 +30,9 @@ export type ZoneOverlay =
   | 'vs350'
   | 'faults';
 
-// 地震系オーバーレイ(seismic/amp/vs350/faults)の表示中は、選択地点への影響度上位の震源を
-// ハイライト表示する(判定は jshisApi.isSeismicOverlay)。全断層(下塗り・面・断層線)を描くのは
-// 'faults'(震源断層)のときだけ — 他のオーバーレイでは全国の断層が重なって読みづらいため。
+// 選択地点への影響度上位の震源(ハイライト)は、海率円や海岸線への測線と同じ「その地点の情報」
+// なのでオーバーレイの選択によらず常時表示する。全断層(下塗り・面・断層線)を描くのは
+// 'faults'(震源断層)オーバーレイのときだけ — 常時だと全国の断層が重なって読みづらいため。
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -512,16 +511,15 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('zones-vs350-fill')) {
       map.setLayoutProperty('zones-vs350-fill', 'visibility', kind === 'vs350' ? 'visible' : 'none');
     }
-    // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ。他の地震系オーバーレイ
-    // (地域係数/増幅率/工学的基盤深さ)では全国の断層が常時重なると読みづらいので、選択地点への
-    // 影響度上位の震源(ハイライト)だけを重ねる。
+    // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると
+    // 読みづらいため)。一方、選択地点への影響度上位の震源(ハイライト)は、海率円や海岸線への測線と
+    // 同じく「その地点の情報」なのでオーバーレイの選択によらず常時表示する。
     const showAll = kind === 'faults' ? 'visible' : 'none';
-    const showHighlight = isSeismicOverlay(kind) ? 'visible' : 'none';
     for (const id of FAULT_BASE_LAYERS) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showAll);
     }
     for (const id of FAULT_HL_LAYERS) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showHighlight);
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
     }
   }, []);
   // ハイライト対象(fid 群と色)。初期化時にも参照するため ref に保持。
@@ -680,30 +678,30 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       map.addLayer({
         id: 'faults-hl-groups-fill', type: 'fill', source: 'faults', 'source-layer': 'groups',
         filter: highlightGroupFilter(highlightsRef.current),
-        layout: { visibility: 'none' },
+        layout: { visibility: 'visible' },
         paint: { 'fill-color': highlightGroupColorExpr(highlightsRef.current), 'fill-opacity': 0.38 },
       });
       map.addLayer({
         id: 'faults-hl-fill', type: 'fill', source: 'faults', 'source-layer': 'faults',
         filter: highlightFillFilter(highlightsRef.current),
-        layout: { visibility: 'none' }, paint: { 'fill-color': hlColor, 'fill-opacity': 0.38 },
+        layout: { visibility: 'visible' }, paint: { 'fill-color': hlColor, 'fill-opacity': 0.38 },
       });
       map.addLayer({
         id: 'faults-hl-line-casing', type: 'line', source: 'faults', 'source-layer': 'faults', filter: hlFilter,
-        layout: { visibility: 'none' }, paint: { 'line-color': '#ffffff', 'line-width': 4.5, 'line-opacity': 0.9 },
+        layout: { visibility: 'visible' }, paint: { 'line-color': '#ffffff', 'line-width': 4.5, 'line-opacity': 0.9 },
       });
       map.addLayer({
         id: 'faults-hl-line', type: 'line', source: 'faults', 'source-layer': 'faults', filter: hlFilter,
-        layout: { visibility: 'none' }, paint: { 'line-color': hlColor, 'line-width': 2.2 },
+        layout: { visibility: 'visible' }, paint: { 'line-color': hlColor, 'line-width': 2.2 },
       });
       map.addLayer({
         id: 'faults-hl-traces-casing', type: 'line', source: 'faults', 'source-layer': 'traces', filter: hlFilter,
-        layout: { visibility: 'none', 'line-cap': 'round' },
+        layout: { visibility: 'visible', 'line-cap': 'round' },
         paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.9 },
       });
       map.addLayer({
         id: 'faults-hl-traces', type: 'line', source: 'faults', 'source-layer': 'traces', filter: hlFilter,
-        layout: { visibility: 'none', 'line-cap': 'round' },
+        layout: { visibility: 'visible', 'line-cap': 'round' },
         paint: { 'line-color': hlColor, 'line-width': 3.5 },
       });
 
@@ -777,8 +775,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         setHover(null);
         return;
       }
-      // 地震系オーバーレイではカーソル下の震源断層名も併記する(面は点、線は 5px 幅で拾う)。
-      const faultTxt = isSeismicOverlay(ov) ? faultTextAt(map, e.point, ov) : null;
+      // カーソル下の震源断層名も併記する(面は点、線は 5px 幅で拾う)。ハイライト(その地点への
+      // 影響度上位)は常時表示なので、どのオーバーレイでも拾える。
+      const faultTxt = faultTextAt(map, e.point, ov);
       const withFault = (t: string | null): string | null => (t && faultTxt ? `${t} ｜ ${faultTxt}` : t ?? faultTxt);
       if (ov === 'faults') {
         setHover(faultTxt);
@@ -972,11 +971,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
                 <span>{LEGEND[overlay].min}</span>
                 <span>{LEGEND[overlay].max}</span>
               </div>
-              {isSeismicOverlay(overlay) && (
-                <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
-                  ＋選択地点への影響度上位の震源のみ重ねて表示（全断層は「震源断層」で表示）
-                </div>
-              )}
+              <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
+                ＋選択地点への影響度上位の震源（全断層は「震源断層」で表示）
+              </div>
             </>
           )}
           <div className="text-[11px] mt-1 font-medium text-gray-900 dark:text-gray-100 min-h-[15px]">

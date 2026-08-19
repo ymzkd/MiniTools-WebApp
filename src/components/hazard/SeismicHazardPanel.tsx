@@ -3,7 +3,7 @@
 //   - 震源別影響度(J-SHIS CGI・初回は数十秒〜2分)の積み上げ棒 + 凡例
 // 凡例の色は地図の断層ハイライトと同じ(スロット固定割当)。凡例行クリックで地図をその震源へ寄せる。
 import React, { useState } from 'react';
-import { Loader2, RefreshCw, Table2, MapPinned, EyeOff, Crosshair } from 'lucide-react';
+import { Loader2, RefreshCw, Table2, Info, EyeOff, Crosshair } from 'lucide-react';
 import { ResponseSpectrumChart, ContributionChart } from './SeismicCharts';
 import {
   JSHIS_PERIODS,
@@ -36,9 +36,7 @@ interface Props {
   period: PeriodKey;
   onProbChange: (p: ProbKey) => void;
   onPeriodChange: (p: PeriodKey) => void;
-  /** 地図が地震系オーバーレイ(断層を描画中)か */
-  faultsOnMap: boolean;
-  onShowFaultsOnMap: () => void;
+  /** 凡例の行クリックで地図をその震源に合わせる(震源のハイライトは常時表示なので誘導UIは持たない) */
   onFocusSource: (s: ContribSource) => void;
 }
 
@@ -53,8 +51,6 @@ const SeismicHazardPanel: React.FC<Props> = ({
   period,
   onProbChange,
   onPeriodChange,
-  faultsOnMap,
-  onShowFaultsOnMap,
   onFocusSource,
 }) => {
   const [yScale, setYScale] = useState<'log' | 'linear'>('log');
@@ -63,7 +59,6 @@ const SeismicHazardPanel: React.FC<Props> = ({
   // 応答スペクトル: ローカルデータが無い環境では API 側の一様ハザードスペクトル(同値)で代替
   const sa = spectrum?.available && spectrum.sa ? spectrum.sa : contrib?.available && contrib.uhs ? contrib.uhs : null;
   const pga = spectrum?.available ? spectrum.pga ?? null : null;
-  const mesh = spectrum?.mesh ?? contrib?.mesh ?? null;
 
   const row = contribAt(contrib, prob, period);
   const other = otherShare(contrib, slots, prob, period);
@@ -71,13 +66,13 @@ const SeismicHazardPanel: React.FC<Props> = ({
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
-        地震動ハザード（J-SHIS 確率論的地震動予測地図 2020年版）
+      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2 flex items-center gap-1">
+        地震動ハザード
+        <InfoTip>
+          J-SHIS 確率論的地震動予測地図 2020年版。工学的基盤（Vs=400m/s）上の加速度応答スペクトル（減衰5%）と
+          最大加速度、および各周期の応答に対する震源別の影響度（寄与率）。
+        </InfoTip>
       </h3>
-      <p className="text-[11px] text-gray-400 mb-2">
-        工学的基盤（Vs=400m/s）上の加速度応答スペクトル（減衰5%）と最大加速度、および各周期の応答に対する震源別の影響度（寄与率）。
-        地点を含む250mメッシュ{mesh ? `（${mesh}）` : ''}の値。
-      </p>
 
       {/* ---------------- 応答スペクトル ---------------- */}
       <div className="flex items-center justify-between gap-2 mb-1">
@@ -246,26 +241,8 @@ const SeismicHazardPanel: React.FC<Props> = ({
         <>
           <ContributionChart contrib={contrib} slots={slots} prob={prob} selectedPeriod={period} onSelectPeriod={onPeriodChange} />
           {/* 凡例: 選択中の 確率×周期 の寄与率順。色は地図のハイライトと同じ */}
-          <div className="mt-1 flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
-            <span>
-              50年超過確率 {PROB_LABEL[prob]} ・ 周期 {JSHIS_PERIODS[JSHIS_PERIOD_KEYS.indexOf(period)]} s の寄与率
-            </span>
-            {faultsOnMap ? (
-              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                <MapPinned className="w-3 h-3" />
-                地図に同色で強調表示中
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={onShowFaultsOnMap}
-                className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
-                title="地図のオーバーレイを「震源断層」にして、影響度上位の震源を同じ色で強調表示します"
-              >
-                <MapPinned className="w-3 h-3" />
-                地図に断層を表示
-              </button>
-            )}
+          <div className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+            50年超過確率 {PROB_LABEL[prob]} ・ 周期 {JSHIS_PERIODS[JSHIS_PERIOD_KEYS.indexOf(period)]} s の寄与率
           </div>
           <ul className="mt-1 divide-y divide-gray-100 dark:divide-gray-700">
             {legendRows.map((s) => (
@@ -279,10 +256,6 @@ const SeismicHazardPanel: React.FC<Props> = ({
               </li>
             )}
           </ul>
-          <p className="text-[10px] text-gray-400 mt-1">
-            斜線の震源は面的モデル（活断層が特定されていない場所で起こる地震など）で、断層形状を持たないため地図には表示されません。
-            距離は震源断層の地表投影までの最短水平距離、深さはその位置の断層深さ。
-          </p>
         </>
       ) : (
         <p className="text-xs text-gray-400 py-2">—</p>
@@ -291,6 +264,28 @@ const SeismicHazardPanel: React.FC<Props> = ({
   );
 };
 
+// タイトル横の情報アイコン。ホバー/フォーカスで説明を出す(常時表示だと一覧が窮屈になるため)。
+const InfoTip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <span className="relative inline-flex group align-middle">
+    <button
+      type="button"
+      tabIndex={0}
+      aria-label="この表示についての説明"
+      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:text-gray-600"
+    >
+      <Info className="w-3.5 h-3.5" />
+    </button>
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 hidden w-64 -translate-x-1/2 rounded-md border border-gray-200 bg-white p-2 text-[11px] font-normal leading-snug text-gray-600 shadow-lg group-hover:block group-focus-within:block dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300"
+    >
+      {children}
+    </span>
+  </span>
+);
+
+// 震源1件。名称と寄与率だけを並べ、距離・深さ・マグニチュード等の詳細は行のツールチップに退避する
+// (一覧の視認性を優先。形状の有無はチップの斜線とアイコンで示す)。
 const LegendRow: React.FC<{ slot: SourceSlot; share: number; onFocus: (s: ContribSource) => void }> = ({ slot, share, onFocus }) => {
   const s = slot.source;
   const color = SERIES_VARS[slot.slot];
@@ -302,12 +297,13 @@ const LegendRow: React.FC<{ slot: SourceSlot; share: number; onFocus: (s: Contri
     if (s.depth_km != null) meta.push(`深さ ${Math.round(s.depth_km)} km`);
     if (mag) meta.push(mag);
   } else if (s.kind === 'areal') {
-    meta.push('面的モデル（地図表示なし）');
+    meta.push('面的モデル（断層形状を持たないため地図には表示されません）');
   } else if (s.kind === 'aggregate') {
     meta.push('集計');
   } else {
     meta.push('形状データなし');
   }
+  const tip = `${s.name}\n${meta.join('・')}${hasGeom ? '\nクリックで地図をこの震源に合わせます' : ''}`;
   const chipStyle: React.CSSProperties = hasGeom
     ? { background: color }
     : {
@@ -319,7 +315,6 @@ const LegendRow: React.FC<{ slot: SourceSlot; share: number; onFocus: (s: Contri
       <span className="w-3 h-3 rounded-sm shrink-0" style={chipStyle} />
       <div className="flex-1 min-w-0">
         <div className="text-xs text-gray-800 dark:text-gray-200 leading-tight line-clamp-2">{s.name}</div>
-        <div className="text-[10px] text-gray-400 leading-tight">{meta.join('・')}</div>
       </div>
       <div className="text-xs font-semibold tabular-nums text-gray-800 dark:text-gray-100 shrink-0">{(share * 100).toFixed(1)}%</div>
       {hasGeom ? (
@@ -336,12 +331,14 @@ const LegendRow: React.FC<{ slot: SourceSlot; share: number; onFocus: (s: Contri
           type="button"
           onClick={() => onFocus(s)}
           className="w-full flex items-center gap-2 py-1 text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded"
-          title="地図をこの震源に合わせる"
+          title={tip}
         >
           {inner}
         </button>
       ) : (
-        <div className="w-full flex items-center gap-2 py-1">{inner}</div>
+        <div className="w-full flex items-center gap-2 py-1" title={tip}>
+          {inner}
+        </div>
       )}
     </li>
   );

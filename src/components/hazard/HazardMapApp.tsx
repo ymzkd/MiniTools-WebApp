@@ -8,7 +8,7 @@ import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
 import type { ContribStatus } from './SeismicHazardPanel';
-import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots, isSeismicOverlay } from './jshisApi';
+import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
 import type { SpectrumResult, ContribResult, ContribSource, ProbKey, PeriodKey } from './jshisApi';
 
 // 特定行政庁の区分(type)の日本語ラベル。
@@ -181,11 +181,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 系列色の割当(順位順固定)と地図ハイライト
   const sourceSlots = useMemo(() => (contrib ? assignSourceSlots(contrib) : []), [contrib]);
   const faultHighlights = useMemo(() => highlightsFromSlots(sourceSlots), [sourceSlots]);
+  // 凡例の行クリック: その震源が収まるよう地図を寄せる(ハイライトは常時表示なのでオーバーレイは変えない)
   const handleFocusSource = useCallback((s: ContribSource) => {
     if (!s.bbox) return;
     setFocusBbox((prev) => ({ bbox: s.bbox!, v: (prev?.v ?? 0) + 1 }));
-    // 断層が見えるよう、地震系オーバーレイでなければ震源断層表示に切替える
-    setOverlay((cur) => (isSeismicOverlay(cur) ? cur : 'faults'));
   }, []);
 
   // 地点が変わったら住所を取得（デバウンス。Nominatim への過負荷を避ける）
@@ -609,8 +608,6 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 period={jshisPeriod}
                 onProbChange={setJshisProb}
                 onPeriodChange={setJshisPeriod}
-                faultsOnMap={isSeismicOverlay(overlay)}
-                onShowFaultsOnMap={() => setOverlay('faults')}
                 onFocusSource={handleFocusSource}
               />
 
