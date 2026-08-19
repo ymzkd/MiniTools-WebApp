@@ -192,6 +192,16 @@ const SeismicHazardPanel: React.FC<Props> = ({
         </div>
       </div>
 
+      {contrib?.provisional && (
+        <div className="mb-1 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10px] leading-snug text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          <Loader2 className="mt-px w-3 h-3 shrink-0 animate-spin" />
+          <span>
+            近傍 {contrib.provisional.dist_km} km の地点の暫定値です（この地点の値を取得中
+            {contribStatus.elapsedS != null ? `・${Math.round(contribStatus.elapsedS)} 秒経過` : ''}）。
+            取得でき次第この地点の値に差し替わります。
+          </span>
+        </div>
+      )}
       {contribStatus.state === 'loading' && !contrib ? (
         <div className="py-3 text-center">
           <div className="inline-flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">

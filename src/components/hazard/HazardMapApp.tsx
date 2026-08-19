@@ -160,6 +160,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         onPending: (p) => {
           if (!ac.signal.aborted) setContribStatus({ state: 'loading', elapsedS: p.elapsedS });
         },
+        // 取得待ちの間は近傍メッシュ(10km以内)の暫定値を先に見せる。status は loading のままで、
+        // 本来の値が届いたら差し替わる。
+        onProvisional: (r) => {
+          if (!ac.signal.aborted) setContrib(r);
+        },
       })
         .then((r) => {
           if (ac.signal.aborted) return;

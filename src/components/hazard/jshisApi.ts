@@ -76,6 +76,14 @@ export interface ContribSource {
   layer?: string;
 }
 
+/** 取得待ちの間に代わりに見せている近傍メッシュの情報(10km以内。無ければ本来の値) */
+export interface ProvisionalInfo {
+  mesh: string;
+  dist_km: number;
+  lat: number;
+  lng: number;
+}
+
 export interface ContribResult extends JshisBase {
   available: boolean;
   /** prob → period → code → 寄与率(合計≈1) */
@@ -83,6 +91,8 @@ export interface ContribResult extends JshisBase {
   sources?: Record<string, ContribSource>;
   /** API 側の一様ハザードスペクトル(prob → 8周期)。ローカルCSVと同値。spectrum が無い環境の予備 */
   uhs?: Record<string, (number | null)[]>;
+  /** これが付いていれば「近傍メッシュの暫定値」。本来の値が届いたら差し替わる */
+  provisional?: ProvisionalInfo;
 }
 
 export async function fetchSpectrum(lat: number, lng: number, signal?: AbortSignal): Promise<SpectrumResult> {
@@ -93,6 +103,12 @@ export async function fetchSpectrum(lat: number, lng: number, signal?: AbortSign
 
 export interface ContribProgress {
   elapsedS: number | null;
+}
+
+/** 202(取得待ち)の応答。近傍キャッシュがあれば暫定値が本体に載る。 */
+interface PendingBody extends Partial<ContribResult> {
+  status?: string;
+  elapsed_s?: number;
 }
 
 /**
@@ -109,10 +125,17 @@ export interface ContribProgress {
 export async function fetchContrib(
   lat: number,
   lng: number,
-  opts: { signal?: AbortSignal; onPending?: (p: ContribProgress) => void; maxTotalMs?: number } = {}
+  opts: {
+    signal?: AbortSignal;
+    onPending?: (p: ContribProgress) => void;
+    /** 取得待ちの間、近傍メッシュの暫定値が得られたら通知する(1回だけ渡せば十分) */
+    onProvisional?: (r: ContribResult) => void;
+    maxTotalMs?: number;
+  } = {}
 ): Promise<ContribResult> {
-  const { signal, onPending, maxTotalMs = 6 * 60 * 1000 } = opts;
+  const { signal, onPending, onProvisional, maxTotalMs = 6 * 60 * 1000 } = opts;
   const t0 = Date.now();
+  let sentProvisional = false;
   for (;;) {
     const res = await fetch(`/api/jshis/contrib?lat=${lat}&lng=${lng}&wait=0`, {
       signal,
@@ -121,8 +144,12 @@ export async function fetchContrib(
     if (res.status === 202) {
       let elapsed: number | null = null;
       try {
-        const j = await res.json();
+        const j = (await res.json()) as PendingBody;
         elapsed = typeof j?.elapsed_s === 'number' ? j.elapsed_s : null;
+        if (!sentProvisional && j?.provisional && j.available && j.contrib && j.sources) {
+          sentProvisional = true;
+          onProvisional?.(j as ContribResult);
+        }
       } catch {
         /* noop */
       }
