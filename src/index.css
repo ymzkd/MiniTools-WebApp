@@ -31,6 +31,50 @@ html.dark {
   background-color: #111827;
 }
 
+/* Hazard Map の J-SHIS グラフ用トークン(dataviz 検証済みパレット)。
+   --viz-s1..s7 は震源(系列)のカテゴリ色: 順位順に固定割当し地図のハイライトも同色(地図は常にライト値)。
+   --viz-o1..o4 は 50年超過確率(順序尺度)の1色相明度段階(39%→2% で濃く)。 */
+:root {
+  --viz-surface: #ffffff;
+  --viz-ink: #0b0b0b;
+  --viz-ink2: #52514e;
+  --viz-muted: #898781;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-other: #c3c2b7;
+  --viz-s1: #2a78d6;
+  --viz-s2: #eb6834;
+  --viz-s3: #1baf7a;
+  --viz-s4: #eda100;
+  --viz-s5: #e87ba4;
+  --viz-s6: #008300;
+  --viz-s7: #4a3aa7;
+  --viz-o1: #86b6ef;
+  --viz-o2: #3987e5;
+  --viz-o3: #1c5cab;
+  --viz-o4: #0d366b;
+}
+html.dark {
+  --viz-surface: #1f2937;
+  --viz-ink: #ffffff;
+  --viz-ink2: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-other: #52514e;
+  --viz-s1: #3987e5;
+  --viz-s2: #d95926;
+  --viz-s3: #199e70;
+  --viz-s4: #c98500;
+  --viz-s5: #d55181;
+  --viz-s6: #008300;
+  --viz-s7: #9085e9;
+  --viz-o1: #9ec5f4;
+  --viz-o2: #5598e7;
+  --viz-o3: #2a78d6;
+  --viz-o4: #184f95;
+}
+
 .dark body {
   background-color: #111827;
 }

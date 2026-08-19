@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2 } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle } from './HazardMap';
@@ -6,6 +6,10 @@ import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
+import SeismicHazardPanel from './SeismicHazardPanel';
+import type { ContribStatus } from './SeismicHazardPanel';
+import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
+import type { SpectrumResult, ContribResult, ContribSource, ProbKey, PeriodKey } from './jshisApi';
 
 // 特定行政庁の区分(type)の日本語ラベル。
 const AUTHORITY_TYPE_LABEL: Record<AuthorityType, string> = {
@@ -31,11 +35,13 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     key: 'seismic',
     Icon: Activity,
     label: '地震',
-    // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層深さ(J-SHIS) をループ切替。
+    // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層深さ(J-SHIS) → 震源断層(J-SHIS)
+    // をループ切替。いずれも震源断層と影響度上位のハイライトを重ねる。
     variants: [
       { val: 'seismic', label: '地震地域係数' },
       { val: 'amp', label: '地盤増幅率' },
       { val: 'vs350', label: '工学的基盤深さ' },
+      { val: 'faults', label: '震源断層' },
     ],
   },
   {
@@ -114,6 +120,77 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       cancelled = true;
     };
   }, [point.lat, point.lng]);
+
+  // ---- J-SHIS 地震動ハザード(応答スペクトル・震源別影響度) ----
+  const [spectrum, setSpectrum] = useState<SpectrumResult | null>(null);
+  const [spectrumLoading, setSpectrumLoading] = useState(false);
+  const [contrib, setContrib] = useState<ContribResult | null>(null);
+  const [contribStatus, setContribStatus] = useState<ContribStatus>({ state: 'idle', elapsedS: null });
+  const [contribRetry, setContribRetry] = useState(0);
+  const [jshisProb, setJshisProb] = useState<ProbKey>('0.10');
+  const [jshisPeriod, setJshisPeriod] = useState<PeriodKey>('0.20');
+  const [focusBbox, setFocusBbox] = useState<{ bbox: [number, number, number, number]; v: number } | null>(null);
+
+  // 応答スペクトル(ローカルデータ・即時)
+  useEffect(() => {
+    const ac = new AbortController();
+    setSpectrumLoading(true);
+    fetchSpectrum(point.lat, point.lng, ac.signal)
+      .then((r) => {
+        if (!ac.signal.aborted) setSpectrum(r);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setSpectrum(null);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setSpectrumLoading(false);
+      });
+    return () => ac.abort();
+  }, [point.lat, point.lng]);
+
+  // 震源別影響度(J-SHIS CGI。初回は 1〜2 分)。連打を避けるため少し待ってから開始し、
+  // 202 pending の間はポーリング。地点が変わったら中断(サーバ側の取得は継続しキャッシュされる)。
+  useEffect(() => {
+    const ac = new AbortController();
+    setContrib(null);
+    setContribStatus({ state: 'loading', elapsedS: null });
+    const t = setTimeout(() => {
+      fetchContrib(point.lat, point.lng, {
+        signal: ac.signal,
+        onPending: (p) => {
+          if (!ac.signal.aborted) setContribStatus({ state: 'loading', elapsedS: p.elapsedS });
+        },
+        // 取得待ちの間は近傍メッシュ(10km以内)の暫定値を先に見せる。status は loading のままで、
+        // 本来の値が届いたら差し替わる。
+        onProvisional: (r) => {
+          if (!ac.signal.aborted) setContrib(r);
+        },
+      })
+        .then((r) => {
+          if (ac.signal.aborted) return;
+          setContrib(r);
+          setContribStatus({ state: 'ready', elapsedS: null });
+        })
+        .catch((e: unknown) => {
+          if (ac.signal.aborted) return;
+          const msg = e instanceof Error ? (e.message === 'timeout' ? '時間切れ' : e.message) : '不明なエラー';
+          setContribStatus({ state: 'error', elapsedS: null, message: msg });
+        });
+    }, 700);
+    return () => {
+      clearTimeout(t);
+      ac.abort();
+    };
+  }, [point.lat, point.lng, contribRetry]);
+
+  // 系列色の割当(順位順固定)と地図ハイライト
+  const sourceSlots = useMemo(() => (contrib ? assignSourceSlots(contrib) : []), [contrib]);
+  const faultHighlights = useMemo(() => highlightsFromSlots(sourceSlots), [sourceSlots]);
+  // 凡例の行クリック: その震源が収まるよう地図を寄せる(ハイライトは常時表示なのでオーバーレイは変えない)
+  const handleFocusSource = useCallback((s: ContribSource) => {
+    if (!s.bbox) return;
+    setFocusBbox((prev) => ({ bbox: s.bbox!, v: (prev?.v ?? 0) + 1 }));
+  }, []);
 
   // 地点が変わったら住所を取得（デバウンス。Nominatim への過負荷を避ける）
   useEffect(() => {
@@ -319,7 +396,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               Hazard Map
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁を表示します。
+              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルと震源別影響度を表示します。
             </p>
           </div>
           <button
@@ -524,6 +601,21 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
 
+              {/* J-SHIS 地震動ハザード: 応答スペクトル + 震源別影響度(地図の断層ハイライトと連動) */}
+              <SeismicHazardPanel
+                spectrum={spectrum}
+                spectrumLoading={spectrumLoading}
+                contrib={contrib}
+                contribStatus={contribStatus}
+                onRetryContrib={() => setContribRetry((v) => v + 1)}
+                slots={sourceSlots}
+                prob={jshisProb}
+                period={jshisPeriod}
+                onProbChange={setJshisProb}
+                onPeriodChange={setJshisPeriod}
+                onFocusSource={handleFocusSource}
+              />
+
               {/* 特定行政庁（建築基準法） */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
@@ -572,6 +664,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                   : null
               }
               onPick={handleMapPick}
+              faultHighlights={faultHighlights}
+              focusBbox={focusBbox}
             />
             <div className="absolute top-3 left-3 z-[2] flex flex-col gap-1 bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-1 backdrop-blur-sm">
               {/* オフは独立したボタン（カテゴリのループには含めない） */}
@@ -677,7 +771,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           >
             地震ハザードステーション
           </a>
-          <span className="ml-1">（表層地盤・深部地盤／防災科研 J-SHIS）</span>
+          <span className="ml-1">（表層地盤・深部地盤・応答スペクトルに関する地震動予測地図2020年版・震源断層2024年版／防災科研 J-SHIS）</span>
         </p>
       </div>
     </div>
