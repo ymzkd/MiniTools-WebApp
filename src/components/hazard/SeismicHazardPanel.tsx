@@ -53,7 +53,6 @@ const SeismicHazardPanel: React.FC<Props> = ({
   onPeriodChange,
   onFocusSource,
 }) => {
-  const [yScale, setYScale] = useState<'log' | 'linear'>('log');
   const [showTable, setShowTable] = useState(false);
 
   // 応答スペクトル: ローカルデータが無い環境では API 側の一様ハザードスペクトル(同値)で代替
@@ -78,23 +77,6 @@ const SeismicHazardPanel: React.FC<Props> = ({
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="text-xs font-medium text-gray-700 dark:text-gray-200">加速度応答スペクトル Sa</div>
         <div className="flex items-center gap-1">
-          <div className="inline-flex rounded-md border border-gray-200 dark:border-gray-600 overflow-hidden text-[10px]">
-            {(['log', 'linear'] as const).map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setYScale(k)}
-                className={`px-1.5 py-0.5 ${
-                  yScale === k
-                    ? 'bg-gray-700 text-white dark:bg-gray-200 dark:text-gray-900'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-                title={k === 'log' ? '縦軸を対数目盛' : '縦軸を線形目盛'}
-              >
-                {k === 'log' ? '対数' : '線形'}
-              </button>
-            ))}
-          </div>
           <button
             type="button"
             onClick={() => setShowTable((v) => !v)}
@@ -122,7 +104,7 @@ const SeismicHazardPanel: React.FC<Props> = ({
       </div>
       {sa ? (
         <>
-          <ResponseSpectrumChart sa={sa} yScale={yScale} selectedPeriod={period} onSelectPeriod={onPeriodChange} />
+          <ResponseSpectrumChart sa={sa} selectedPeriod={period} onSelectPeriod={onPeriodChange} />
           {pga && (
             <div className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 flex flex-wrap items-baseline gap-x-2">
               <span className="text-gray-500 dark:text-gray-400">最大加速度 PGA</span>

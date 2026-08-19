@@ -42,12 +42,12 @@ function fmtNum(v: number): string {
 // ---------------------------------------------------------------- 応答スペクトル
 interface SpectrumChartProps {
   sa: Record<string, (number | null)[]>;
-  yScale: 'log' | 'linear';
   selectedPeriod: PeriodKey;
   onSelectPeriod?: (p: PeriodKey) => void;
 }
 
-export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, yScale, selectedPeriod, onSelectPeriod }) => {
+// 縦軸は対数固定。Sa は周期と超過確率で1桁以上開くため、線形だと短周期側に潰れて読めない。
+export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, selectedPeriod, onSelectPeriod }) => {
   const W = 340;
   const H = 210;
   const ML = 44;
@@ -70,41 +70,31 @@ export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, yScale
     for (const pk of JSHIS_PROB_KEYS) for (const v of sa[pk] ?? []) if (v != null && v > 0) vals.push(v);
     let lo = vals.length ? Math.min(...vals) : 10;
     let hi = vals.length ? Math.max(...vals) : 1000;
-    if (yScale === 'log') {
-      // 下は 1-2-5 の一段下、上は一段上に丸める
-      const down = (v: number) => {
-        const e = Math.floor(Math.log10(v));
-        const m = v / 10 ** e;
-        const b = m >= 5 ? 5 : m >= 2 ? 2 : 1;
-        return b * 10 ** e;
-      };
-      const up = (v: number) => {
-        const e = Math.floor(Math.log10(v));
-        const m = v / 10 ** e;
-        const b = m > 5 ? 10 : m > 2 ? 5 : m > 1 ? 2 : 1;
-        return b * 10 ** e;
-      };
-      lo = down(lo);
-      hi = up(hi);
-      if (hi <= lo) hi = lo * 10;
-      const l0 = Math.log10(lo);
-      const l1 = Math.log10(hi);
-      return {
-        yOf: (v: number) => MT + PH - ((Math.log10(v) - l0) / (l1 - l0)) * PH,
-        yTicks: niceLogTicks(lo, hi),
-        yMin: lo,
-        yMax: hi,
-      };
-    }
-    // linear: 0..nice max
-    const step = 10 ** Math.floor(Math.log10(hi));
-    const m = hi / step;
-    const top = (m > 5 ? 10 : m > 2 ? 5 : m > 1 ? 2 : 1) * step;
-    const ticks: number[] = [];
-    const n = top / step > 5 ? 5 : top / step;
-    for (let i = 0; i <= n; i++) ticks.push((top / n) * i);
-    return { yOf: (v: number) => MT + PH - (v / top) * PH, yTicks: ticks, yMin: 0, yMax: top };
-  }, [sa, yScale, PH]);
+    // 下は 1-2-5 の一段下、上は一段上に丸める
+    const down = (v: number) => {
+      const e = Math.floor(Math.log10(v));
+      const m = v / 10 ** e;
+      const b = m >= 5 ? 5 : m >= 2 ? 2 : 1;
+      return b * 10 ** e;
+    };
+    const up = (v: number) => {
+      const e = Math.floor(Math.log10(v));
+      const m = v / 10 ** e;
+      const b = m > 5 ? 10 : m > 2 ? 5 : m > 1 ? 2 : 1;
+      return b * 10 ** e;
+    };
+    lo = down(lo);
+    hi = up(hi);
+    if (hi <= lo) hi = lo * 10;
+    const l0 = Math.log10(lo);
+    const l1 = Math.log10(hi);
+    return {
+      yOf: (v: number) => MT + PH - ((Math.log10(v) - l0) / (l1 - l0)) * PH,
+      yTicks: niceLogTicks(lo, hi),
+      yMin: lo,
+      yMax: hi,
+    };
+  }, [sa, PH]);
 
   const series = JSHIS_PROB_KEYS.map((pk) => {
     const vals = sa[pk] ?? [];
