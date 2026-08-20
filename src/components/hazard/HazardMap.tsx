@@ -30,9 +30,15 @@ export type ZoneOverlay =
   | 'vs350'
   | 'faults';
 
-// 選択地点への影響度上位の震源(ハイライト)は、海率円や海岸線への測線と同じ「その地点の情報」
-// なのでオーバーレイの選択によらず常時表示する。全断層(下塗り・面・断層線)を描くのは
-// 'faults'(震源断層)オーバーレイのときだけ — 常時だと全国の断層が重なって読みづらいため。
+// 全断層(下塗り・面・断層線)を描くのは 'faults'(震源断層)オーバーレイのときだけ —
+// 常時だと全国の断層が重なって読みづらいため。
+// 一方、海率円・海岸線への測線・影響度上位の震源ハイライトは「その地点の情報」であり、
+// 面のオーバーレイ(overlay)とは独立に、下の annotations で個別に表示切替する。
+export interface MapAnnotations {
+  seaCircle: boolean; // 海率算定の円(半径 R)
+  shoreLine: boolean; // 最寄りの海岸線/湖岸線への測線＋最寄り点
+  faultHl: boolean; // 選択地点への影響度上位の震源ハイライト
+}
 
 interface HazardMapProps {
   center: LatLng; // マーカー＋海率円の中心（地図クリックでも更新される）
@@ -42,6 +48,7 @@ interface HazardMapProps {
   viewVersion: number;
   overlay: ZoneOverlay; // 薄いオーバーレイ（none / 風速区分 / 地震 / 積雪深）
   shorePoint: LatLng | null; // 最寄りの海岸線/湖岸線の点（中心からの測線を表示）
+  annotations: MapAnnotations; // 地点の注記(海率円/測線/震源ハイライト)の表示切替
   onPick: (lat: number, lng: number) => void;
   // 選択地点への影響度上位の震源(断層要素 fid 群と系列色)。地震系オーバーレイ表示中に強調描画する。
   faultHighlights?: MapHighlight[];
@@ -187,6 +194,11 @@ const FAULT_HL_LAYERS = [
   'faults-hl-groups-fill', 'faults-hl-fill', 'faults-hl-line-casing', 'faults-hl-line',
   'faults-hl-traces-casing', 'faults-hl-traces',
 ] as const;
+// 地点の注記レイヤー(annotations で個別に表示切替する)。マーカーは地点そのものなので常時表示。
+const CIRCLE_LAYERS = ['circle-fill', 'circle-line'] as const;
+const SHORE_LAYERS = ['shore-line', 'shore-pt'] as const;
+// 海率円も測線も非表示のときに使う、地点中心の既定ズーム。
+const POINT_ZOOM = 12;
 const EMPTY_FILTER: maplibregl.FilterSpecification = ['in', ['get', 'fid'], ['literal', []]] as unknown as maplibregl.FilterSpecification;
 const EMPTY_LAYER_FILTER: maplibregl.FilterSpecification = ['in', ['get', 'layer'], ['literal', []]] as unknown as maplibregl.FilterSpecification;
 
@@ -372,7 +384,7 @@ function buildStyle(): maplibregl.StyleSpecification {
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap(
-  { center, radiusKm, viewVersion, overlay, shorePoint, onPick, faultHighlights, focusBbox },
+  { center, radiusKm, viewVersion, overlay, shorePoint, annotations, onPick, faultHighlights, focusBbox },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -383,6 +395,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
   overlayRef.current = overlay;
   const shorePointRef = useRef(shorePoint);
   shorePointRef.current = shorePoint;
+  const annotRef = useRef(annotations);
+  annotRef.current = annotations;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
   // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
@@ -512,15 +526,27 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       map.setLayoutProperty('zones-vs350-fill', 'visibility', kind === 'vs350' ? 'visible' : 'none');
     }
     // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると
-    // 読みづらいため)。一方、選択地点への影響度上位の震源(ハイライト)は、海率円や海岸線への測線と
-    // 同じく「その地点の情報」なのでオーバーレイの選択によらず常時表示する。
+    // 読みづらいため)。選択地点への影響度上位の震源(ハイライト)はオーバーレイに依らず、
+    // 地点の注記トグル(annotations.faultHl)だけで決まる。
     const showAll = kind === 'faults' ? 'visible' : 'none';
     for (const id of FAULT_BASE_LAYERS) {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showAll);
     }
-    for (const id of FAULT_HL_LAYERS) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
-    }
+  }, []);
+
+  // 地点の注記(海率円/測線/震源ハイライト)の表示切替。データはそのまま持っているので
+  // visibility を差し替えるだけ＝再取得は発生しない。
+  const applyAnnotations = useCallback((a: MapAnnotations) => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    const setVis = (ids: readonly string[], on: boolean) => {
+      for (const id of ids) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+      }
+    };
+    setVis(CIRCLE_LAYERS, a.seaCircle);
+    setVis(SHORE_LAYERS, a.shoreLine);
+    setVis(FAULT_HL_LAYERS, a.faultHl);
   }, []);
   // ハイライト対象(fid 群と色)。初期化時にも参照するため ref に保持。
   const highlightsRef = useRef<MapHighlight[]>(faultHighlights ?? []);
@@ -560,7 +586,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       if (firstFitRef.current || !readyRef.current || !el || el.clientWidth === 0) return;
       firstFitRef.current = true;
       const { center: c, radiusKm: r } = latestRef.current;
-      fitToCircle(map, c, r);
+      fitToPoint(map, c, r, shorePointRef.current, annotRef.current);
     };
 
     map.on('load', () => {
@@ -759,6 +785,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       updateShore(map, center, shorePointRef.current);
       maybeInitialFit();
       applyOverlay(overlayRef.current); // マウント時にオーバーレイ選択済みなら反映
+      applyAnnotations(annotRef.current); // 同上（前回セッションのトグル状態を復元）
     });
 
     // 地図のどこをクリックしても、その地点を選択する。
@@ -775,8 +802,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         setHover(null);
         return;
       }
-      // カーソル下の震源断層名も併記する(面は点、線は 5px 幅で拾う)。ハイライト(その地点への
-      // 影響度上位)は常時表示なので、どのオーバーレイでも拾える。
+      // カーソル下の震源断層名も併記する(面は点、線は 5px 幅で拾う)。非表示レイヤーは
+      // queryRenderedFeatures が拾わないので、ハイライトを消していれば自動的に出なくなる。
       const faultTxt = faultTextAt(map, e.point, ov);
       const withFault = (t: string | null): string | null => (t && faultTxt ? `${t} ｜ ${faultTxt}` : t ?? faultTxt);
       if (ov === 'faults') {
@@ -890,13 +917,18 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     const map = mapRef.current;
     if (!map || !readyRef.current || viewVersion === 0) return;
     const { center: c, radiusKm: r } = latestRef.current;
-    fitToCircle(map, c, r);
+    fitToPoint(map, c, r, shorePointRef.current, annotRef.current);
   }, [viewVersion]);
 
   // オーバーレイ選択が変わったら反映
   useEffect(() => {
     applyOverlay(overlay);
   }, [overlay, applyOverlay]);
+
+  // 地点の注記トグルが変わったら反映
+  useEffect(() => {
+    applyAnnotations(annotations);
+  }, [annotations, applyAnnotations]);
 
   // 影響度上位の震源(ハイライト)が変わったら fid フィルタと色を更新
   useEffect(() => {
@@ -961,7 +993,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
                 </div>
               ))}
               <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">
-                線＝断層線（鉛直断層は線のみ）／太い色付き＝選択地点への影響度上位（左の凡例と同色）
+                線＝断層線（鉛直断層は線のみ）
+                {annotations.faultHl && '／太い色付き＝選択地点への影響度上位（左の凡例と同色）'}
               </div>
             </div>
           ) : (
@@ -971,9 +1004,11 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
                 <span>{LEGEND[overlay].min}</span>
                 <span>{LEGEND[overlay].max}</span>
               </div>
-              <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
-                ＋選択地点への影響度上位の震源（全断層は「震源断層」で表示）
-              </div>
+              {annotations.faultHl && (
+                <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
+                  ＋選択地点への影響度上位の震源（全断層は「震源断層」で表示）
+                </div>
+              )}
             </>
           )}
           <div className="text-[11px] mt-1 font-medium text-gray-900 dark:text-gray-100 min-h-[15px]">
@@ -1063,11 +1098,29 @@ function updateShore(map: maplibregl.Map, center: LatLng, shorePoint: LatLng | n
   });
 }
 
-function fitToCircle(map: maplibregl.Map, center: LatLng, radiusKm: number) {
-  const coords = circleCoords(center.lat, center.lng, radiusKm);
+// 検索・初期表示のときの表示範囲合わせ。海率円が非表示なら円に合わせない
+// （見えていないものに合わせると「何も無いのに引きの画」になるため）。測線が見えていれば
+// 地点＋最寄り点、どちらも非表示なら地点中心の既定ズームにする。
+function fitToPoint(
+  map: maplibregl.Map,
+  center: LatLng,
+  radiusKm: number,
+  shorePoint: LatLng | null,
+  a: MapAnnotations
+) {
   const b = new maplibregl.LngLatBounds();
-  for (const c of coords) b.extend(c as [number, number]);
-  map.fitBounds(b, { padding: 40, animate: false, maxZoom: 14 });
+  if (a.seaCircle) {
+    for (const c of circleCoords(center.lat, center.lng, radiusKm)) b.extend(c as [number, number]);
+    map.fitBounds(b, { padding: 40, animate: false, maxZoom: 14 });
+    return;
+  }
+  if (a.shoreLine && shorePoint) {
+    b.extend([center.lng, center.lat]);
+    b.extend([shorePoint.lng, shorePoint.lat]);
+    map.fitBounds(b, { padding: 60, animate: false, maxZoom: 14 });
+    return;
+  }
+  map.jumpTo({ center: [center.lng, center.lat], zoom: POINT_ZOOM });
 }
 
 export default HazardMap;

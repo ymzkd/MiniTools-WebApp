@@ -53,7 +53,7 @@ const rowStyle = (last?: boolean): CSSProperties => ({
 });
 
 export function HazardReportView({ data }: { data: HazardReportData }) {
-  const { point, snow, wind, seismic, shore } = data;
+  const { point, snow, wind, seismic, shore, roughness } = data;
   const dateDot = data.generatedAt.slice(0, 10).replace(/-/g, '.');
   const shoreM = shore?.nearestM ?? null;
   const sheet: CSSProperties = {
@@ -173,14 +173,42 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
               <ValueBlock label="基準風速 V₀" value={String(wind.Vo)} unit="m/s" color="rgb(44,88,84)" />
               <div style={{ padding: '4px 12px 0', fontSize: '11px' }}>
                 <Row k="地域区分" v={`第 ${wind.zone} 区`} bold />
-                <Row k="海岸線まで" v={fmtDistKm(shoreM)} last />
+                <Row
+                  k={`最寄りの${shore?.nearestKind === 'lake' ? '湖岸線' : '海岸線'}まで`}
+                  v={fmtDistKm(shoreM)}
+                />
+                <Row
+                  k="都市計画区域"
+                  v={roughness?.urbanInside == null ? '—' : roughness.urbanInside ? '区域内' : '区域外'}
+                  last
+                />
               </div>
+              {/* 地表面粗度区分。区分Ⅱは建築物の高さで分かれるので高さ帯ごとに併記する。 */}
               <div style={{ margin: '10px 12px 0', border: '1px solid rgb(221,233,231)', padding: '8px 10px' }}>
-                <div style={{ fontSize: '8.5px', letterSpacing: '0.1em', color: 'rgb(111,141,137)', marginBottom: '4px' }}>海岸線・湖岸線までの距離（第1454号）</div>
-                <div style={{ fontSize: '9.5px', lineHeight: 1.6, color: 'rgb(65,97,93)' }}>地表面粗度区分の判定用の距離（地図上に測線を表示）。区分の確定・個別パラメータは設計者判断による。</div>
+                <div style={{ fontSize: '8.5px', letterSpacing: '0.1em', color: 'rgb(111,141,137)', marginBottom: '4px' }}>地表面粗度区分（第1454号）</div>
+                {roughness && roughness.available ? (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '10.5px', color: 'rgb(44,88,84)' }}>
+                      {roughness.bands.map((b) => (
+                        <div
+                          key={b.height ?? 'all'}
+                          style={{ display: 'flex', justifyContent: b.height ? 'space-between' : 'center' }}
+                        >
+                          {b.height && <span style={{ color: 'rgb(65,97,93)' }}>高さ {b.height}</span>}
+                          <span style={{ fontWeight: 600 }}>区分 {b.category}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: '9px', color: 'rgb(111,141,137)', marginTop: '4px', lineHeight: 1.5 }}>
+                      {roughness.basis.join(' ・ ')}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '9.5px', lineHeight: 1.6, color: 'rgb(65,97,93)' }}>都市計画区域の内外が取得できなかったため判定していません。</div>
+                )}
               </div>
               <div style={{ marginTop: 'auto', padding: '10px 12px 12px' }}>
-                <div style={{ fontSize: '9px', color: 'rgb(154,151,143)', lineHeight: 1.6 }}>基準風速 V₀ は、各地の再現期間 50 年の 10 分間平均風速に相当する値。</div>
+                <div style={{ fontSize: '9px', color: 'rgb(154,151,143)', lineHeight: 1.6 }}>基準風速 V₀ は、各地の再現期間 50 年の 10 分間平均風速に相当する値。粗度区分Ⅰ（都市計画区域外の極めて平坦な区域）・Ⅳ（都市化が極めて著しい区域）は特定行政庁が規則で定めるため判定していない（指定があればそちらが優先）。</div>
               </div>
             </>
           ) : (

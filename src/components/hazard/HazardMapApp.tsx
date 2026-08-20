@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2 } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Zap } from 'lucide-react';
 import HazardMap from './HazardMap';
-import type { ZoneOverlay, HazardMapHandle } from './HazardMap';
+import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
+import { roughnessCases } from './roughness';
+import InfoTip from './InfoTip';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
@@ -66,6 +68,41 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
   },
 ];
 
+// 地点の注記(海率円/海岸線測線/震源ハイライト)の表示トグル。面のオーバーレイと違って
+// 排他ではなく個別に ON/OFF する。表示が重なって煩わしいときに個別に消せるようにするため。
+const ANNOT_TOGGLES: {
+  key: keyof MapAnnotations;
+  Icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  hint: string;
+}[] = [
+  { key: 'seaCircle', Icon: CircleDashed, label: '海率円', hint: '海率を算定する半径の円（積雪荷重）' },
+  { key: 'shoreLine', Icon: Ruler, label: '海岸線測線', hint: '最寄りの海岸線・湖岸線までの測線（風荷重）' },
+  { key: 'faultHl', Icon: Zap, label: '震源', hint: 'この地点への影響度が大きい震源のハイライト' },
+];
+
+const ANNOT_STORAGE_KEY = 'hazard.annotations';
+// 既定は海率円だけ。3種を同時に描くと地図が混むので、残りは必要なときに出してもらう。
+const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, faultHl: false };
+
+// 前回セッションの表示状態を復元。未保存・壊れていれば既定値。
+function loadAnnotations(): MapAnnotations {
+  try {
+    const raw = localStorage.getItem(ANNOT_STORAGE_KEY);
+    if (!raw) return ANNOT_DEFAULT;
+    const j = JSON.parse(raw) as Partial<Record<keyof MapAnnotations, unknown>>;
+    const pick = (v: unknown, key: keyof MapAnnotations) =>
+      typeof v === 'boolean' ? v : ANNOT_DEFAULT[key];
+    return {
+      seaCircle: pick(j.seaCircle, 'seaCircle'),
+      shoreLine: pick(j.shoreLine, 'shoreLine'),
+      faultHl: pick(j.faultHl, 'faultHl'),
+    };
+  } catch {
+    return ANNOT_DEFAULT;
+  }
+}
+
 interface HazardMapAppProps {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
@@ -88,6 +125,18 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const [viewVersion, setViewVersion] = useState(0);
   // 地図に薄く重ねる地域区分（なし / 積雪 / 風速）
   const [overlay, setOverlay] = useState<ZoneOverlay>('none');
+  // 地点の注記の表示状態（オーバーレイとは独立。localStorage に保存）
+  const [annotations, setAnnotations] = useState<MapAnnotations>(loadAnnotations);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ANNOT_STORAGE_KEY, JSON.stringify(annotations));
+    } catch {
+      /* プライベートモード等で保存できなくても動作には影響しない */
+    }
+  }, [annotations]);
+  const toggleAnnotation = useCallback((key: keyof MapAnnotations) => {
+    setAnnotations((a) => ({ ...a, [key]: !a[key] }));
+  }, []);
 
   const [design, setDesign] = useState<DesignResult | null>(null);
   const [elevation, setElevation] = useState<number | null>(null);
@@ -186,9 +235,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 系列色の割当(順位順固定)と地図ハイライト
   const sourceSlots = useMemo(() => (contrib ? assignSourceSlots(contrib) : []), [contrib]);
   const faultHighlights = useMemo(() => highlightsFromSlots(sourceSlots), [sourceSlots]);
-  // 凡例の行クリック: その震源が収まるよう地図を寄せる(ハイライトは常時表示なのでオーバーレイは変えない)
+  // 凡例の行クリック: その震源が収まるよう地図を寄せる(オーバーレイは変えない)。
+  // 震源ハイライトを消していた場合は「見たい」という意思表示なので自動で戻す。
   const handleFocusSource = useCallback((s: ContribSource) => {
     if (!s.bbox) return;
+    setAnnotations((a) => (a.faultHl ? a : { ...a, faultHl: true }));
     setFocusBbox((prev) => ({ bbox: s.bbox!, v: (prev?.v ?? 0) + 1 }));
   }, []);
 
@@ -287,6 +338,17 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const wind = design?.wind ?? null;
   const seismic = design?.seismic ?? null;
   const shore = design?.shore ?? null;
+  const urbanInside = design?.urban ? design.urban.inside : null;
+  // 地表面粗度区分(平12建告1454号)。Ⅰ/Ⅳは特定行政庁の指定なので、ここで出せるのはⅡかⅢか。
+  const roughness = useMemo(
+    () =>
+      roughnessCases({
+        urbanInside,
+        shoreM: shore?.nearest_m ?? null,
+        shoreKind: shore?.nearest_kind ?? null,
+      }),
+    [urbanInside, shore]
+  );
   const seaRatio = design?.sea_ratio ?? null;
   const landRatio = design?.land_ratio ?? null;
   const building = design?.building_authority ?? null;
@@ -342,6 +404,12 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           : null,
         wind: wind ? { usable: windUsable, zone: wind.zone, Vo: wind.Vo } : null,
         shore: shore ? { nearestM: shore.nearest_m, nearestKind: shore.nearest_kind } : null,
+        roughness: {
+          available: roughness.available,
+          bands: roughness.bands,
+          basis: roughness.basis,
+          urbanInside,
+        },
         seismic: seismic
           ? {
               usable: seismicUsable,
@@ -372,6 +440,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     snow,
     wind,
     shore,
+    roughness,
+    urbanInside,
     seismic,
     snowUsable,
     windUsable,
@@ -546,20 +616,53 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
 
-              {/* 海岸線・湖岸線までの距離（地表面粗度区分の判定用。風荷重設計の一部なので風速の直下に） */}
+              {/* 地表面粗度区分（風荷重設計の一部なので風速の直下に）。判定材料の距離・区域も併記する */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
-                  海岸線・湖岸線までの距離（平12建告1454号）
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 flex items-center gap-1">
+                  地表面粗度区分（平12建告1454号）
+                  <InfoTip>
+                    区分Ⅰ（都市計画区域外の極めて平坦な区域）・区分Ⅳ（都市化が極めて著しい区域）は特定行政庁が規則で定めるため判定していません。指定がある場合はそちらが優先します。都市計画区域の内外は区域の外形による判定なので、境界付近は要確認です。
+                  </InfoTip>
                 </h3>
                 {shore && shore.nearest_m != null ? (
                   <>
-                    <Metric
-                      label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
-                      value={fmtDist(shore.nearest_m)}
-                    />
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      地表面粗度区分の判定用の距離（地図上に測線を表示）。区分の確定・個別パラメータは設計者判断。
-                    </p>
+                    {roughness.available ? (
+                      <>
+                        {/* Ⅱは建築物の高さで分かれるので、高さ帯ごとに併記する */}
+                        <ul className="space-y-1">
+                          {roughness.bands.map((b) => (
+                            <li
+                              key={b.height ?? 'all'}
+                              className={`flex items-center gap-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg px-3 py-1.5 ${
+                                b.height ? 'justify-between' : 'justify-center'
+                              }`}
+                            >
+                              {b.height && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  建築物の高さ {b.height}
+                                </span>
+                              )}
+                              <span className="text-base font-bold text-gray-900 dark:text-gray-100">
+                                区分 {b.category}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-[11px] text-gray-400 mt-1">判定根拠: {roughness.basis.join(' ・ ')}</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        {roughness.reason ?? '判定できませんでした'}
+                        {urbanInside == null ? '' : urbanInside ? '（都市計画区域内）' : '（都市計画区域外）'}
+                      </p>
+                    )}
+                    {/* 判定の元になる距離。地図には測線を表示している */}
+                    <div className="mt-2">
+                      <Metric
+                        label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
+                        value={fmtDist(shore.nearest_m)}
+                      />
+                    </div>
                   </>
                 ) : (
                   <p className="text-sm text-gray-400">取得できませんでした</p>
@@ -663,6 +766,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                   ? { lat: shore.nearest_lat, lng: shore.nearest_lng }
                   : null
               }
+              annotations={annotations}
               onPick={handleMapPick}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
@@ -721,6 +825,29 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                         ))}
                       </span>
                     )}
+                  </button>
+                );
+              })}
+              {/* 区切り線から下は「地点の注記」。上のオーバーレイ(排他選択)と違い個別に ON/OFF する。
+                  区別が付くよう、選択中は塗りつぶしではなくリング表示にしている。 */}
+              <div className="my-0.5 mx-1 border-t border-gray-300 dark:border-gray-600" />
+              {ANNOT_TOGGLES.map(({ key, Icon, label, hint }) => {
+                const on = annotations[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    title={`${label}: ${on ? '表示中' : '非表示'}（${hint}）`}
+                    aria-label={label}
+                    aria-pressed={on}
+                    onClick={() => toggleAnnotation(key)}
+                    className={`inline-flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
+                      on
+                        ? 'text-blue-600 dark:text-blue-300 ring-2 ring-inset ring-blue-500 dark:ring-blue-400'
+                        : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
                   </button>
                 );
               })}
