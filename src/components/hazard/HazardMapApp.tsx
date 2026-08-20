@@ -5,6 +5,7 @@ import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import { roughnessCases } from './roughness';
+import InfoTip from './InfoTip';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
@@ -400,6 +401,12 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           : null,
         wind: wind ? { usable: windUsable, zone: wind.zone, Vo: wind.Vo } : null,
         shore: shore ? { nearestM: shore.nearest_m, nearestKind: shore.nearest_kind } : null,
+        roughness: {
+          available: roughness.available,
+          bands: roughness.bands,
+          basis: roughness.basis,
+          urbanInside,
+        },
         seismic: seismic
           ? {
               usable: seismicUsable,
@@ -430,6 +437,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     snow,
     wind,
     shore,
+    roughness,
+    urbanInside,
     seismic,
     snowUsable,
     windUsable,
@@ -606,8 +615,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
 
               {/* 地表面粗度区分（風荷重設計の一部なので風速の直下に）。判定材料の距離・区域も併記する */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1 flex items-center gap-1">
                   地表面粗度区分（平12建告1454号）
+                  <InfoTip>
+                    区分Ⅰ（都市計画区域外の極めて平坦な区域）・区分Ⅳ（都市化が極めて著しい区域）は特定行政庁が規則で定めるため判定していません。指定がある場合はそちらが優先します。都市計画区域の内外は区域の外形による判定なので、境界付近は要確認です。
+                  </InfoTip>
                 </h3>
                 {shore && shore.nearest_m != null ? (
                   <>
@@ -617,12 +629,16 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                         <ul className="space-y-1">
                           {roughness.bands.map((b) => (
                             <li
-                              key={b.height}
-                              className="flex items-center justify-between gap-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg px-3 py-1.5"
+                              key={b.height ?? 'all'}
+                              className={`flex items-center gap-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg px-3 py-1.5 ${
+                                b.height ? 'justify-between' : 'justify-center'
+                              }`}
                             >
-                              <span className="text-xs text-gray-500 dark:text-gray-400">
-                                {b.height === '高さによらず' ? b.height : `建築物の高さ ${b.height}`}
-                              </span>
+                              {b.height && (
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  建築物の高さ {b.height}
+                                </span>
+                              )}
                               <span className="text-base font-bold text-gray-900 dark:text-gray-100">
                                 区分 {b.category}
                               </span>
@@ -644,9 +660,6 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                         value={fmtDist(shore.nearest_m)}
                       />
                     </div>
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      区分Ⅰ（都市計画区域外の極めて平坦な区域）・区分Ⅳ（都市化が極めて著しい区域）は特定行政庁が規則で定めるため判定していません。指定がある場合はそちらが優先します。都市計画区域の内外は国土数値情報A09（都市地域）の外形による判定で、境界付近は要確認です。
-                    </p>
                   </>
                 ) : (
                   <p className="text-sm text-gray-400">取得できませんでした</p>

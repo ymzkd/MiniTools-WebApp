@@ -15,8 +15,8 @@
 export type RoughnessCategory = 'Ⅰ' | 'Ⅱ' | 'Ⅲ' | 'Ⅳ';
 
 export interface RoughnessBand {
-  /** 高さの条件（例: 「13m 以下」「13m 超」「高さによらず」） */
-  height: string;
+  /** 高さの条件（例: 「13m 以下」「13m 超」）。高さで分かれないケースは null。 */
+  height: string | null;
   category: RoughnessCategory;
 }
 
@@ -73,7 +73,7 @@ export function roughnessCases({ urbanInside, shoreM, shoreKind }: RoughnessInpu
   if (shoreM > FAR_M) {
     return {
       available: true,
-      bands: [{ height: '高さによらず', category: 'Ⅲ' }],
+      bands: [{ height: null, category: 'Ⅲ' }],
       basis: ['都市計画区域内', `${shoreLabel}まで ${FAR_M}m 超`],
     };
   }

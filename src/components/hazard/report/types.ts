@@ -37,6 +37,18 @@ export interface HazardReportData {
     nearestKind: 'coast' | 'lake' | null;
   } | null;
 
+  /** 地表面粗度区分（平12建告1454号）。Ⅰ/Ⅳは特定行政庁が規則で定めるため判定対象外。
+   *  区分Ⅱは建築物の高さで分かれるので、単一の区分ではなく高さ帯ごとに持つ。 */
+  roughness: {
+    available: boolean;
+    /** 高さの条件（例:「13m 以下」）と区分。height=null は高さで分かれないケース。 */
+    bands: { height: string | null; category: string }[];
+    /** 判定根拠（都市計画区域の内外・距離の条件） */
+    basis: string[];
+    /** 都市計画区域の内(true)/外(false)。不明なら null。 */
+    urbanInside: boolean | null;
+  } | null;
+
   /** 地震地域係数（昭55建告1793号）＋ J-SHIS地盤値（参考） */
   seismic: {
     usable: boolean;
