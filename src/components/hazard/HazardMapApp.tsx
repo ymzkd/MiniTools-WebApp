@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2 } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Zap } from 'lucide-react';
 import HazardMap from './HazardMap';
-import type { ZoneOverlay, HazardMapHandle } from './HazardMap';
+import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
 import type { DesignResult, Authority, AuthorityType } from './api';
@@ -66,6 +66,38 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
   },
 ];
 
+// 地点の注記(海率円/海岸線測線/震源ハイライト)の表示トグル。面のオーバーレイと違って
+// 排他ではなく個別に ON/OFF する。表示が重なって煩わしいときに個別に消せるようにするため。
+const ANNOT_TOGGLES: {
+  key: keyof MapAnnotations;
+  Icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  hint: string;
+}[] = [
+  { key: 'seaCircle', Icon: CircleDashed, label: '海率円', hint: '海率を算定する半径の円（積雪荷重）' },
+  { key: 'shoreLine', Icon: Ruler, label: '海岸線測線', hint: '最寄りの海岸線・湖岸線までの測線（風荷重）' },
+  { key: 'faultHl', Icon: Zap, label: '震源', hint: 'この地点への影響度が大きい震源のハイライト' },
+];
+
+const ANNOT_STORAGE_KEY = 'hazard.annotations';
+const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: true, faultHl: true };
+
+// 前回セッションの表示状態を復元。未保存・壊れていれば全表示（従来どおり）。
+function loadAnnotations(): MapAnnotations {
+  try {
+    const raw = localStorage.getItem(ANNOT_STORAGE_KEY);
+    if (!raw) return ANNOT_DEFAULT;
+    const j = JSON.parse(raw) as Partial<Record<keyof MapAnnotations, unknown>>;
+    return {
+      seaCircle: typeof j.seaCircle === 'boolean' ? j.seaCircle : true,
+      shoreLine: typeof j.shoreLine === 'boolean' ? j.shoreLine : true,
+      faultHl: typeof j.faultHl === 'boolean' ? j.faultHl : true,
+    };
+  } catch {
+    return ANNOT_DEFAULT;
+  }
+}
+
 interface HazardMapAppProps {
   onSuccess?: (message: string) => void;
   onError?: (message: string) => void;
@@ -88,6 +120,18 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const [viewVersion, setViewVersion] = useState(0);
   // 地図に薄く重ねる地域区分（なし / 積雪 / 風速）
   const [overlay, setOverlay] = useState<ZoneOverlay>('none');
+  // 地点の注記の表示状態（オーバーレイとは独立。localStorage に保存）
+  const [annotations, setAnnotations] = useState<MapAnnotations>(loadAnnotations);
+  useEffect(() => {
+    try {
+      localStorage.setItem(ANNOT_STORAGE_KEY, JSON.stringify(annotations));
+    } catch {
+      /* プライベートモード等で保存できなくても動作には影響しない */
+    }
+  }, [annotations]);
+  const toggleAnnotation = useCallback((key: keyof MapAnnotations) => {
+    setAnnotations((a) => ({ ...a, [key]: !a[key] }));
+  }, []);
 
   const [design, setDesign] = useState<DesignResult | null>(null);
   const [elevation, setElevation] = useState<number | null>(null);
@@ -186,9 +230,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 系列色の割当(順位順固定)と地図ハイライト
   const sourceSlots = useMemo(() => (contrib ? assignSourceSlots(contrib) : []), [contrib]);
   const faultHighlights = useMemo(() => highlightsFromSlots(sourceSlots), [sourceSlots]);
-  // 凡例の行クリック: その震源が収まるよう地図を寄せる(ハイライトは常時表示なのでオーバーレイは変えない)
+  // 凡例の行クリック: その震源が収まるよう地図を寄せる(オーバーレイは変えない)。
+  // 震源ハイライトを消していた場合は「見たい」という意思表示なので自動で戻す。
   const handleFocusSource = useCallback((s: ContribSource) => {
     if (!s.bbox) return;
+    setAnnotations((a) => (a.faultHl ? a : { ...a, faultHl: true }));
     setFocusBbox((prev) => ({ bbox: s.bbox!, v: (prev?.v ?? 0) + 1 }));
   }, []);
 
@@ -663,6 +709,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                   ? { lat: shore.nearest_lat, lng: shore.nearest_lng }
                   : null
               }
+              annotations={annotations}
               onPick={handleMapPick}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
@@ -721,6 +768,29 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                         ))}
                       </span>
                     )}
+                  </button>
+                );
+              })}
+              {/* 区切り線から下は「地点の注記」。上のオーバーレイ(排他選択)と違い個別に ON/OFF する。
+                  区別が付くよう、選択中は塗りつぶしではなくリング表示にしている。 */}
+              <div className="my-0.5 mx-1 border-t border-gray-300 dark:border-gray-600" />
+              {ANNOT_TOGGLES.map(({ key, Icon, label, hint }) => {
+                const on = annotations[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    title={`${label}: ${on ? '表示中' : '非表示'}（${hint}）`}
+                    aria-label={label}
+                    aria-pressed={on}
+                    onClick={() => toggleAnnotation(key)}
+                    className={`inline-flex items-center justify-center w-9 h-9 rounded-md transition-colors ${
+                      on
+                        ? 'text-blue-600 dark:text-blue-300 ring-2 ring-inset ring-blue-500 dark:ring-blue-400'
+                        : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
                   </button>
                 );
               })}
