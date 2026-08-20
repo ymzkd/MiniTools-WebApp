@@ -239,19 +239,16 @@ export function otherShare(c: ContribResult | null, slots: SourceSlot[], prob: P
   return sum;
 }
 
-/** 地図ハイライト用: スロットごとの fid 群と色(ライト値)。ジオメトリの無い震源は含めない。
- *  layer が付く震源(南海トラフ等・レイヤ丸ごと)は、重なり合う多数の面を個別に塗ると濃く飽和するので、
- *  塗りは dissolve 済み groups レイヤ(layer 属性)で行い、fid は輪郭線のハイライトにだけ使う。 */
+/** 地図ハイライト用: 震源コードと色(ライト値)。ジオメトリの無い震源は含めない。
+ *  断層タイルは震源単位(属性 src が影響度コードそのもの)なので、コード1本で面も線も引ける。 */
 export interface MapHighlight {
-  fids: number[];
-  color: string;
   code: string;
-  layer?: string;
+  color: string;
 }
 export function highlightsFromSlots(slots: SourceSlot[]): MapHighlight[] {
   return slots
     .filter((s) => s.source.fids.length > 0)
-    .map((s) => ({ fids: s.source.fids, color: SERIES_LIGHT[s.slot], code: s.code, layer: s.source.layer }));
+    .map((s) => ({ code: s.code, color: SERIES_LIGHT[s.slot] }));
 }
 
 /** マグニチュード表記("Mw7.5" / "M7.2")。 */
