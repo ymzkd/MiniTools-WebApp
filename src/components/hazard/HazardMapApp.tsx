@@ -4,6 +4,7 @@ import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
+import { roughnessCases } from './roughness';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
@@ -333,6 +334,17 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const wind = design?.wind ?? null;
   const seismic = design?.seismic ?? null;
   const shore = design?.shore ?? null;
+  const urbanInside = design?.urban ? design.urban.inside : null;
+  // 地表面粗度区分(平12建告1454号)。Ⅰ/Ⅳは特定行政庁の指定なので、ここで出せるのはⅡかⅢか。
+  const roughness = useMemo(
+    () =>
+      roughnessCases({
+        urbanInside,
+        shoreM: shore?.nearest_m ?? null,
+        shoreKind: shore?.nearest_kind ?? null,
+      }),
+    [urbanInside, shore]
+  );
   const seaRatio = design?.sea_ratio ?? null;
   const landRatio = design?.land_ratio ?? null;
   const building = design?.building_authority ?? null;
@@ -592,19 +604,48 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
 
-              {/* 海岸線・湖岸線までの距離（地表面粗度区分の判定用。風荷重設計の一部なので風速の直下に） */}
+              {/* 地表面粗度区分（風荷重設計の一部なので風速の直下に）。判定材料の距離・区域も併記する */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
-                  海岸線・湖岸線までの距離（平12建告1454号）
+                  地表面粗度区分（平12建告1454号）
                 </h3>
                 {shore && shore.nearest_m != null ? (
                   <>
-                    <Metric
-                      label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
-                      value={fmtDist(shore.nearest_m)}
-                    />
+                    {roughness.available ? (
+                      <>
+                        {/* Ⅱは建築物の高さで分かれるので、高さ帯ごとに併記する */}
+                        <ul className="space-y-1">
+                          {roughness.bands.map((b) => (
+                            <li
+                              key={b.height}
+                              className="flex items-center justify-between gap-2 bg-gray-50 dark:bg-gray-700/40 rounded-lg px-3 py-1.5"
+                            >
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {b.height === '高さによらず' ? b.height : `建築物の高さ ${b.height}`}
+                              </span>
+                              <span className="text-base font-bold text-gray-900 dark:text-gray-100">
+                                区分 {b.category}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-[11px] text-gray-400 mt-1">判定根拠: {roughness.basis.join(' ・ ')}</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400">
+                        {roughness.reason ?? '判定できませんでした'}
+                        {urbanInside == null ? '' : urbanInside ? '（都市計画区域内）' : '（都市計画区域外）'}
+                      </p>
+                    )}
+                    {/* 判定の元になる距離。地図には測線を表示している */}
+                    <div className="mt-2">
+                      <Metric
+                        label={`最寄りの${shore.nearest_kind === 'lake' ? '湖岸線' : '海岸線'}まで`}
+                        value={fmtDist(shore.nearest_m)}
+                      />
+                    </div>
                     <p className="text-[11px] text-gray-400 mt-1">
-                      地表面粗度区分の判定用の距離（地図上に測線を表示）。区分の確定・個別パラメータは設計者判断。
+                      区分Ⅰ（都市計画区域外の極めて平坦な区域）・区分Ⅳ（都市化が極めて著しい区域）は特定行政庁が規則で定めるため判定していません。指定がある場合はそちらが優先します。都市計画区域の内外は国土数値情報A09（都市地域）の外形による判定で、境界付近は要確認です。
                     </p>
                   </>
                 ) : (

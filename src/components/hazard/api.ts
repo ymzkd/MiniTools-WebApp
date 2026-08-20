@@ -36,6 +36,12 @@ export interface ShoreInfo {
   nearest_lat: number | null;
 }
 
+// 都市計画区域(外形)の内外。地表面粗度区分(平12建告1454号)の区分IIは区域の内外で条件が
+// 変わるためAPIが判定して返す。国土数値情報A09由来なので境界付近は目安。
+export interface UrbanInfo {
+  inside: boolean;
+}
+
 // 特定行政庁(建築基準法)。区分(type)= 都道府県知事 / 全規模を置く市 / 限定特定行政庁 / 特別区。
 export type AuthorityType = 'prefecture' | 'city_full' | 'city_limited' | 'special_ward';
 export interface Authority {
@@ -64,6 +70,7 @@ export interface DesignResult {
   snow: SnowParams | null;
   seismic: SeismicParams | null;
   shore: ShoreInfo | null;
+  urban: UrbanInfo | null; // 未対応の API バージョンでは undefined になりうる
   building_authority: BuildingAuthority | null;
   radius_km: number;
   sea_ratio: number;
