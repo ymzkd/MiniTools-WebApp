@@ -82,18 +82,21 @@ const ANNOT_TOGGLES: {
 ];
 
 const ANNOT_STORAGE_KEY = 'hazard.annotations';
-const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: true, faultHl: true };
+// 既定は海率円だけ。3種を同時に描くと地図が混むので、残りは必要なときに出してもらう。
+const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, faultHl: false };
 
-// 前回セッションの表示状態を復元。未保存・壊れていれば全表示（従来どおり）。
+// 前回セッションの表示状態を復元。未保存・壊れていれば既定値。
 function loadAnnotations(): MapAnnotations {
   try {
     const raw = localStorage.getItem(ANNOT_STORAGE_KEY);
     if (!raw) return ANNOT_DEFAULT;
     const j = JSON.parse(raw) as Partial<Record<keyof MapAnnotations, unknown>>;
+    const pick = (v: unknown, key: keyof MapAnnotations) =>
+      typeof v === 'boolean' ? v : ANNOT_DEFAULT[key];
     return {
-      seaCircle: typeof j.seaCircle === 'boolean' ? j.seaCircle : true,
-      shoreLine: typeof j.shoreLine === 'boolean' ? j.shoreLine : true,
-      faultHl: typeof j.faultHl === 'boolean' ? j.faultHl : true,
+      seaCircle: pick(j.seaCircle, 'seaCircle'),
+      shoreLine: pick(j.shoreLine, 'shoreLine'),
+      faultHl: pick(j.faultHl, 'faultHl'),
     };
   } catch {
     return ANNOT_DEFAULT;
