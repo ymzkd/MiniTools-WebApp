@@ -74,9 +74,10 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
   {
     key: 'boring',
     Icon: Database,
-    label: 'ボーリング調査密度',
-    // 密度ヒートマップ。個別マーカーは下の注記トグル(boringPts)で別に出す。
-    variants: [{ val: 'boring', label: 'ボーリング調査密度' }],
+    label: 'ボーリング調査データ',
+    // boring タブと同じ表示(広域=密度ヒートマップ、ズームイン=個別マーカー)。
+    // オーバーレイを使わずマーカーだけ出したいときは下の注記トグル(boringPts)。
+    variants: [{ val: 'boring', label: 'ボーリング調査データ' }],
   },
 ];
 

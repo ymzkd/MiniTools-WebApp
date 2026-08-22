@@ -334,14 +334,14 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '',
   },
   boring: {
-    title: 'ボーリング調査データ（密度）',
-    // ヒートマップの色ランプと対応。マーカー色分けの凡例は出さない(データソースは
-    // 地点クリック時に左パネルで示す)。
+    title: 'ボーリング調査データ',
+    // 帯は密度ヒートマップの色ランプと対応(ズームインでマーカー表示に切り替わる)。
+    // マーカー色分けの凡例は出さない(データソースは地点クリック時に左パネルで示す)。
     grad:
       'linear-gradient(to right,rgba(33,102,172,0.55),rgba(103,169,207,0.7),' +
       'rgba(253,184,99,0.85),rgba(239,138,98,0.9),rgba(178,24,43,0.95))',
-    min: '低',
-    max: '高',
+    min: '密度低',
+    max: '密度高',
   },
 };
 
@@ -536,6 +536,18 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     []
   );
 
+  // ボーリング地点マーカーの可視条件: オーバーレイ 'boring' 有効(boring タブと同じく全ズームで
+  // 点を表示) または 注記トグルON(ズームインしたとき = z10以上のみ)。両者でズーム下限が違うので、
+  // visibility と zoom range をここでまとめて切り替える。オーバーレイと注記の両方の状態に
+  // 依存するため、applyOverlay / applyAnnotations の双方から呼ぶ。
+  const applyBoringPts = useCallback((kind: ZoneOverlay, a: MapAnnotations) => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current || !map.getLayer('boring-pts')) return;
+    const overlayOn = kind === 'boring';
+    map.setLayoutProperty('boring-pts', 'visibility', overlayOn || a.boringPts ? 'visible' : 'none');
+    map.setLayerZoomRange('boring-pts', overlayOn ? 0 : 10, 24);
+  }, []);
+
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
   const applyOverlay = useCallback((kind: ZoneOverlay) => {
     const map = mapRef.current;
@@ -565,6 +577,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('boring-heat')) {
       map.setLayoutProperty('boring-heat', 'visibility', kind === 'boring' ? 'visible' : 'none');
     }
+    applyBoringPts(kind, annotRef.current);
     // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると
     // 読みづらいため)。選択地点への影響度上位の震源(ハイライト)はオーバーレイに依らず、
     // 地点の注記トグル(annotations.faultHl)だけで決まる。
@@ -575,7 +588,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     // 拾えるレイヤが変わるので、切替前のホバー強調は残さない。
     faultHoverKeyRef.current = null;
     setFaultHover(map, null);
-  }, []);
+  }, [applyBoringPts]);
 
   // 地点の注記(海率円/測線/震源ハイライト)の表示切替。データはそのまま持っているので
   // visibility を差し替えるだけ＝再取得は発生しない。
@@ -590,10 +603,10 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     setVis(CIRCLE_LAYERS, a.seaCircle);
     setVis(SHORE_LAYERS, a.shoreLine);
     setVis(FAULT_HL_LAYERS, a.faultHl);
-    setVis(['boring-pts'], a.boringPts);
+    applyBoringPts(overlayRef.current, a);
     faultHoverKeyRef.current = null;
     setFaultHover(map, null);
-  }, []);
+  }, [applyBoringPts]);
   // ハイライト対象(fid 群と色)。初期化時にも参照するため ref に保持。
   const highlightsRef = useRef<MapHighlight[]>(faultHighlights ?? []);
   highlightsRef.current = faultHighlights ?? [];
@@ -785,10 +798,10 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
 
       // ボーリング調査地点(Boring Data タブと同じ points.pmtiles)。
       //   boring-heat     … 密度ヒートマップ。排他オーバーレイ 'boring' のときだけ可視。
-      //                     boring タブと違い高ズームでもフェードアウトしない(マーカーは別トグルのため、
-      //                     オーバーレイ単独でも「どこにデータがあるか」が全ズームで分かるようにする)。
-      //   boring-pts      … 個別マーカー(z10以上)。注記トグル(annotations.boringPts)で可視化。
-      //                     選択地点マーカー(赤 r6/枠2)と見分けが付くよう一回り小さく細枠にする。
+      //                     boring タブと同じく、点レイヤが立ち上がる z9-12 でフェードアウトする。
+      //   boring-pts      … 個別マーカー。オーバーレイ 'boring' 有効時は boring タブと同じく
+      //                     全ズームで、注記トグル(annotations.boringPts)単独では z10 以上で表示
+      //                     (可視条件とズーム範囲は applyBoringPts で切り替える)。
       //   boring-selected … 選択中の地点の青ハイライト。選択があるときだけ可視(タイル取得も選択時のみ)。
       map.addSource('boring', { type: 'vector', url: `pmtiles://${origin}${BORING_PMTILES}` });
       map.addLayer({
@@ -796,12 +809,13 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         type: 'heatmap',
         source: 'boring',
         'source-layer': BORING_POINTS_LAYER,
+        maxzoom: 12,
         layout: { visibility: 'none' },
         paint: {
           'heatmap-weight': 0.8,
           'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1.0, 6, 1.1, 12, 1.5],
           // 広域でも孤立した地点が見えるよう、低ズームで半径を大きめに取る。
-          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 7, 4, 10, 8, 16, 12, 26, 16, 40],
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 7, 4, 10, 8, 16, 12, 26],
           // 低密度(=まばらにデータがある所)にも色の下限を置き、「データがある」ことが分かるようにする。
           'heatmap-color': [
             'interpolate',
@@ -814,7 +828,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
             0.8, 'rgba(239,138,98,0.9)',
             1, 'rgba(178,24,43,0.95)',
           ],
-          'heatmap-opacity': 0.85,
+          // 円レイヤが立ち上がる z9-12 でヒートマップをフェードアウト(boring タブと同じ)
+          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.9, 12, 0],
         },
       });
       map.addLayer({
@@ -822,7 +837,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         type: 'circle',
         source: 'boring',
         'source-layer': BORING_POINTS_LAYER,
-        minzoom: 10,
+        minzoom: 10, // 既定(トグル単独)の下限。オーバーレイ有効時は applyBoringPts が 0 に広げる
         layout: { visibility: 'none' },
         paint: {
           'circle-color': [
@@ -831,9 +846,10 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
             ['==', ['get', 'kj'], 0], NGI_ONLY_COLOR,
             NGI_COLOR,
           ],
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 4, 14, 6, 17, 8.5],
+          // boring タブと同じ見た目(半径・白枠)。オーバーレイ有効時に低ズームでも点が出る。
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3.5, 8, 5, 11, 6, 14, 7.5, 17, 10],
           'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 1,
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 3, 1, 8, 1.2, 14, 1.8],
         },
       });
       map.addLayer({
@@ -980,8 +996,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         return;
       }
       if (ov === 'boring') {
-        // ヒートマップ自体に点の属性は無い。マーカー(注記トグルON時のみ可視)に乗っていれば
-        // その調査名とデータソースを出す。
+        // ヒートマップ自体に点の属性は無い。マーカー(オーバーレイ有効中は全ズームで可視)に
+        // 乗っていればその調査名とデータソースを出す。
         const box: [maplibregl.PointLike, maplibregl.PointLike] = [
           [e.point.x - 5, e.point.y - 5],
           [e.point.x + 5, e.point.y + 5],
