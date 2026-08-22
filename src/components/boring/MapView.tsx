@@ -243,11 +243,11 @@ const MapView: React.FC<MapViewProps> = ({
         <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">凡例</p>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500 border border-white shadow"></div>
+            <div className="w-3 h-3 rounded-full bg-cyan-400 border border-white shadow"></div>
             <span className="text-gray-700 dark:text-gray-300">国土地盤(KuniJiban掲載)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-violet-600 border border-white shadow"></div>
+            <div className="w-3 h-3 rounded-full bg-violet-400 border border-white shadow"></div>
             <span className="text-gray-700 dark:text-gray-300">国土地盤(NGICのみ・表示が遅い)</span>
           </div>
           <div className="flex items-center gap-2">

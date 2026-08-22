@@ -6,8 +6,10 @@ import type { MLITSearchResult } from './types';
 // 近接ピック(クリック周辺の地点をリスト化)のピクセル閾値
 export const PICK_PX = 12;
 export const TOKYO_COLOR = '#f59e0b';
-export const NGI_COLOR = '#ef4444';        // 国土地盤のうち KuniJiban 掲載分
-export const NGI_ONLY_COLOR = '#7c3aed';   // NGIC(publicweb)にしか無い分
+// KuniJiban 掲載分は水色、NGIC(publicweb)のみの分は淡い紫。Hazard Map の選択地点マーカー(赤)が
+// 調査地点の群れに埋もれないよう、赤系・濃色は避ける。
+export const NGI_COLOR = '#22d3ee';        // 国土地盤のうち KuniJiban 掲載分 (cyan-400)
+export const NGI_ONLY_COLOR = '#a78bfa';   // NGIC(publicweb)にしか無い分 (violet-400)
 export const SELECTED_COLOR = '#2563eb';
 
 // 全地点を単一PMTilesから描画する。?v= はタイル再生成時のキャッシュバスト用。
