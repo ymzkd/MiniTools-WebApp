@@ -7,6 +7,8 @@ interface ResultsListProps {
   selectedResult: MLITSearchResult | null;
   searchStatus: SearchStatus;
   onResultSelect: (result: MLITSearchResult) => void;
+  // Hazard Map の近接リスト用: 行を1行(調査名＋データソース)に詰め、説明・緯度経度を省く
+  compact?: boolean;
 }
 
 const ResultsList: React.FC<ResultsListProps> = ({
@@ -14,6 +16,7 @@ const ResultsList: React.FC<ResultsListProps> = ({
   selectedResult,
   searchStatus,
   onResultSelect,
+  compact = false,
 }) => {
   if (searchStatus === 'searching') {
     return (
@@ -51,15 +54,40 @@ const ResultsList: React.FC<ResultsListProps> = ({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+      <div className={`${compact ? 'px-3 py-2' : 'p-4'} border-b border-gray-200 dark:border-gray-700`}>
+        <h3 className={`${compact ? 'text-sm' : 'text-lg'} font-semibold text-gray-900 dark:text-gray-100`}>
           近接データ ({results.length}件)
         </h3>
       </div>
 
-      <div className="max-h-[400px] overflow-y-auto">
+      <div className={`${compact ? 'max-h-[240px]' : 'max-h-[400px]'} overflow-y-auto`}>
         {results.map((result) => {
           const isSelected = selectedResult?.id === result.id;
+          if (compact) {
+            return (
+              <div
+                key={result.id}
+                onClick={() => onResultSelect(result)}
+                className={`flex items-center gap-2 px-3 py-1.5 border-b border-gray-100 dark:border-gray-700 cursor-pointer transition-colors ${
+                  isSelected
+                    ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-500'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                }`}
+              >
+                <h4 className="flex-1 min-w-0 truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {result.title}
+                </h4>
+                {result.datasetName && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    {result.datasetName}
+                  </span>
+                )}
+                <ChevronRight
+                  className={`w-4 h-4 shrink-0 ${isSelected ? 'text-blue-500' : 'text-gray-400'}`}
+                />
+              </div>
+            );
+          }
           const hasPDF = result.resources?.some(r => r.format.toUpperCase() === 'PDF');
           const hasXML = result.resources?.some(r => r.format.toUpperCase() === 'XML');
 

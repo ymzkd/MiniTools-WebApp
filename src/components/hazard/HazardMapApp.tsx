@@ -597,22 +597,24 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
 
             {selectedBoring ? (
               <>
-                {/* ボーリング調査地点を選択中: 柱状図ビューア(＋クリック周辺の地点リスト)に入れ替える。
-                    閉じる(×)・任意地点のクリック・検索での移動でハザード情報へ戻る。 */}
-                <BoringLogViewer
-                  data={boringData}
-                  selectedResult={selectedBoring}
-                  loading={boringLoading}
-                  onClose={clearBoring}
-                />
+                {/* ボーリング調査地点を選択中: 近接データの切替リスト(コンパクト表示)を上、
+                    柱状図ビューアを下に。閉じる(×)・任意地点のクリック・検索での移動で
+                    ハザード情報へ戻る。 */}
                 {boringNearby.length > 1 && (
                   <ResultsList
+                    compact
                     results={boringNearby}
                     selectedResult={selectedBoring}
                     searchStatus="success"
                     onResultSelect={selectBoring}
                   />
                 )}
+                <BoringLogViewer
+                  data={boringData}
+                  selectedResult={selectedBoring}
+                  loading={boringLoading}
+                  onClose={clearBoring}
+                />
               </>
             ) : (
               <>

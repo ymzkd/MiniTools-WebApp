@@ -439,6 +439,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
   const hoverTokenRef = useRef(0);
   // 強調中の震源のキー。mousemove ごとにフィルタを張り替えないための比較用。
   const faultHoverKeyRef = useRef<string | null>(null);
+  // 拡大表示中のボーリング地点ID(boring-hover のフィルタ比較用)。
+  const boringHoverKeyRef = useRef<string | null>(null);
 
   // capturePng が常に最新の中心・半径を参照できるようにする。
   const centerRef = useRef(center);
@@ -544,8 +546,16 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     const map = mapRef.current;
     if (!map || !readyRef.current || !map.getLayer('boring-pts')) return;
     const overlayOn = kind === 'boring';
-    map.setLayoutProperty('boring-pts', 'visibility', overlayOn || a.boringPts ? 'visible' : 'none');
-    map.setLayerZoomRange('boring-pts', overlayOn ? 0 : 10, 24);
+    const vis = overlayOn || a.boringPts ? 'visible' : 'none';
+    // トグル単独では z11 以上(詳細を見に行ったときだけ出す)。オーバーレイ時は全ズーム。
+    for (const id of ['boring-pts', 'boring-hover'] as const) {
+      if (!map.getLayer(id)) continue;
+      map.setLayoutProperty(id, 'visibility', vis);
+      map.setLayerZoomRange(id, overlayOn ? 0 : 11, 24);
+    }
+    // 表示条件が変わったら、切替前のホバー拡大は残さない。
+    boringHoverKeyRef.current = null;
+    if (map.getLayer('boring-hover')) map.setFilter('boring-hover', ['==', ['get', 'id'], '']);
   }, []);
 
   // ゾーン区分オーバーレイの表示切り替え（タイルは可視時に maplibre が遅延取得する）。
@@ -800,8 +810,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       //   boring-heat     … 密度ヒートマップ。排他オーバーレイ 'boring' のときだけ可視。
       //                     boring タブと同じく、点レイヤが立ち上がる z9-12 でフェードアウトする。
       //   boring-pts      … 個別マーカー。オーバーレイ 'boring' 有効時は boring タブと同じく
-      //                     全ズームで、注記トグル(annotations.boringPts)単独では z10 以上で表示
+      //                     全ズームで、注記トグル(annotations.boringPts)単独では z11 以上で表示
       //                     (可視条件とズーム範囲は applyBoringPts で切り替える)。
+      //   boring-hover    … カーソル下の地点の拡大表示(boring-pts より一回り大きい)。
       //   boring-selected … 選択中の地点の青ハイライト。選択があるときだけ可視(タイル取得も選択時のみ)。
       map.addSource('boring', { type: 'vector', url: `pmtiles://${origin}${BORING_PMTILES}` });
       map.addLayer({
@@ -832,21 +843,40 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.9, 12, 0],
         },
       });
+      const boringColorExpr: maplibregl.ExpressionSpecification = [
+        'case',
+        ['==', ['get', 'source'], 'tokyo'], TOKYO_COLOR,
+        ['==', ['get', 'kj'], 0], NGI_ONLY_COLOR,
+        NGI_COLOR,
+      ];
       map.addLayer({
         id: 'boring-pts',
         type: 'circle',
         source: 'boring',
         'source-layer': BORING_POINTS_LAYER,
-        minzoom: 10, // 既定(トグル単独)の下限。オーバーレイ有効時は applyBoringPts が 0 に広げる
+        minzoom: 11, // 既定(トグル単独)の下限。オーバーレイ有効時は applyBoringPts が 0 に広げる
         layout: { visibility: 'none' },
         paint: {
-          'circle-color': [
-            'case',
-            ['==', ['get', 'source'], 'tokyo'], TOKYO_COLOR,
-            ['==', ['get', 'kj'], 0], NGI_ONLY_COLOR,
-            NGI_COLOR,
-          ],
-          // boring タブと同じ見た目(半径・白枠)。オーバーレイ有効時に低ズームでも点が出る。
+          'circle-color': boringColorExpr,
+          // boring タブより一段階小さめにして地点指定マーカーを目立たせる。カーソル下の点は
+          // boring-hover が従来サイズに拡大表示する。
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 4, 11, 5, 14, 6, 17, 8],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 3, 0.8, 8, 1, 14, 1.5],
+        },
+      });
+      // カーソル下の地点を従来(boring タブ)サイズまで拡大し「この点を選べる」ことを示す。
+      // 震源ホバーと同じフィルタ差替え方式。可視条件・ズーム範囲は boring-pts と連動(applyBoringPts)。
+      map.addLayer({
+        id: 'boring-hover',
+        type: 'circle',
+        source: 'boring',
+        'source-layer': BORING_POINTS_LAYER,
+        minzoom: 11,
+        filter: ['==', ['get', 'id'], ''],
+        layout: { visibility: 'none' },
+        paint: {
+          'circle-color': boringColorExpr,
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3.5, 8, 5, 11, 6, 14, 7.5, 17, 10],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 3, 1, 8, 1.2, 14, 1.8],
@@ -909,10 +939,11 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         type: 'circle',
         source: 'marker',
         paint: {
-          'circle-radius': 6,
+          // ボーリング地点マーカーの群れに埋もれないよう一段階大きくする。
+          'circle-radius': 8,
           'circle-color': '#ef4444',
           'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2,
+          'circle-stroke-width': 2.5,
         },
       });
       readyRef.current = true;
@@ -929,7 +960,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     // マーカーに当たらなければ従来どおり、その地点をハザードの選択地点にする。
     // 非表示レイヤーは queryRenderedFeatures が拾わないので、トグルOFF時は自動的に全面クリック扱い。
     map.on('click', (e) => {
-      const boringLayers = ['boring-pts', 'boring-selected'].filter((l) => map.getLayer(l));
+      // boring-hover も対象にして、拡大表示中の円のフチまでクリックで拾えるようにする。
+      const boringLayers = ['boring-pts', 'boring-hover', 'boring-selected'].filter((l) => map.getLayer(l));
       if (boringLayers.length && onBoringPickRef.current) {
         const hit = map.queryRenderedFeatures(e.point, { layers: boringLayers });
         if (hit.length) {
@@ -958,12 +990,23 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       }
       onPickRef.current(e.lngLat.lat, normLng(e.lngLat.lng));
     });
-    // マーカー上では「押せる」ことが伝わるよう pointer にする(それ以外は地点指定の crosshair)。
-    map.on('mouseenter', 'boring-pts', () => {
+    // マーカー上では「押せる」ことが伝わるよう pointer にし、カーソル下の点を拡大表示する
+    // (それ以外は地点指定の crosshair)。対象が変わったときだけフィルタを差し替える。
+    const setBoringHover = (id: string | null) => {
+      if (id === boringHoverKeyRef.current) return;
+      boringHoverKeyRef.current = id;
+      if (map.getLayer('boring-hover')) {
+        map.setFilter('boring-hover', ['==', ['get', 'id'], id ?? '']);
+      }
+    };
+    map.on('mousemove', 'boring-pts', (e) => {
       map.getCanvas().style.cursor = 'pointer';
+      const p = e.features?.[0]?.properties as TileProps | undefined;
+      setBoringHover(p?.id ?? null);
     });
     map.on('mouseleave', 'boring-pts', () => {
       map.getCanvas().style.cursor = 'crosshair';
+      setBoringHover(null);
     });
 
     // オーバーレイ表示中、カーソル位置のデータを小さくリアルタイム表示。
