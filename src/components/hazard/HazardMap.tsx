@@ -12,6 +12,21 @@ import {
   vs350HeightAt,
 } from './valueRaster';
 import type { MapHighlight } from './jshisApi';
+// ボーリング調査地点タイル(Boring Data タブと共有)。ヒートマップはオーバーレイの1つ、
+// 個別マーカーは注記トグル(annotations.boringPts)として描く。
+import {
+  PICK_PX,
+  TOKYO_COLOR,
+  NGI_COLOR,
+  NGI_ONLY_COLOR,
+  SELECTED_COLOR as BORING_SELECTED_COLOR,
+  PMTILES_URL as BORING_PMTILES,
+  POINTS_LAYER as BORING_POINTS_LAYER,
+  featureToResult,
+  sourceLabel,
+} from '../boring/pointsTiles';
+import type { TileProps } from '../boring/pointsTiles';
+import type { MLITSearchResult } from '../boring/types';
 
 interface LatLng {
   lat: number;
@@ -28,7 +43,8 @@ export type ZoneOverlay =
   | 'authority'
   | 'amp'
   | 'vs350'
-  | 'faults';
+  | 'faults'
+  | 'boring';
 
 // 全断層(下塗り・面・断層線)を描くのは 'faults'(震源断層)オーバーレイのときだけ —
 // 常時だと全国の断層が重なって読みづらいため。
@@ -38,6 +54,7 @@ export interface MapAnnotations {
   seaCircle: boolean; // 海率算定の円(半径 R)
   shoreLine: boolean; // 最寄りの海岸線/湖岸線への測線＋最寄り点
   faultHl: boolean; // 選択地点への影響度上位の震源ハイライト
+  boringPts: boolean; // ボーリング調査地点のマーカー(z10以上。クリックで柱状図)
 }
 
 interface HazardMapProps {
@@ -50,6 +67,11 @@ interface HazardMapProps {
   shorePoint: LatLng | null; // 最寄りの海岸線/湖岸線の点（中心からの測線を表示）
   annotations: MapAnnotations; // 地点の注記(海率円/測線/震源ハイライト)の表示切替
   onPick: (lat: number, lng: number) => void;
+  // ボーリング地点マーカーのクリック。primary=踏んだ地点、nearby=周辺12px内の地点群(重なりの巡回用)。
+  // ハザードの選択地点(onPick)は動かさない — 近隣の調査地点を巡回して見るユースケースのため。
+  onBoringPick?: (primary: MLITSearchResult, nearby: MLITSearchResult[]) => void;
+  // 選択中のボーリング地点ID(青ハイライト表示用)。null で非表示。
+  selectedBoringId?: string | null;
   // 選択地点への影響度上位の震源(断層要素 fid 群と系列色)。地震系オーバーレイ表示中に強調描画する。
   faultHighlights?: MapHighlight[];
   // 凡例行クリック等で「この震源の範囲へ寄せる」要求。v が変わったとき bbox(と地点)に fit する。
@@ -311,6 +333,16 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     min: '',
     max: '',
   },
+  boring: {
+    title: 'ボーリング調査データ（密度）',
+    // ヒートマップの色ランプと対応。マーカー色分けの凡例は出さない(データソースは
+    // 地点クリック時に左パネルで示す)。
+    grad:
+      'linear-gradient(to right,rgba(33,102,172,0.55),rgba(103,169,207,0.7),' +
+      'rgba(253,184,99,0.85),rgba(239,138,98,0.9),rgba(178,24,43,0.95))',
+    min: '低',
+    max: '高',
+  },
 };
 
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
@@ -373,7 +405,19 @@ function buildStyle(): maplibregl.StyleSpecification {
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap(
-  { center, radiusKm, viewVersion, overlay, shorePoint, annotations, onPick, faultHighlights, focusBbox },
+  {
+    center,
+    radiusKm,
+    viewVersion,
+    overlay,
+    shorePoint,
+    annotations,
+    onPick,
+    onBoringPick,
+    selectedBoringId,
+    faultHighlights,
+    focusBbox,
+  },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -388,6 +432,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
   annotRef.current = annotations;
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  const onBoringPickRef = useRef(onBoringPick);
+  onBoringPickRef.current = onBoringPick;
   // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
   const [hover, setHover] = useState<string | null>(null);
   const hoverTokenRef = useRef(0);
@@ -516,6 +562,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('zones-vs350-fill')) {
       map.setLayoutProperty('zones-vs350-fill', 'visibility', kind === 'vs350' ? 'visible' : 'none');
     }
+    if (map.getLayer('boring-heat')) {
+      map.setLayoutProperty('boring-heat', 'visibility', kind === 'boring' ? 'visible' : 'none');
+    }
     // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると
     // 読みづらいため)。選択地点への影響度上位の震源(ハイライト)はオーバーレイに依らず、
     // 地点の注記トグル(annotations.faultHl)だけで決まる。
@@ -541,6 +590,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     setVis(CIRCLE_LAYERS, a.seaCircle);
     setVis(SHORE_LAYERS, a.shoreLine);
     setVis(FAULT_HL_LAYERS, a.faultHl);
+    setVis(['boring-pts'], a.boringPts);
     faultHoverKeyRef.current = null;
     setFaultHover(map, null);
   }, []);
@@ -733,6 +783,74 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 2, 'line-opacity': 0.9 },
       });
 
+      // ボーリング調査地点(Boring Data タブと同じ points.pmtiles)。
+      //   boring-heat     … 密度ヒートマップ。排他オーバーレイ 'boring' のときだけ可視。
+      //                     boring タブと違い高ズームでもフェードアウトしない(マーカーは別トグルのため、
+      //                     オーバーレイ単独でも「どこにデータがあるか」が全ズームで分かるようにする)。
+      //   boring-pts      … 個別マーカー(z10以上)。注記トグル(annotations.boringPts)で可視化。
+      //                     選択地点マーカー(赤 r6/枠2)と見分けが付くよう一回り小さく細枠にする。
+      //   boring-selected … 選択中の地点の青ハイライト。選択があるときだけ可視(タイル取得も選択時のみ)。
+      map.addSource('boring', { type: 'vector', url: `pmtiles://${origin}${BORING_PMTILES}` });
+      map.addLayer({
+        id: 'boring-heat',
+        type: 'heatmap',
+        source: 'boring',
+        'source-layer': BORING_POINTS_LAYER,
+        layout: { visibility: 'none' },
+        paint: {
+          'heatmap-weight': 0.8,
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1.0, 6, 1.1, 12, 1.5],
+          // 広域でも孤立した地点が見えるよう、低ズームで半径を大きめに取る。
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 7, 4, 10, 8, 16, 12, 26, 16, 40],
+          // 低密度(=まばらにデータがある所)にも色の下限を置き、「データがある」ことが分かるようにする。
+          'heatmap-color': [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0, 'rgba(0,0,0,0)',
+            0.04, 'rgba(33,102,172,0.55)',
+            0.25, 'rgba(103,169,207,0.7)',
+            0.5, 'rgba(253,184,99,0.85)',
+            0.8, 'rgba(239,138,98,0.9)',
+            1, 'rgba(178,24,43,0.95)',
+          ],
+          'heatmap-opacity': 0.85,
+        },
+      });
+      map.addLayer({
+        id: 'boring-pts',
+        type: 'circle',
+        source: 'boring',
+        'source-layer': BORING_POINTS_LAYER,
+        minzoom: 10,
+        layout: { visibility: 'none' },
+        paint: {
+          'circle-color': [
+            'case',
+            ['==', ['get', 'source'], 'tokyo'], TOKYO_COLOR,
+            ['==', ['get', 'kj'], 0], NGI_ONLY_COLOR,
+            NGI_COLOR,
+          ],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 4, 14, 6, 17, 8.5],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 1,
+        },
+      });
+      map.addLayer({
+        id: 'boring-selected',
+        type: 'circle',
+        source: 'boring',
+        'source-layer': BORING_POINTS_LAYER,
+        filter: ['==', ['get', 'id'], ''],
+        layout: { visibility: 'none' },
+        paint: {
+          'circle-color': BORING_SELECTED_COLOR,
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 5, 16, 9],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 3,
+        },
+      });
+
       map.addSource('circle', { type: 'geojson', data: EMPTY_FC });
       map.addSource('marker', { type: 'geojson', data: EMPTY_FC });
       map.addLayer({
@@ -790,9 +908,46 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       applyAnnotations(annotRef.current); // 同上（前回セッションのトグル状態を復元）
     });
 
-    // 地図のどこをクリックしても、その地点を選択する。
+    // クリックの優先順位: 可視のボーリング地点マーカーを踏んだらその調査データを選択し、
+    // ハザードの選択地点は動かさない(近隣の調査地点を巡回して見るユースケースのため)。
+    // マーカーに当たらなければ従来どおり、その地点をハザードの選択地点にする。
+    // 非表示レイヤーは queryRenderedFeatures が拾わないので、トグルOFF時は自動的に全面クリック扱い。
     map.on('click', (e) => {
+      const boringLayers = ['boring-pts', 'boring-selected'].filter((l) => map.getLayer(l));
+      if (boringLayers.length && onBoringPickRef.current) {
+        const hit = map.queryRenderedFeatures(e.point, { layers: boringLayers });
+        if (hit.length) {
+          const c = (hit[0].geometry as GeoJSON.Point).coordinates;
+          const primary = featureToResult(hit[0].properties as TileProps, c[0], c[1]);
+          // クリック周辺の地点群も一覧用に拾う(重なった地点の切替用。boring タブと同じ12px)。
+          const box: [maplibregl.PointLike, maplibregl.PointLike] = [
+            [e.point.x - PICK_PX, e.point.y - PICK_PX],
+            [e.point.x + PICK_PX, e.point.y + PICK_PX],
+          ];
+          const near = map.queryRenderedFeatures(box, { layers: boringLayers });
+          const seen = new Set<string>([`${primary.source}-${primary.id}`]);
+          const list: MLITSearchResult[] = [primary];
+          for (const nf of near) {
+            const p = nf.properties as TileProps;
+            const nc = (nf.geometry as GeoJSON.Point).coordinates;
+            const r = featureToResult(p, nc[0], nc[1]);
+            const key = `${r.source}-${r.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            list.push(r);
+          }
+          onBoringPickRef.current(primary, list);
+          return;
+        }
+      }
       onPickRef.current(e.lngLat.lat, normLng(e.lngLat.lng));
+    });
+    // マーカー上では「押せる」ことが伝わるよう pointer にする(それ以外は地点指定の crosshair)。
+    map.on('mouseenter', 'boring-pts', () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', 'boring-pts', () => {
+      map.getCanvas().style.cursor = 'crosshair';
     });
 
     // オーバーレイ表示中、カーソル位置のデータを小さくリアルタイム表示。
@@ -822,6 +977,23 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       const withFault = (t: string | null): string | null => (t && faultTxt ? `${t} ｜ ${faultTxt}` : t ?? faultTxt);
       if (ov === 'faults') {
         setHover(faultTxt);
+        return;
+      }
+      if (ov === 'boring') {
+        // ヒートマップ自体に点の属性は無い。マーカー(注記トグルON時のみ可視)に乗っていれば
+        // その調査名とデータソースを出す。
+        const box: [maplibregl.PointLike, maplibregl.PointLike] = [
+          [e.point.x - 5, e.point.y - 5],
+          [e.point.x + 5, e.point.y + 5],
+        ];
+        const layers = ['boring-pts'].filter((l) => map.getLayer(l));
+        const fs = layers.length ? map.queryRenderedFeatures(box, { layers }) : [];
+        if (fs.length) {
+          const p = fs[0].properties as TileProps;
+          setHover(withFault(`${p.title ?? '(調査名未取得)'}（${sourceLabel(p.source, p.source_name)}）`));
+        } else {
+          setHover(withFault(null));
+        }
         return;
       }
       if (ov === 'wind' || ov === 'seismic') {
@@ -961,6 +1133,20 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       }
     }
   }, [faultHighlights]);
+
+  // 選択中のボーリング地点の青ハイライト(フィルタ更新)。選択があるときだけレイヤーを
+  // 可視にする(常時 visible だと選択が無くてもソースのタイル取得が走るため)。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (!map.getLayer('boring-selected')) return;
+      map.setFilter('boring-selected', ['==', ['get', 'id'], selectedBoringId ?? '']);
+      map.setLayoutProperty('boring-selected', 'visibility', selectedBoringId ? 'visible' : 'none');
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once('idle', apply);
+  }, [selectedBoringId]);
 
   // 凡例行クリック: その震源の範囲(＋選択地点)に表示範囲を合わせる
   useEffect(() => {
