@@ -60,7 +60,7 @@ const ResultsList: React.FC<ResultsListProps> = ({
         </h3>
       </div>
 
-      <div className={`${compact ? 'max-h-[240px]' : 'max-h-[400px]'} overflow-y-auto`}>
+      <div className={`${compact ? 'max-h-[240px]' : 'max-h-[400px]'} overflow-y-auto slim-scrollbar`}>
         {results.map((result) => {
           const isSelected = selectedResult?.id === result.id;
           if (compact) {

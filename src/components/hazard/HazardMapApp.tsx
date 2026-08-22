@@ -573,7 +573,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       <div className="flex-1 overflow-hidden min-h-0">
         <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:min-h-0">
           {/* 左: 入力 + 結果 */}
-          <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0">
+          <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0 slim-scrollbar">
             {/* 検索（住所・地名 または 緯度,経度） */}
             <form onSubmit={handleSearch} className="flex gap-2">
               <div className="relative flex-1">

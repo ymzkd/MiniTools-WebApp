@@ -259,7 +259,7 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
               ボーリング柱状図
             </div>
             {/* 柱状図自体には高さ制限を付けず、スクロールは左パネル側に任せて全体を見渡せるようにする */}
-            <div className="p-4 overflow-x-auto">
+            <div className="p-4 overflow-x-auto slim-scrollbar">
               <div className="flex min-w-[400px] relative" style={{ height: `${depthScale * 15 + 60}px` }}>
                 {/* 深度目盛り線（全体を横断） */}
                 {depthTicks.map((depth) => (
