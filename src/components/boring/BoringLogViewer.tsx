@@ -258,8 +258,11 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
             <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">
               ボーリング柱状図
             </div>
-            <div className="p-4 max-h-[600px] overflow-auto">
-              <div className="flex min-w-[400px] relative" style={{ height: `${depthScale * 15 + 60}px` }}>
+            {/* 柱状図自体には高さ制限を付けず、スクロールは左パネル側に任せて全体を見渡せるようにする */}
+            <div className="p-4 overflow-x-auto slim-scrollbar">
+              {/* 外枠に固定の min-width は付けず、パネル幅いっぱいまで縮む(下限は列側の
+                  深度目盛 w-12 + 土質柱 w-24 + N値グラフ min-w の合計)。それ未満でだけ横スクロール。 */}
+              <div className="flex relative" style={{ height: `${depthScale * 15 + 60}px` }}>
                 {/* 深度目盛り線（全体を横断） */}
                 {depthTicks.map((depth) => (
                   <div
@@ -320,7 +323,7 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
                 </div>
 
                 {/* N値グラフ */}
-                <div className="flex-1 relative min-w-[200px]">
+                <div className="flex-1 relative min-w-[110px]">
                   <div className="text-xs text-gray-500 dark:text-gray-400 text-center mb-2">N値</div>
                   {/* N値スケール（10刻み） */}
                   <div className="absolute top-6 left-0 right-0 flex justify-between text-xs text-gray-400 dark:text-gray-500 px-1">
