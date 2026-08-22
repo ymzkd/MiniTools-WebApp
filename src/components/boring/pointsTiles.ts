@@ -5,9 +5,9 @@ import type { MLITSearchResult } from './types';
 
 // 近接ピック(クリック周辺の地点をリスト化)のピクセル閾値
 export const PICK_PX = 12;
-export const TOKYO_COLOR = '#f59e0b';
-// KuniJiban 掲載分は水色、NGIC(publicweb)のみの分は淡い紫。Hazard Map の選択地点マーカー(赤)が
-// 調査地点の群れに埋もれないよう、赤系・濃色は避ける。
+// Hazard Map の注記と被らない色を選ぶ: 選択地点マーカー(赤)が調査地点の群れに埋もれないよう
+// 赤系・濃色は避け、海岸線測線の最寄り点(橙 #f59e0b)と紛れないよう橙系も避ける。
+export const TOKYO_COLOR = '#e879f9';      // 東京の地盤(GIS版) (fuchsia-400, 薄いマゼンタ)
 export const NGI_COLOR = '#22d3ee';        // 国土地盤のうち KuniJiban 掲載分 (cyan-400)
 export const NGI_ONLY_COLOR = '#a78bfa';   // NGIC(publicweb)にしか無い分 (violet-400)
 export const SELECTED_COLOR = '#2563eb';

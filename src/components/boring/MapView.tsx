@@ -251,7 +251,7 @@ const MapView: React.FC<MapViewProps> = ({
             <span className="text-gray-700 dark:text-gray-300">国土地盤(NGICのみ・表示が遅い)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-amber-500 border border-white shadow"></div>
+            <div className="w-3 h-3 rounded-full bg-fuchsia-400 border border-white shadow"></div>
             <span className="text-gray-700 dark:text-gray-300">東京の地盤(GIS版)</span>
           </div>
           <div className="flex items-center gap-2">
