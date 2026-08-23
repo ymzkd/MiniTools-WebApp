@@ -574,6 +574,76 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     onError,
   ]);
 
+  // 「地点の情報」セクション。柱状図パネル(BoringLogViewer)のヘッダー直下に差し込む。
+  // 見た目はビューア内の他セクション(柱状図/ダウンロード)と同じ枠＋グレー見出しに揃え、
+  // 位置から取得した値で調査データ(XML)の記載値ではないことを見出しの注記で明示する。
+  const boringSiteInfo = selectedBoring?.location ? (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
+          地点の情報
+        </span>
+        <span className="text-[10px] text-gray-500 dark:text-gray-400 text-right">
+          位置から取得（調査データの記載値ではありません）
+        </span>
+      </div>
+      <div className="p-3 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">緯度</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+              {selectedBoring.location.lat.toFixed(5)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">経度</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+              {selectedBoring.location.lng.toFixed(5)}
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">所在地</div>
+          <div className="text-sm text-gray-800 dark:text-gray-200">
+            {boringSiteLoading ? '取得中…' : boringSite?.placeName ?? '取得できませんでした'}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <Metric
+            label="標高"
+            value={
+              boringSiteLoading
+                ? '…'
+                : boringSite?.elevation != null
+                  ? `${boringSite.elevation.toFixed(1)} m`
+                  : '—'
+            }
+          />
+          <Metric
+            label="地盤増幅率"
+            value={
+              boringSiteLoading ? '…' : boringSite?.amp != null ? boringSite.amp.toFixed(2) : '—'
+            }
+          />
+          <Metric
+            label="工学的基盤深さ"
+            value={
+              boringSiteLoading
+                ? '…'
+                : boringSite?.depth != null
+                  ? `${Math.round(boringSite.depth)} m`
+                  : '—'
+            }
+          />
+        </div>
+        <p className="text-[11px] text-gray-400">
+          標高は国土地理院API、地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは
+          J-SHISによる、この位置の参考値。
+        </p>
+      </div>
+    </div>
+  ) : undefined;
+
   const inputCls =
     'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
@@ -647,83 +717,12 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                     onResultSelect={selectBoring}
                   />
                 )}
-                {/* 地点の情報: 位置(緯度経度)から取得した値。データソースや調査日などの
-                    調査データ由来の情報(下の柱状図ビューア内)とは出自が違うことを明示する。 */}
-                {selectedBoring.location && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 shrink-0">
-                        地点の情報
-                      </h3>
-                      <span className="text-[10px] text-gray-400 text-right">
-                        位置から取得（ボーリング調査データの記載値ではありません）
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">緯度</div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
-                          {selectedBoring.location.lat.toFixed(5)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">経度</div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
-                          {selectedBoring.location.lng.toFixed(5)}
-                        </div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">所在地</div>
-                      <div className="text-sm text-gray-800 dark:text-gray-200">
-                        {boringSiteLoading
-                          ? '取得中…'
-                          : boringSite?.placeName ?? '取得できませんでした'}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <Metric
-                        label="標高"
-                        value={
-                          boringSiteLoading
-                            ? '…'
-                            : boringSite?.elevation != null
-                              ? `${boringSite.elevation.toFixed(1)} m`
-                              : '—'
-                        }
-                      />
-                      <Metric
-                        label="地盤増幅率"
-                        value={
-                          boringSiteLoading
-                            ? '…'
-                            : boringSite?.amp != null
-                              ? boringSite.amp.toFixed(2)
-                              : '—'
-                        }
-                      />
-                      <Metric
-                        label="工学的基盤深さ"
-                        value={
-                          boringSiteLoading
-                            ? '…'
-                            : boringSite?.depth != null
-                              ? `${Math.round(boringSite.depth)} m`
-                              : '—'
-                        }
-                      />
-                    </div>
-                    <p className="text-[11px] text-gray-400">
-                      標高は国土地理院API、地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは
-                      J-SHISによる、この位置の参考値。
-                    </p>
-                  </div>
-                )}
                 <BoringLogViewer
                   data={boringData}
                   selectedResult={selectedBoring}
                   loading={boringLoading}
                   onClose={clearBoring}
+                  siteInfo={boringSiteInfo}
                 />
               </>
             ) : (

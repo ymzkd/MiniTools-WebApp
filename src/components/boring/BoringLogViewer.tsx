@@ -8,6 +8,9 @@ interface BoringLogViewerProps {
   selectedResult: MLITSearchResult | null;
   loading: boolean;
   onClose: () => void;
+  // 呼び出し側が差し込む「地点の情報」セクション(Hazard Map が位置から取得した住所・標高・
+  // J-SHIS地盤値を渡す)。調査データ(XML)の取得を待たずに出せるよう、ヘッダー直下に置く。
+  siteInfo?: React.ReactNode;
 }
 
 const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
@@ -15,6 +18,7 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
   selectedResult,
   loading,
   onClose,
+  siteInfo,
 }) => {
   // XMLダウンロード失敗の理由（公開元にデータが無い等）をボタン下に出す。
   const [downloadError, setDownloadError] = React.useState<string | null>(null);
@@ -135,6 +139,9 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
           <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
         </button>
       </div>
+
+      {/* 地点の情報(呼び出し側が渡したときだけ)。XMLのローディング中でも表示する */}
+      {siteInfo && <div className="px-4 pt-4">{siteInfo}</div>}
 
       {/* ローディング */}
       {loading && (
