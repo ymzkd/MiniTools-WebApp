@@ -227,6 +227,44 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     [selectBoring]
   );
 
+  // 選択中ボーリング地点の「地点の情報」: 住所(逆ジオコーディング)・標高(API)・
+  // J-SHIS地盤値(値ラスター)を、ボーリング地点の座標で取得する。ハザードの選択地点(point)
+  // ではない点に注意。調査データ(XML)由来の値とは別物なので、別カードで表示する。
+  const [boringSite, setBoringSite] = useState<{
+    placeName: string | null;
+    elevation: number | null;
+    amp: number | null;
+    depth: number | null;
+  } | null>(null);
+  const [boringSiteLoading, setBoringSiteLoading] = useState(false);
+  useEffect(() => {
+    const loc = selectedBoring?.location;
+    if (!loc) {
+      setBoringSite(null);
+      setBoringSiteLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBoringSite(null);
+    setBoringSiteLoading(true);
+    // 近接地点の巡回で連打されても Nominatim に負荷をかけないよう少し待ってから取得
+    const t = setTimeout(async () => {
+      const [placeName, elevation, amp, depth] = await Promise.all([
+        reverseGeocode(loc.lat, loc.lng),
+        fetchElevation(loc.lat, loc.lng).catch(() => null),
+        ampAtLngLat(loc.lng, loc.lat).catch(() => null),
+        vs400DepthAtLngLat(loc.lng, loc.lat).catch(() => null),
+      ]);
+      if (cancelled) return;
+      setBoringSite({ placeName, elevation, amp, depth });
+      setBoringSiteLoading(false);
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [selectedBoring]);
+
   // 選択地点の J-SHIS 地盤値（地盤増幅率・Vs400m/s層上面深さ）。値ラスターPMTilesから
   // 直接読む(APIを介さない)。null=読込中または海などのデータなし。
   const [jshis, setJshis] = useState<{ amp: number | null; depth: number | null } | null>(null);
@@ -608,6 +646,78 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                     searchStatus="success"
                     onResultSelect={selectBoring}
                   />
+                )}
+                {/* 地点の情報: 位置(緯度経度)から取得した値。データソースや調査日などの
+                    調査データ由来の情報(下の柱状図ビューア内)とは出自が違うことを明示する。 */}
+                {selectedBoring.location && (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 shrink-0">
+                        地点の情報
+                      </h3>
+                      <span className="text-[10px] text-gray-400 text-right">
+                        位置から取得（ボーリング調査データの記載値ではありません）
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">緯度</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+                          {selectedBoring.location.lat.toFixed(5)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">経度</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+                          {selectedBoring.location.lng.toFixed(5)}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">所在地</div>
+                      <div className="text-sm text-gray-800 dark:text-gray-200">
+                        {boringSiteLoading
+                          ? '取得中…'
+                          : boringSite?.placeName ?? '取得できませんでした'}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <Metric
+                        label="標高"
+                        value={
+                          boringSiteLoading
+                            ? '…'
+                            : boringSite?.elevation != null
+                              ? `${boringSite.elevation.toFixed(1)} m`
+                              : '—'
+                        }
+                      />
+                      <Metric
+                        label="地盤増幅率"
+                        value={
+                          boringSiteLoading
+                            ? '…'
+                            : boringSite?.amp != null
+                              ? boringSite.amp.toFixed(2)
+                              : '—'
+                        }
+                      />
+                      <Metric
+                        label="工学的基盤深さ"
+                        value={
+                          boringSiteLoading
+                            ? '…'
+                            : boringSite?.depth != null
+                              ? `${Math.round(boringSite.depth)} m`
+                              : '—'
+                        }
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-400">
+                      標高は国土地理院API、地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは
+                      J-SHISによる、この位置の参考値。
+                    </p>
+                  </div>
                 )}
                 <BoringLogViewer
                   data={boringData}
