@@ -1,6 +1,5 @@
-// ボーリング調査地点タイル(points.pmtiles)の共有定義。
-// Boring Data タブ(MapView)と Hazard Map の両方が同じタイル・色・変換を使うため、
-// URLのキャッシュバストや featureToResult の仕様がずれないようここに集約する。
+// ボーリング調査地点タイル(points.pmtiles)の定義。旧 Boring Data タブから移設し、
+// Hazard Map のボーリング統合(HazardMap/HazardMapApp)が参照する。
 import type { MLITSearchResult } from './types';
 
 // 近接ピック(クリック周辺の地点をリスト化)のピクセル閾値

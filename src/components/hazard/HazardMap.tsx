@@ -12,7 +12,7 @@ import {
   vs350HeightAt,
 } from './valueRaster';
 import type { MapHighlight } from './jshisApi';
-// ボーリング調査地点タイル(Boring Data タブと共有)。ヒートマップはオーバーレイの1つ、
+// ボーリング調査地点タイル(共有定義は boring/pointsTiles.ts)。ヒートマップはオーバーレイの1つ、
 // 個別マーカーは注記トグル(annotations.boringPts)として描く。
 import {
   PICK_PX,
@@ -539,7 +539,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     []
   );
 
-  // ボーリング地点マーカーの可視条件: オーバーレイ 'boring' 有効(boring タブと同じく全ズームで
+  // ボーリング地点マーカーの可視条件: オーバーレイ 'boring' 有効(全ズームで
   // 点を表示) または 注記トグルON(ズームインしたとき = z10以上のみ)。両者でズーム下限が違うので、
   // visibility と zoom range をここでまとめて切り替える。オーバーレイと注記の両方の状態に
   // 依存するため、applyOverlay / applyAnnotations の双方から呼ぶ。
@@ -807,10 +807,10 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 2, 'line-opacity': 0.9 },
       });
 
-      // ボーリング調査地点(Boring Data タブと同じ points.pmtiles)。
+      // ボーリング調査地点(points.pmtiles)。
       //   boring-heat     … 密度ヒートマップ。排他オーバーレイ 'boring' のときだけ可視。
-      //                     boring タブと同じく、点レイヤが立ち上がる z9-12 でフェードアウトする。
-      //   boring-pts      … 個別マーカー。オーバーレイ 'boring' 有効時は boring タブと同じく
+      //                     点レイヤが立ち上がる z9-12 でフェードアウトする。
+      //   boring-pts      … 個別マーカー。オーバーレイ 'boring' 有効時は
       //                     全ズームで、注記トグル(annotations.boringPts)単独では z11 以上で表示
       //                     (可視条件とズーム範囲は applyBoringPts で切り替える)。
       //   boring-hover    … カーソル下の地点の拡大表示(boring-pts より一回り大きい)。
@@ -842,7 +842,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
             0.8, 'rgba(239,138,98,0.9)',
             1, 'rgba(178,24,43,0.95)',
           ],
-          // 円レイヤが立ち上がる z9-12 でヒートマップをフェードアウト(boring タブと同じ)
+          // 円レイヤが立ち上がる z9-12 でヒートマップをフェードアウト
           'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.9, 12, 0],
         },
       });
@@ -861,14 +861,14 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         layout: { visibility: 'none' },
         paint: {
           'circle-color': boringColorExpr,
-          // boring タブより一段階小さめにして地点指定マーカーを目立たせる。カーソル下の点は
+          // 通常時は一段階小さめにして地点指定マーカーを目立たせる。カーソル下の点は
           // boring-hover が従来サイズに拡大表示する。
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 4, 11, 5, 14, 6, 17, 8],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 3, 0.8, 8, 1, 14, 1.5],
         },
       });
-      // カーソル下の地点を従来(boring タブ)サイズまで拡大し「この点を選べる」ことを示す。
+      // カーソル下の地点を一回り拡大し「この点を選べる」ことを示す。
       // 震源ホバーと同じフィルタ差替え方式。可視条件・ズーム範囲は boring-pts と連動(applyBoringPts)。
       map.addLayer({
         id: 'boring-hover',
@@ -968,7 +968,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         if (hit.length) {
           const c = (hit[0].geometry as GeoJSON.Point).coordinates;
           const primary = featureToResult(hit[0].properties as TileProps, c[0], c[1]);
-          // クリック周辺の地点群も一覧用に拾う(重なった地点の切替用。boring タブと同じ12px)。
+          // クリック周辺の地点群も一覧用に拾う(重なった地点の切替用。12px)。
           const box: [maplibregl.PointLike, maplibregl.PointLike] = [
             [e.point.x - PICK_PX, e.point.y - PICK_PX],
             [e.point.x + PICK_PX, e.point.y + PICK_PX],

@@ -10,7 +10,8 @@ import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
 import type { ContribStatus } from './SeismicHazardPanel';
-// ボーリング調査データ(Boring Data タブと共有)。マーカークリック時に左パネルへ柱状図を出す。
+// ボーリング調査データ(柱状図ビューア・パーサ等は components/boring/ 配下)。
+// マーカークリック時に左パネルへ柱状図を出す。
 import BoringLogViewer from '../boring/BoringLogViewer';
 import ResultsList from '../boring/ResultsList';
 import { fetchAndParseBoringData } from '../boring/api';
@@ -75,7 +76,7 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     key: 'boring',
     Icon: Database,
     label: 'ボーリング調査データ',
-    // boring タブと同じ表示(広域=密度ヒートマップ、ズームイン=個別マーカー)。
+    // 広域=密度ヒートマップ、ズームイン=個別マーカー。
     // オーバーレイを使わずマーカーだけ出したいときは下の注記トグル(boringPts)。
     variants: [{ val: 'boring', label: 'ボーリング調査データ' }],
   },
@@ -182,7 +183,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     setBoringLoading(false);
   }, []);
 
-  // 地点選択 → 詳細(柱状図XML)取得。BoringDataApp.handleResultSelect と同じ流儀＋古い応答の破棄。
+  // 地点選択 → 詳細(柱状図XML)取得。古い応答は reqId で破棄する。
   const selectBoring = useCallback(
     async (result: MLITSearchResult) => {
       const id = ++boringReq.current;
