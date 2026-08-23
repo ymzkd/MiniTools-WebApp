@@ -70,8 +70,9 @@ interface HazardMapProps {
   // ボーリング地点マーカーのクリック。primary=踏んだ地点、nearby=周辺12px内の地点群(重なりの巡回用)。
   // ハザードの選択地点(onPick)は動かさない — 近隣の調査地点を巡回して見るユースケースのため。
   onBoringPick?: (primary: MLITSearchResult, nearby: MLITSearchResult[]) => void;
-  // 選択中のボーリング地点ID(青ハイライト表示用)。null で非表示。
-  selectedBoringId?: string | null;
+  // 選択中のボーリング地点の座標(青ハイライト表示用)。null で非表示。左パネルに柱状図を
+  // 出している間は、ズーム・オーバーレイの状態に依らず常にマーカー表示する。
+  selectedBoringPoint?: LatLng | null;
   // 選択地点への影響度上位の震源(断層要素 fid 群と系列色)。地震系オーバーレイ表示中に強調描画する。
   faultHighlights?: MapHighlight[];
   // 凡例行クリック等で「この震源の範囲へ寄せる」要求。v が変わったとき bbox(と地点)に fit する。
@@ -414,7 +415,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     annotations,
     onPick,
     onBoringPick,
-    selectedBoringId,
+    selectedBoringPoint,
     faultHighlights,
     focusBbox,
   },
@@ -813,7 +814,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       //                     全ズームで、注記トグル(annotations.boringPts)単独では z11 以上で表示
       //                     (可視条件とズーム範囲は applyBoringPts で切り替える)。
       //   boring-hover    … カーソル下の地点の拡大表示(boring-pts より一回り大きい)。
-      //   boring-selected … 選択中の地点の青ハイライト。選択があるときだけ可視(タイル取得も選択時のみ)。
+      //   boring-selected … 選択中の地点の青ハイライト。タイルは広域ズームで点を間引くため
+      //                     タイルのフィルタでは広域で消えてしまう。選択地点の座標は分かって
+      //                     いるので GeoJSON ソースで描き、ズーム・オーバーレイに依らず常時表示する。
       map.addSource('boring', { type: 'vector', url: `pmtiles://${origin}${BORING_PMTILES}` });
       map.addLayer({
         id: 'boring-heat',
@@ -882,16 +885,14 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 3, 1, 8, 1.2, 14, 1.8],
         },
       });
+      map.addSource('boring-selected', { type: 'geojson', data: EMPTY_FC });
       map.addLayer({
         id: 'boring-selected',
         type: 'circle',
-        source: 'boring',
-        'source-layer': BORING_POINTS_LAYER,
-        filter: ['==', ['get', 'id'], ''],
-        layout: { visibility: 'none' },
+        source: 'boring-selected',
         paint: {
           'circle-color': BORING_SELECTED_COLOR,
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 5, 16, 9],
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 4, 10, 5, 16, 9],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 3,
         },
@@ -961,7 +962,7 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     // 非表示レイヤーは queryRenderedFeatures が拾わないので、トグルOFF時は自動的に全面クリック扱い。
     map.on('click', (e) => {
       // boring-hover も対象にして、拡大表示中の円のフチまでクリックで拾えるようにする。
-      const boringLayers = ['boring-pts', 'boring-hover', 'boring-selected'].filter((l) => map.getLayer(l));
+      const boringLayers = ['boring-pts', 'boring-hover'].filter((l) => map.getLayer(l));
       if (boringLayers.length && onBoringPickRef.current) {
         const hit = map.queryRenderedFeatures(e.point, { layers: boringLayers });
         if (hit.length) {
@@ -987,6 +988,15 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           onBoringPickRef.current(primary, list);
           return;
         }
+      }
+      // 選択中ボーリング地点の青マーカー(GeoJSON・タイル属性なし)の上は何もしない。
+      // 広域ズームで個別マーカーが消えていても、選択中の点を踏んだクリックが
+      // 地点指定に化けて選択が解除されてしまわないようにする。
+      if (
+        map.getLayer('boring-selected') &&
+        map.queryRenderedFeatures(e.point, { layers: ['boring-selected'] }).length
+      ) {
+        return;
       }
       onPickRef.current(e.lngLat.lat, normLng(e.lngLat.lng));
     });
@@ -1193,19 +1203,28 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     }
   }, [faultHighlights]);
 
-  // 選択中のボーリング地点の青ハイライト(フィルタ更新)。選択があるときだけレイヤーを
-  // 可視にする(常時 visible だと選択が無くてもソースのタイル取得が走るため)。
+  // 選択中のボーリング地点の青ハイライト(GeoJSON 更新)。タイル非依存なので、広域ズームで
+  // タイル側の点が間引かれても消えない。
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    const p = selectedBoringPoint;
     const apply = () => {
-      if (!map.getLayer('boring-selected')) return;
-      map.setFilter('boring-selected', ['==', ['get', 'id'], selectedBoringId ?? '']);
-      map.setLayoutProperty('boring-selected', 'visibility', selectedBoringId ? 'visible' : 'none');
+      const src = map.getSource('boring-selected') as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      src.setData(
+        p
+          ? {
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+            }
+          : EMPTY_FC
+      );
     };
     if (map.isStyleLoaded()) apply();
     else map.once('idle', apply);
-  }, [selectedBoringId]);
+  }, [selectedBoringPoint]);
 
   // 凡例行クリック: その震源の範囲(＋選択地点)に表示範囲を合わせる
   useEffect(() => {

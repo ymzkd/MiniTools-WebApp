@@ -878,7 +878,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               annotations={annotations}
               onPick={handleMapPick}
               onBoringPick={handleBoringPick}
-              selectedBoringId={selectedBoring?.id ?? null}
+              selectedBoringPoint={selectedBoring?.location ?? null}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
             />
