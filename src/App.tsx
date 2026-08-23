@@ -5,7 +5,6 @@ import LaTeXMatrixEditor from './components/matrix/LaTeXMatrixEditor';
 import FigureLayoutApp from './components/figure/FigureLayoutApp';
 import PDFConverterApp from './components/pdf/PDFConverterApp';
 import MarkdownEditor from './components/markdown/MarkdownEditor';
-import BoringDataApp from './components/boring/BoringDataApp';
 import HazardMapApp from './components/hazard/HazardMapApp';
 import SectionPropertyCalculator from './components/section/SectionPropertyCalculator';
 import SteelStressCalculator from './components/steel/SteelStressCalculator';
@@ -27,8 +26,8 @@ function App() {
     if (pathname === '/figure') return 'figure';
     if (pathname === '/pdf') return 'pdf';
     if (pathname === '/markdown') return 'markdown';
-    if (pathname === '/boring') return 'boring';
-    if (pathname === '/hazard' || pathname === '/searatio') return 'hazard';
+    // /boring は Hazard Map に統合済み(旧URLは /searatio 同様にリダイレクト扱い)
+    if (pathname === '/hazard' || pathname === '/searatio' || pathname === '/boring') return 'hazard';
     if (pathname === '/section') return 'section';
     if (pathname === '/steel') return 'steel';
     return 'matrix'; // デフォルトは matrix
@@ -71,18 +70,8 @@ function App() {
         <div style={{ display: activeTab === 'markdown' ? 'block' : 'none' }}>
           <MarkdownEditor />
         </div>
-        {/* 地盤タブは地図を縦いっぱいに使う: ナビ(h-16)直下〜画面最下部まで。
+        {/* Hazard Map は地図を縦いっぱいに使う: ナビ(h-16)直下〜画面最下部まで。
             main の py-8 を lg:-my-8 で打ち消し、高さ=100vh-ナビ。モバイルは従来通り。 */}
-        <div
-          className="lg:-my-8 lg:h-[calc(100vh-4rem)]"
-          style={{ display: activeTab === 'boring' ? 'block' : 'none' }}
-        >
-          <BoringDataApp
-            onSuccess={showSuccess}
-            onError={showError}
-          />
-        </div>
-        {/* Hazard Map も地図を縦いっぱいに使う（boring と同じ高さ戦略） */}
         <div
           className="lg:-my-8 lg:h-[calc(100vh-4rem)]"
           style={{ display: activeTab === 'hazard' ? 'block' : 'none' }}

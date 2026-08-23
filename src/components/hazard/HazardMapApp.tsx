@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Zap } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Zap, Database } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
@@ -10,6 +10,12 @@ import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
 import type { ContribStatus } from './SeismicHazardPanel';
+// ボーリング調査データ(柱状図ビューア・パーサ等は components/boring/ 配下)。
+// マーカークリック時に左パネルへ柱状図を出す。
+import BoringLogViewer from '../boring/BoringLogViewer';
+import ResultsList from '../boring/ResultsList';
+import { fetchAndParseBoringData } from '../boring/api';
+import type { MLITSearchResult, BoringData } from '../boring/types';
 import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
 import type { SpectrumResult, ContribResult, ContribSource, ProbKey, PeriodKey } from './jshisApi';
 
@@ -66,6 +72,14 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
       { val: 'authority', label: '特定行政庁' },
     ],
   },
+  {
+    key: 'boring',
+    Icon: Database,
+    label: 'ボーリング調査データ',
+    // 広域=密度ヒートマップ、ズームイン=個別マーカー。
+    // オーバーレイを使わずマーカーだけ出したいときは下の注記トグル(boringPts)。
+    variants: [{ val: 'boring', label: 'ボーリング調査データ' }],
+  },
 ];
 
 // 地点の注記(海率円/海岸線測線/震源ハイライト)の表示トグル。面のオーバーレイと違って
@@ -79,11 +93,12 @@ const ANNOT_TOGGLES: {
   { key: 'seaCircle', Icon: CircleDashed, label: '海率円', hint: '海率を算定する半径の円（積雪荷重）' },
   { key: 'shoreLine', Icon: Ruler, label: '海岸線測線', hint: '最寄りの海岸線・湖岸線までの測線（風荷重）' },
   { key: 'faultHl', Icon: Zap, label: '震源', hint: 'この地点への影響度が大きい震源のハイライト' },
+  { key: 'boringPts', Icon: MapPin, label: 'ボーリング地点', hint: 'ボーリング調査地点のマーカー（ズームインで表示。クリックで柱状図）' },
 ];
 
 const ANNOT_STORAGE_KEY = 'hazard.annotations';
-// 既定は海率円だけ。3種を同時に描くと地図が混むので、残りは必要なときに出してもらう。
-const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, faultHl: false };
+// 既定は海率円だけ。複数を同時に描くと地図が混むので、残りは必要なときに出してもらう。
+const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, faultHl: false, boringPts: false };
 
 // 前回セッションの表示状態を復元。未保存・壊れていれば既定値。
 function loadAnnotations(): MapAnnotations {
@@ -97,6 +112,7 @@ function loadAnnotations(): MapAnnotations {
       seaCircle: pick(j.seaCircle, 'seaCircle'),
       shoreLine: pick(j.shoreLine, 'shoreLine'),
       faultHl: pick(j.faultHl, 'faultHl'),
+      boringPts: pick(j.boringPts, 'boringPts'),
     };
   } catch {
     return ANNOT_DEFAULT;
@@ -148,6 +164,107 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 選択地点の住所（リバースジオコーディング）
   const [placeName, setPlaceName] = useState<string | null>(null);
   const [placeLoading, setPlaceLoading] = useState(false);
+
+  // ---- ボーリング調査データ(マーカークリックで左パネルに柱状図を表示) ----
+  // 選択してもハザードの選択地点(point)は動かさない(近隣の調査地点を巡回して見られるように)。
+  // 任意地点のクリックや検索での移動時に選択を解除し、左パネルをハザード情報へ戻す。
+  const [selectedBoring, setSelectedBoring] = useState<MLITSearchResult | null>(null);
+  const [boringData, setBoringData] = useState<BoringData | null>(null);
+  const [boringLoading, setBoringLoading] = useState(false);
+  // クリック周辺の地点群(重なった地点の切替リスト用)
+  const [boringNearby, setBoringNearby] = useState<MLITSearchResult[]>([]);
+  const boringReq = useRef(0);
+
+  const clearBoring = useCallback(() => {
+    boringReq.current++; // 取得途中の応答は破棄
+    setSelectedBoring(null);
+    setBoringData(null);
+    setBoringNearby([]);
+    setBoringLoading(false);
+  }, []);
+
+  // 地点選択 → 詳細(柱状図XML)取得。古い応答は reqId で破棄する。
+  const selectBoring = useCallback(
+    async (result: MLITSearchResult) => {
+      const id = ++boringReq.current;
+      setSelectedBoring(result);
+      setBoringData(null);
+      setBoringLoading(true);
+      try {
+        const xmlUrl = result.metadata?.['NGI:link_boring_xml'];
+        const pdfUrl = result.metadata?.['NGI:link_boring_pdf'];
+        if (xmlUrl && result.location) {
+          try {
+            const data = await fetchAndParseBoringData(xmlUrl, result.id, result.location);
+            if (id === boringReq.current) setBoringData(data);
+          } catch (e) {
+            if (id !== boringReq.current) return;
+            console.error('Failed to fetch boring data:', e);
+            // 公開元にデータが無い場合など、中継プロキシが返した理由をそのまま見せる。
+            onError?.(e instanceof Error && e.message ? e.message : 'ボーリングデータの取得に失敗しました');
+            setBoringData(null);
+          }
+        } else if (pdfUrl) {
+          // PDF柱状図のみの地点(港湾など)。ビューアの「PDF柱状図を表示」ボタンを案内する。
+          if (id === boringReq.current) setBoringData(null);
+        } else {
+          if (id !== boringReq.current) return;
+          onError?.('この地点の柱状図データが見つかりませんでした');
+          setBoringData(null);
+        }
+      } finally {
+        if (id === boringReq.current) setBoringLoading(false);
+      }
+    },
+    [onError]
+  );
+
+  // 地図のマーカークリック(HazardMap から primary + 周辺の地点群が渡ってくる)
+  const handleBoringPick = useCallback(
+    (primary: MLITSearchResult, nearby: MLITSearchResult[]) => {
+      setBoringNearby(nearby);
+      void selectBoring(primary);
+    },
+    [selectBoring]
+  );
+
+  // 選択中ボーリング地点の「地点の情報」: 住所(逆ジオコーディング)・標高(API)・
+  // J-SHIS地盤値(値ラスター)を、ボーリング地点の座標で取得する。ハザードの選択地点(point)
+  // ではない点に注意。調査データ(XML)由来の値とは別物なので、別カードで表示する。
+  const [boringSite, setBoringSite] = useState<{
+    placeName: string | null;
+    elevation: number | null;
+    amp: number | null;
+    depth: number | null;
+  } | null>(null);
+  const [boringSiteLoading, setBoringSiteLoading] = useState(false);
+  useEffect(() => {
+    const loc = selectedBoring?.location;
+    if (!loc) {
+      setBoringSite(null);
+      setBoringSiteLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBoringSite(null);
+    setBoringSiteLoading(true);
+    // 近接地点の巡回で連打されても Nominatim に負荷をかけないよう少し待ってから取得
+    const t = setTimeout(async () => {
+      const [placeName, elevation, amp, depth] = await Promise.all([
+        reverseGeocode(loc.lat, loc.lng),
+        fetchElevation(loc.lat, loc.lng).catch(() => null),
+        ampAtLngLat(loc.lng, loc.lat).catch(() => null),
+        vs400DepthAtLngLat(loc.lng, loc.lat).catch(() => null),
+      ]);
+      if (cancelled) return;
+      setBoringSite({ placeName, elevation, amp, depth });
+      setBoringSiteLoading(false);
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [selectedBoring]);
 
   // 選択地点の J-SHIS 地盤値（地盤増幅率・Vs400m/s層上面深さ）。値ラスターPMTilesから
   // 直接読む(APIを介さない)。null=読込中または海などのデータなし。
@@ -282,9 +399,13 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       });
   }, [point.lat, point.lng, onError]);
 
-  const handleMapPick = useCallback((lat: number, lng: number) => {
-    setPoint({ lat, lng });
-  }, []);
+  const handleMapPick = useCallback(
+    (lat: number, lng: number) => {
+      clearBoring(); // 任意地点の指定 → 左パネルはその地点のハザード情報に戻す
+      setPoint({ lat, lng });
+    },
+    [clearBoring]
+  );
 
   // カテゴリのアイコンを押したときの切替。未選択なら先頭 variant、選択中なら次の
   // variant をループで巡回する（末尾でオフにはしない）。オフは別ボタンが担当。
@@ -308,6 +429,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         const lat = parseFloat(m[1]);
         const lng = parseFloat(m[2]);
         if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+          clearBoring();
           setPoint({ lat, lng });
           setViewVersion((v) => v + 1);
           onSuccess?.(`緯度 ${lat}, 経度 ${lng} に移動しました`);
@@ -320,6 +442,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       try {
         const r = await geocode(q);
         if (r) {
+          clearBoring();
           setPoint(r);
           setViewVersion((v) => v + 1);
           onSuccess?.(`「${q}」に移動しました`);
@@ -330,7 +453,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         onError?.('住所検索に失敗しました');
       }
     },
-    [query, onSuccess, onError]
+    [query, onSuccess, onError, clearBoring]
   );
 
   const radiusKm = design?.radius_km ?? 40;
@@ -452,6 +575,76 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     onError,
   ]);
 
+  // 「地点の情報」セクション。柱状図パネル(BoringLogViewer)のヘッダー直下に差し込む。
+  // 見た目はビューア内の他セクション(柱状図/ダウンロード)と同じ枠＋グレー見出しに揃え、
+  // 位置から取得した値で調査データ(XML)の記載値ではないことを見出しの注記で明示する。
+  const boringSiteInfo = selectedBoring?.location ? (
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 shrink-0">
+          地点の情報
+        </span>
+        <span className="text-[10px] text-gray-500 dark:text-gray-400 text-right">
+          位置から取得（調査データの記載値ではありません）
+        </span>
+      </div>
+      <div className="p-3 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">緯度</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+              {selectedBoring.location.lat.toFixed(5)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">経度</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+              {selectedBoring.location.lng.toFixed(5)}
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">所在地</div>
+          <div className="text-sm text-gray-800 dark:text-gray-200">
+            {boringSiteLoading ? '取得中…' : boringSite?.placeName ?? '取得できませんでした'}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <Metric
+            label="標高"
+            value={
+              boringSiteLoading
+                ? '…'
+                : boringSite?.elevation != null
+                  ? `${boringSite.elevation.toFixed(1)} m`
+                  : '—'
+            }
+          />
+          <Metric
+            label="地盤増幅率"
+            value={
+              boringSiteLoading ? '…' : boringSite?.amp != null ? boringSite.amp.toFixed(2) : '—'
+            }
+          />
+          <Metric
+            label="工学的基盤深さ"
+            value={
+              boringSiteLoading
+                ? '…'
+                : boringSite?.depth != null
+                  ? `${Math.round(boringSite.depth)} m`
+                  : '—'
+            }
+          />
+        </div>
+        <p className="text-[11px] text-gray-400">
+          標高は国土地理院API、地盤増幅率(工学的基盤Vs400m/sから地表)と工学的基盤(Vs400m/s)深さは
+          J-SHISによる、この位置の参考値。
+        </p>
+      </div>
+    </div>
+  ) : undefined;
+
   const inputCls =
     'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent';
 
@@ -466,7 +659,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               Hazard Map
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルと震源別影響度を表示します。
+              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルと震源別影響度を表示します。ボーリング調査地点のマーカー（地図左のトグルで表示）をクリックすると柱状図に切り替わります。
             </p>
           </div>
           <button
@@ -489,7 +682,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       <div className="flex-1 overflow-hidden min-h-0">
         <div className="h-full grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:min-h-0">
           {/* 左: 入力 + 結果 */}
-          <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0">
+          <div className="lg:col-span-1 space-y-4 overflow-y-auto lg:min-h-0 slim-scrollbar">
             {/* 検索（住所・地名 または 緯度,経度） */}
             <form onSubmit={handleSearch} className="flex gap-2">
               <div className="relative flex-1">
@@ -511,6 +704,30 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               </button>
             </form>
 
+            {selectedBoring ? (
+              <>
+                {/* ボーリング調査地点を選択中: 近接データの切替リスト(コンパクト表示)を上、
+                    柱状図ビューアを下に。閉じる(×)・任意地点のクリック・検索での移動で
+                    ハザード情報へ戻る。 */}
+                {boringNearby.length > 1 && (
+                  <ResultsList
+                    compact
+                    results={boringNearby}
+                    selectedResult={selectedBoring}
+                    searchStatus="success"
+                    onResultSelect={selectBoring}
+                  />
+                )}
+                <BoringLogViewer
+                  data={boringData}
+                  selectedResult={selectedBoring}
+                  loading={boringLoading}
+                  onClose={clearBoring}
+                  siteInfo={boringSiteInfo}
+                />
+              </>
+            ) : (
+              <>
             {/* 選択地点（緯度経度・住所） */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-1">
               <div className="grid grid-cols-2 gap-2">
@@ -751,6 +968,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
             </div>
+              </>
+            )}
           </div>
 
           {/* 右: 地図 + オーバーレイ切替アイコン */}
@@ -768,6 +987,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               }
               annotations={annotations}
               onPick={handleMapPick}
+              onBoringPick={handleBoringPick}
+              selectedBoringPoint={selectedBoring?.location ?? null}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
             />
@@ -899,6 +1120,34 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
             地震ハザードステーション
           </a>
           <span className="ml-1">（表層地盤・深部地盤・応答スペクトルに関する地震動予測地図2020年版・震源断層2024年版／防災科研 J-SHIS）</span>
+          {' / '}
+          <a
+            href="https://www.kunijiban.pwri.go.jp/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            国土地盤情報検索サイト (KuniJiban)
+          </a>
+          {' / '}
+          <a
+            href="https://ngic.or.jp/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            国土地盤情報センター (NGIC)
+          </a>
+          {' / '}
+          <a
+            href="https://www.kensetsu.metro.tokyo.lg.jp/jimusho/tech/geo-web"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            東京の地盤(GIS版)
+          </a>
+          <span className="ml-1">（ボーリング柱状図／東京都建設局 CC BY 2.1 JP）</span>
         </p>
       </div>
     </div>
