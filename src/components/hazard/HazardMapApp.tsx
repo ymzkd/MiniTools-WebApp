@@ -19,6 +19,7 @@ import { fetchAndParseBoringData } from '../boring/api';
 import FaultDetailPanel from './FaultDetailPanel';
 import { fetchScenario } from './scenarioApi';
 import type { ScenarioFault } from './scenarioApi';
+import type { FaultPick } from './HazardMap';
 import type { MLITSearchResult, BoringData } from '../boring/types';
 import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
 import type { SpectrumResult, ContribResult, ContribSource, ProbKey, PeriodKey } from './jshisApi';
@@ -182,8 +183,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // ---- 想定地震(断層クリック) ----
   // 地図で震源断層を踏むと、その震源に紐づく想定地震を左パネルに出す。ボーリング柱状図と同じく
   // 選択地点(point)は動かさない。断層とボーリングは同時に開かない(左パネルは1つなので)。
-  const [selectedFault, setSelectedFault] = useState<{ src: string; name: string } | null>(null);
+  const [selectedFault, setSelectedFault] = useState<FaultPick | null>(null);
   const [faultData, setFaultData] = useState<ScenarioFault[]>([]);
+  // その震源が持つ想定地震の総数(絞り込み前)。「他の区間にもある」ことを示すのに使う
+  const [faultTotal, setFaultTotal] = useState(0);
   const [faultLoading, setFaultLoading] = useState(false);
   const [faultError, setFaultError] = useState<string | null>(null);
   const faultReq = useRef(0);
@@ -192,19 +195,25 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     faultReq.current++;
     setSelectedFault(null);
     setFaultData([]);
+    setFaultTotal(0);
     setFaultLoading(false);
     setFaultError(null);
   }, []);
 
-  const handleFaultPick = useCallback((src: string, name: string) => {
+  // 踏んだ場所(区間 or 座標)を渡して、そこに重なる想定地震だけを取る。
+  // 同じ場所に重なるもの(傾斜角モデル違い・ケース違い・同時活動)はパネルの選択肢になる。
+  const handleFaultPick = useCallback((pick: FaultPick) => {
     const id = ++faultReq.current;
-    setSelectedFault({ src, name });
+    setSelectedFault(pick);
     setFaultData([]);
+    setFaultTotal(0);
     setFaultError(null);
     setFaultLoading(true);
-    fetchScenario(src)
-      .then((faults) => {
-        if (id === faultReq.current) setFaultData(faults);
+    fetchScenario(pick.src, { seg: pick.seg, lat: pick.lat, lng: pick.lng })
+      .then((r) => {
+        if (id !== faultReq.current) return;
+        setFaultData(r.faults);
+        setFaultTotal(r.total);
       })
       .catch((e) => {
         if (id !== faultReq.current) return;
@@ -755,6 +764,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               <FaultDetailPanel
                 faults={faultData}
                 srcName={selectedFault.name}
+                total={faultTotal}
                 loading={faultLoading}
                 error={faultError}
                 onClose={clearFault}
@@ -1046,6 +1056,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               selectedBoringPoint={selectedBoring?.location ?? null}
               onFaultPick={handleFaultPick}
               selectedFaultSrc={selectedFault?.src ?? null}
+              selectedFaultSeg={selectedFault?.seg ?? null}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
             />

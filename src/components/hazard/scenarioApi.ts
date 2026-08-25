@@ -81,6 +81,10 @@ export interface ScenarioFault {
   src: string;
   /** 旧断層コードのデータか(2024年版の震源モデルにこのコードが無い) */
   legacy: boolean;
+  /** 複数区間が同時に活動するシナリオか。地図には描かず、重なりとして選択肢に出る */
+  combo: boolean;
+  /** 区間キー "断層帯番号-区間コード"。傾斜角モデル違いは同じ区間キーになる */
+  seg: string;
   info: ScenarioInfo;
   cases: Record<string, ScenarioCase>;
 }
@@ -92,15 +96,43 @@ export function pdfUrl(info: ScenarioInfo): string | null {
   return info.pdf ? JSHIS_ORIGIN + info.pdf : null;
 }
 
-/** 震源コード(地図タイルの src)に紐づく想定地震。無ければ空配列。 */
-export async function fetchScenario(src: string, signal?: AbortSignal): Promise<ScenarioFault[]> {
-  const res = await fetch(`/api/jshis/scenario?src=${encodeURIComponent(src)}`, {
-    signal,
-    headers: { accept: 'application/json' },
-  });
+/** 地図で踏んだ場所の情報。区間(seg)が分かればそれを、分からなければ座標を渡す。 */
+export interface ScenarioQuery {
+  /** 区間キー(segments.geojson の seg 属性)。区間レイヤを踏んだとき */
+  seg?: string | null;
+  /** クリック座標。震源ハイライトなど区間レイヤ以外を踏んだとき */
+  lat?: number;
+  lng?: number;
+}
+
+export interface ScenarioResult {
+  faults: ScenarioFault[];
+  /** その震源が持つ想定地震の総数(絞り込み前)。「他にもある」ことを示すのに使う */
+  total: number;
+}
+
+/**
+ * 震源に紐づく想定地震。seg / 座標を渡すと「その場所に重なるもの」だけに絞られる。
+ *
+ * 想定地震は「区間 × 傾斜角モデル × 単独/同時活動」の積で同じ場所に何本も重なる
+ * (中央構造線は1震源に39本)。地図に個別描画するのは単独区間だけなので、重なっている
+ * 残りはここで拾ってパネルの選択肢に出す。
+ */
+export async function fetchScenario(
+  src: string,
+  q: ScenarioQuery = {},
+  signal?: AbortSignal
+): Promise<ScenarioResult> {
+  const p = new URLSearchParams({ src });
+  if (q.seg) p.set('seg', q.seg);
+  if (q.lat != null && q.lng != null) {
+    p.set('lat', String(q.lat));
+    p.set('lng', String(q.lng));
+  }
+  const res = await fetch(`/api/jshis/scenario?${p}`, { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw new Error(`jshis scenario error: ${res.status}`);
-  const j = (await res.json()) as { faults: ScenarioFault[] };
-  return j.faults ?? [];
+  const j = (await res.json()) as { faults?: ScenarioFault[]; total?: number };
+  return { faults: j.faults ?? [], total: j.total ?? (j.faults?.length ?? 0) };
 }
 
 /** ケース番号を数値順に並べる(オブジェクトのキー順に依存しない)。 */

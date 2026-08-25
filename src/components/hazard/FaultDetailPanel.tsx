@@ -22,16 +22,18 @@ import {
 import type { ScenarioFault } from './scenarioApi';
 
 interface Props {
-  /** クリックした震源に紐づく断層(中央構造線のように複数ぶら下がることがある) */
+  /** 踏んだ場所に重なる想定地震。同じ場所に複数重なることがある */
   faults: ScenarioFault[];
   /** 地図のホバー等で表示した震源名(想定地震が無いときの見出しに使う) */
   srcName: string;
+  /** その震源が持つ想定地震の総数(絞り込み前)。他の区間があることを示す */
+  total: number;
   loading: boolean;
   error: string | null;
   onClose: () => void;
 }
 
-const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, loading, error, onClose }) => {
+const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, total, loading, error, onClose }) => {
   const [faultIdx, setFaultIdx] = useState(0);
   const [caseNo, setCaseNo] = useState<string | null>(null);
   // 展開図の幅はパネル幅に追従させる(左パネルは画面幅で伸縮するため)
@@ -103,22 +105,42 @@ const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, loading, error, on
 
       {!loading && fault && (
         <div className="p-4 space-y-4">
-          {/* 同じ震源に複数の断層がぶら下がるとき(中央構造線など)の切替 */}
+          {/* 同じ場所に重なる想定地震の切替。地図では選び分けられないのでここで選ぶ。
+              単独区間(傾斜角モデル違い・ケース違いのコードを含む)と、複数区間が同時に
+              活動するシナリオは性質が違うので分ける。 */}
           {faults.length > 1 && (
             <label className="block">
-              <span className="text-xs text-gray-500 dark:text-gray-400">断層（{faults.length}件）</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                この場所の想定地震（{faults.length}件）
+                <InfoTip>同じ断層でも、傾斜角の違うモデル・別ケースとして登録された断層・複数区間が同時に活動するシナリオが同じ場所に重なります。地図では選び分けられないのでここで切り替えます。</InfoTip>
+              </span>
               <select
                 value={faultIdx}
                 onChange={(e) => setFaultIdx(Number(e.target.value))}
                 className="mt-1 w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
               >
-                {faults.map((f, i) => (
-                  <option key={f.code} value={i}>
-                    {f.name || f.code}
-                  </option>
-                ))}
+                {['single', 'combo'].map((g) => {
+                  const items = faults
+                    .map((f, i) => ({ f, i }))
+                    .filter(({ f }) => (g === 'combo' ? f.combo : !f.combo));
+                  if (!items.length) return null;
+                  return (
+                    <optgroup key={g} label={g === 'combo' ? '複数区間が同時に活動' : 'この区間の断層'}>
+                      {items.map(({ f, i }) => (
+                        <option key={f.code} value={i}>
+                          {f.name || f.code}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
             </label>
+          )}
+          {total > faults.length && (
+            <p className="-mt-2 text-[11px] text-gray-400">
+              この震源には想定地震が全{total}件あります。他の区間は地図上でその区間をクリックしてください。
+            </p>
           )}
 
           {/* ケース選択 */}
