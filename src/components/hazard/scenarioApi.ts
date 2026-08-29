@@ -344,3 +344,115 @@ export function strongMotionWindow(waves: WaveComponent[], dt: number): [number,
   const t1 = Math.min(n * dt, at(0.99) + 2);
   return t1 > t0 ? [t0, t1] : [0, n * dt];
 }
+
+// ------------------------------------------------------- ケース別の地点の揺れ(一覧)
+// 波形は1件 0.5〜1.5MB あるので、全ケース取ってから比べるのは重い。先にこの一覧で
+// 「どのケースが大きいか」を見る。J-SHIS Map の地点情報ウィンドウと同じ中身(想定地震地図の
+// 公表値)で、1ケース 742 バイト・0.3 秒なので全ケースを並列に取れる。
+
+export interface CaseSummary {
+  case: string;
+  available: boolean;
+  reason?: string | null;
+  /** 工学的基盤(Vs=600m/s)上の最大速度(cm/s)。波形の水平ベクトル最大と一致する */
+  pgv: number | null;
+  /** 同・計測震度 */
+  si_b: number | null;
+  /** 表層地盤による震度増分 */
+  si_inc: number | null;
+  /** 地表の震度(気象庁震度階級。"7" や "5弱") */
+  si_surf: string | null;
+  /** 断層モデルの規模。ケースで断層形状が変わるものだけ差が出る */
+  L: number;
+  area: number;
+  /** 断層面の枚数。屈曲モデルは 2 枚以上になる */
+  nseg: number;
+  nelem: number;
+  nasp: number;
+}
+
+export interface CaseSummaryResult {
+  code: string;
+  name: string;
+  /** マグニチュード表記。震源パラメータはケース間で共通なので断層に1つ */
+  mag: string | null;
+  mesh: string | null;
+  vs: number | null;
+  link: string | null;
+  cases: CaseSummary[];
+}
+
+/** その断層の全ケースについて、地点の揺れの大きさを一覧で引く。 */
+export async function fetchCaseSummary(
+  code: string,
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<CaseSummaryResult> {
+  const q = new URLSearchParams({ code, lat: String(lat), lng: String(lng) });
+  const res = await fetch(`/api/jshis/scenario/cases?${q}`, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`jshis cases error: ${res.status}`);
+  return (await res.json()) as CaseSummaryResult;
+}
+
+/** 気象庁震度階級 → 色。震度分布図の慣用色に寄せる(5弱以上を暖色に)。 */
+export function shindoColor(s: string | null): string {
+  if (!s) return 'var(--viz-grid)';
+  if (s.startsWith('7')) return '#a50f15';
+  if (s.startsWith('6強')) return '#d7301f';
+  if (s.startsWith('6弱')) return '#ef6548';
+  if (s.startsWith('5強')) return '#fc8d59';
+  if (s.startsWith('5弱')) return '#fdbb84';
+  if (s.startsWith('4')) return '#fdd49e';
+  return 'var(--viz-grid)';
+}
+
+// ---------------------------------------------------------------- CSV 書き出し
+/**
+ * 波形を CSV にする。1行目からのメタ情報は "#" 始まりのコメント行にして、
+ * 表計算に読み込んでもデータ部だけ拾えるようにする。
+ * 前提(基準面・物理量)を落とすと値を取り違えるので、ヘッダに残す。
+ */
+export function waveToCsv(w: WaveResult): string {
+  const dt = w.dt ?? 0;
+  const dirs = w.waves.map((c) => c.dir);
+  const lines = [
+    '# J-SHIS 想定地震（震源断層を特定した地震動予測地図）の公開波形',
+    `# 断層,${w.name},${w.code}`,
+    `# ケース,CASE${w.case}`,
+    `# メッシュ,${w.mesh},${w.mesh_center.lat},${w.mesh_center.lng}`,
+    `# 物理量,速度,cm/s`,
+    '# 基準面,詳細法工学的基盤（S波速度 600 m/s 層の上面）',
+    `# サンプリング,${dt ? (1 / dt).toFixed(0) : ''},Hz,dt=${dt},s`,
+    `# 記録長,${w.duration},s`,
+    ...w.waves.map((c) => `# 最大値,${c.dir},${c.pgv},cm/s`),
+    ...(w.pgv_h != null ? [`# 最大値,水平ベクトル合成,${w.pgv_h},cm/s`] : []),
+    '# 注記,表層地盤の増幅は含みません（地表の値ではありません）',
+    '# 注記,長周期は三次元差分法・短周期は統計的グリーン関数法のハイブリッド合成法。1.5Hz以上はNSとEWが同一波形です',
+    '# 出典,防災科学技術研究所 地震ハザードステーション J-SHIS,https://www.j-shis.bosai.go.jp/',
+    ['時刻(s)', ...dirs.map((d) => `${d}(cm/s)`)].join(','),
+  ];
+  const n = Math.max(...w.waves.map((c) => c.v.length), 0);
+  // 時刻は (i+1)*dt ではなく (i+1)*記録長/点数 で出す。dt は丸めた値なので、積むと末尾が
+  // 99.999996 のようにずれる(等間隔なのに端数が付くと読み手が dt を疑う)。
+  const span = w.duration ?? dt * n;
+  for (let i = 0; i < n; i++) {
+    lines.push(
+      [(((i + 1) * span) / n).toFixed(6), ...w.waves.map((c) => (c.v[i] ?? 0).toFixed(2))].join(',')
+    );
+  }
+  return lines.join('\r\n') + '\r\n';
+}
+
+/** CSV をダウンロードさせる。Excel が UTF-8 と分かるよう BOM を付ける。 */
+export function downloadWaveCsv(w: WaveResult): void {
+  const blob = new Blob(['﻿' + waveToCsv(w)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `jshis_wave_${w.code}_CASE${w.case}_${w.mesh}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -1,13 +1,13 @@
 // Hazard Map 左パネルの「想定地震(震源断層を特定した地震動予測地図)」。
 // 地図で断層をクリックすると、ボーリング柱状図と同じ要領でこのパネルへ差し替わる。
-//   - ケース選択(その断層に用意された CASE1〜n)
+//   - ケース選択(その断層に用意された CASE1〜n)。**この地点での揺れの大きさを並べて選ばせる**
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
 //   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積)
-//   - 選択地点の速度波形(J-SHIS の公開波形。取得に数秒かかるのでボタン起動。WaveSection)
+//   - 選択地点の速度波形(J-SHIS の公開波形。CSV で書き出せる。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Activity, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
+import { X, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
 import WaveformView from './WaveformView';
@@ -19,11 +19,14 @@ import {
   bgArea,
   caseNumbers,
   depthAt,
+  downloadWaveCsv,
+  fetchCaseSummary,
   fetchWave,
   fmtStrike,
   pdfUrl,
+  shindoColor,
 } from './scenarioApi';
-import type { ScenarioFault, ScenarioGroup, WaveResult } from './scenarioApi';
+import type { CaseSummaryResult, ScenarioFault, ScenarioGroup, WaveResult } from './scenarioApi';
 
 interface Props {
   /** 踏んだ場所に重なる想定地震。同じ場所に複数重なることがある */
@@ -164,24 +167,14 @@ const FaultDetailPanel: React.FC<Props> = ({
             />
           )}
 
-          {/* ケース選択 */}
-          <label className="block">
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              ケース（{cases.length}通り）
-              <InfoTip>アスペリティの位置と破壊開始点を振った複数ケースが用意されています。どれが正解ということではなく、予測結果のばらつきの幅を見るための設定なので、全ケースを包絡して使うのが本来の用途です（強震動予測レシピ 2020）。</InfoTip>
-            </span>
-            <select
-              value={current ?? ''}
-              onChange={(e) => setCaseNo(e.target.value)}
-              className="mt-1 w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
-            >
-              {cases.map((n) => (
-                <option key={n} value={n}>
-                  Case {n}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* ケース選択。この地点での揺れの大きさを並べて選ばせる */}
+          <CaseTable
+            code={fault.code}
+            cases={cases}
+            current={current ?? ''}
+            onSelect={setCaseNo}
+            point={point}
+          />
 
           {/* 展開図 */}
           {kase && (
@@ -245,14 +238,195 @@ const FaultDetailPanel: React.FC<Props> = ({
 };
 
 /**
+ * ケースの一覧。**この地点での揺れの大きさを並べて**選ばせる。
+ *
+ * ケースはアスペリティ配置と破壊開始点を両極端に振った直交表で、断層によっては12通りある。
+ * 「Case 1〜12」と番号だけ並べても、どれが大きいのか・どれを見ればいいのかが分からない。
+ * 波形は1件 0.5〜1.5MB あって全ケース取ってから比べるのは重いので、先に軽い一覧
+ * (1ケース 742 バイト・全ケース並列で 1 秒弱)で大きさを見せる。
+ *
+ * 値が取れないとき(計算対象範囲の外・旧断層コード)は素の番号リストに落ちる。
+ */
+const CaseTable: React.FC<{
+  code: string;
+  cases: string[];
+  current: string;
+  onSelect: (n: string) => void;
+  point: { lat: number; lng: number };
+}> = ({ code, cases, current, onSelect, point }) => {
+  const [sum, setSum] = useState<CaseSummaryResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const reqId = useRef(0);
+
+  useEffect(() => {
+    const id = ++reqId.current;
+    const ac = new AbortController();
+    setBusy(true);
+    setSum(null);
+    fetchCaseSummary(code, point.lat, point.lng, ac.signal)
+      .then((r) => {
+        if (id === reqId.current) setSum(r);
+      })
+      .catch((e) => {
+        if (id !== reqId.current || (e instanceof Error && e.name === 'AbortError')) return;
+        console.error('Failed to fetch case summary:', e);
+      })
+      .finally(() => {
+        if (id === reqId.current) setBusy(false);
+      });
+    return () => ac.abort();
+  }, [code, point.lat, point.lng]);
+
+  const rows = sum?.cases.filter((c) => c.available) ?? [];
+  const maxPgv = Math.max(...rows.map((c) => c.pgv ?? 0), 0);
+  const byCase = new Map(rows.map((c) => [c.case, c]));
+  // 断層形状に別案があるケース(上町断層帯 CASE5/6 の屈曲モデルなど)だけ規模が変わる
+  const shapeVaries = new Set(rows.map((c) => `${c.L}/${c.area}/${c.nseg}`)).size > 1;
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          ケース（{cases.length}通り）
+          <InfoTip>
+            アスペリティの位置と破壊開始点を振った複数ケースが用意されています。どれが正解ということでは
+            なく、予測結果のばらつきの幅を見るための設定なので、全ケースを包絡して使うのが本来の用途です
+            （強震動予測レシピ 2020）。震源パラメータ（地震モーメント・マグニチュード・短周期レベル）は
+            ケース間で共通で、変わるのはアスペリティ配置・破壊開始点と、断層形状に別案があるケースの
+            形状だけです。
+          </InfoTip>
+        </span>
+        {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400 shrink-0" />}
+      </div>
+
+      {rows.length > 0 ? (
+        <>
+          <div className="overflow-x-auto slim-scrollbar">
+          <table className="w-full mt-1 text-xs">
+            <thead>
+              <tr className="text-[10px] text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                <th className="text-left font-normal pb-0.5">ケース</th>
+                <th className="text-right font-normal pb-0.5">
+                  基盤最大速度
+                  <InfoTip>
+                    工学的基盤（Vs = 600 m/s）上の最大速度です。想定地震地図が公表している値で、
+                    地表の揺れではありません。棒の長さはこの断層のケース間の相対比です。
+                  </InfoTip>
+                </th>
+                <th className="text-right font-normal pb-0.5">基盤震度</th>
+                <th className="text-right font-normal pb-0.5">
+                  地表震度
+                  <InfoTip>
+                    工学的基盤の計測震度に、表層地盤による震度増分を足した地表の震度（気象庁震度階級）です。
+                    増分はこの地点の微地形区分から求めた値で、ここでは {rows[0]?.si_inc ?? '—'} でした。
+                  </InfoTip>
+                </th>
+                {shapeVaries && (
+                  <th className="text-right font-normal pb-0.5">
+                    断層モデル
+                    <InfoTip>
+                      断層形状そのものに別案があるケースがあると、ここに差が出ます。たとえば上町断層帯の
+                      CASE5/6 は全長がほぼ同じでも「直線1枚」ではなく「屈曲2枚」のモデルで、
+                      震源パラメータ（すべり量・実効応力）も別に設定されています。
+                    </InfoTip>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {cases.map((n) => {
+                const c = byCase.get(n);
+                const sel = n === current;
+                return (
+                  <tr
+                    key={n}
+                    onClick={() => onSelect(n)}
+                    className={
+                      'cursor-pointer ' +
+                      (sel
+                        ? 'bg-gray-100 dark:bg-gray-700 font-medium text-gray-900 dark:text-gray-100'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50')
+                    }
+                  >
+                    <td className="py-0.5 pl-1 whitespace-nowrap">
+                      <span className={sel ? 'text-blue-600 dark:text-blue-400' : 'text-transparent'}>▸</span>{' '}
+                      Case {n}
+                    </td>
+                    <td className="py-0.5 pr-1 text-right tabular-nums whitespace-nowrap">
+                      {c?.pgv != null ? (
+                        <>
+                          <span
+                            className="inline-block h-2 rounded-sm mr-1 align-middle"
+                            style={{
+                              width: `${maxPgv ? Math.max(2, (c.pgv / maxPgv) * 34) : 0}px`,
+                              background: 'var(--viz-s1)',
+                              opacity: sel ? 0.9 : 0.45,
+                            }}
+                          />
+                          {c.pgv.toFixed(1)}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="py-0.5 pr-1 text-right tabular-nums">{c?.si_b?.toFixed(1) ?? '—'}</td>
+                    <td className="py-0.5 pr-1 text-right whitespace-nowrap">
+                      {c?.si_surf ? (
+                        <span
+                          className="inline-block px-1.5 rounded text-[11px] text-white"
+                          style={{ background: shindoColor(c.si_surf) }}
+                        >
+                          {c.si_surf}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    {shapeVaries && (
+                      <td className="py-0.5 pr-1 text-right tabular-nums whitespace-nowrap">
+                        {c ? `${c.L.toFixed(0)} km` : '—'}
+                        {c && c.nseg > 1 && (
+                          <span className="text-gray-400"> ({c.nseg}面)</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            速度は cm/s。{sum?.mag && `マグニチュード ${sum.mag.replace(/\((M\w?)\)/, ' $1')}（全ケース共通）／`}
+            行をクリックでケースを切り替え
+          </p>
+        </>
+      ) : (
+        /* 値が取れない断層(計算対象範囲の外・旧断層コード)は素の番号リストにする */
+        <select
+          value={current}
+          onChange={(e) => onSelect(e.target.value)}
+          className="mt-1 w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
+        >
+          {cases.map((n) => (
+            <option key={n} value={n}>
+              Case {n}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+};
+
+/**
  * 選択地点の速度波形。J-SHIS が想定地震地図の元データとして公開している工学的基盤上の
  * 時刻歴を取ってきて描く(断層モデルからの自前計算ではない)。
  *
- * **ボタン起動にしている理由**: 上流の応答が 0.5〜1.5MB あり、TTFB は 0.3 秒前後で安定して
- * いるものの転送が 5〜10 秒に伸びることが 4〜5 回に1回ある。断層を開くたびに自動で走らせると
- * パネルが待たされるので、見たいときだけ取りに行く。
- * 一度取ったあとはケースを切り替えると自動で取り直す(もう見る意思は示されているため)。
- * 断層や地点が変わったらボタンに戻す。
+ * 断層・ケース・地点が変わるたびに取り直す。上流は 0.5〜1.5MB あって数秒かかることが
+ * あるので、待っている間はスピナーを出し、前のケースの波形は消してから差し替える
+ * (古い波形が新しいケースの見出しの下に残ると読み違える)。取得中に切り替えられたら
+ * 前の要求は abort する。
  */
 const WaveSection: React.FC<{
   code: string;
@@ -260,25 +434,13 @@ const WaveSection: React.FC<{
   point: { lat: number; lng: number };
   width: number;
 }> = ({ code, caseNo, point, width }) => {
-  const base = `${code}|${point.lat.toFixed(5)}|${point.lng.toFixed(5)}`;
-  const [armedBase, setArmedBase] = useState<string | null>(null);
   const [data, setData] = useState<WaveResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [zoom, setZoom] = useState(true);
   const reqId = useRef(0);
-  const armed = armedBase === base;
 
   useEffect(() => {
-    if (armed) return;
-    reqId.current++; // 断層・地点が変わったら取得中の応答は捨てる
-    setData(null);
-    setErr(null);
-    setBusy(false);
-  }, [armed]);
-
-  useEffect(() => {
-    if (!armed) return;
     const id = ++reqId.current;
     const ac = new AbortController();
     setBusy(true);
@@ -297,7 +459,7 @@ const WaveSection: React.FC<{
         if (id === reqId.current) setBusy(false);
       });
     return () => ac.abort();
-  }, [armed, code, caseNo, point.lat, point.lng]);
+  }, [code, caseNo, point.lat, point.lng]);
 
   return (
     <div>
@@ -315,22 +477,11 @@ const WaveSection: React.FC<{
         {data?.mesh && `（${data.mesh}）`}
       </p>
 
-      {!armed && (
-        <button
-          type="button"
-          onClick={() => setArmedBase(base)}
-          className="w-full inline-flex items-center justify-center gap-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        >
-          <Activity className="w-4 h-4" />
-          この地点の波形を取得
-        </button>
-      )}
-
       {busy && (
         <div className="py-6 text-center">
           <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            J-SHIS から波形を取得中… （数秒かかることがあります）
+            J-SHIS から波形を読み込み中…
           </p>
         </div>
       )}
@@ -363,15 +514,27 @@ const WaveSection: React.FC<{
             <span className="text-gray-400">記録長 {data.duration} 秒 ／ 120 Hz</span>
           </div>
           <WaveformView waves={data.waves} dt={data.dt} width={width} zoom={zoom} />
-          <label className="inline-flex items-center gap-1.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={!zoom}
-              onChange={(e) => setZoom(!e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600"
-            />
-            記録全体（{data.duration} 秒）を表示する
-          </label>
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
+            <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+              <input
+                type="checkbox"
+                checked={!zoom}
+                onChange={(e) => setZoom(!e.target.checked)}
+                className="rounded border-gray-300 dark:border-gray-600"
+              />
+              記録全体（{data.duration} 秒）を表示する
+            </label>
+            {/* 表示は主要動に絞っていても、書き出すのは記録全体(切り出した波形を
+                解析に使われると継続時間やエネルギーが変わってしまうため) */}
+            <button
+              type="button"
+              onClick={() => downloadWaveCsv(data)}
+              className="inline-flex items-center gap-1 text-[11px] rounded-lg border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              CSV（{data.waves.map((w) => w.dir).join('/')}・{data.n} 点）
+            </button>
+          </div>
           <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1">
             工学的基盤（Vs = 600 m/s）上の値で、地表の揺れではありません。
             <InfoTip>
