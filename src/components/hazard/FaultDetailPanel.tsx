@@ -6,12 +6,13 @@
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
 import React, { useEffect, useRef, useState } from 'react';
-import { X, ExternalLink, FileText, Loader2, Star } from 'lucide-react';
+import { X, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
 import {
   aspArea,
   aspColor,
+  groupColor,
   aspNumbers,
   bgArea,
   caseNumbers,
@@ -19,21 +20,23 @@ import {
   fmtStrike,
   pdfUrl,
 } from './scenarioApi';
-import type { ScenarioFault } from './scenarioApi';
+import type { ScenarioFault, ScenarioGroup } from './scenarioApi';
 
 interface Props {
   /** 踏んだ場所に重なる想定地震。同じ場所に複数重なることがある */
   faults: ScenarioFault[];
   /** 地図のホバー等で表示した震源名(想定地震が無いときの見出しに使う) */
   srcName: string;
-  /** その震源が持つ想定地震の総数(絞り込み前)。他の区間があることを示す */
-  total: number;
+  /** 震源グループ(＝影響度パネルが1行として並べる単位)と、そこに属する断層 */
+  group: ScenarioGroup | null;
+  /** グループ内の別の断層へ切り替える */
+  onSelectFault: (code: string, name: string, src: string) => void;
   loading: boolean;
   error: string | null;
   onClose: () => void;
 }
 
-const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, total, loading, error, onClose }) => {
+const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, group, onSelectFault, loading, error, onClose }) => {
   const [faultIdx, setFaultIdx] = useState(0);
   const [caseNo, setCaseNo] = useState<string | null>(null);
   // 展開図の幅はパネル幅に追従させる(左パネルは画面幅で伸縮するため)
@@ -137,10 +140,14 @@ const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, total, loading, er
               </select>
             </label>
           )}
-          {total > faults.length && (
-            <p className="-mt-2 text-[11px] text-gray-400">
-              この震源には想定地震が全{total}件あります。他の区間は地図上でその区間をクリックしてください。
-            </p>
+          {/* 震源グループ。断層はデータとしてまとめず、同じ震源であることを色で示す。
+              影響度パネルが1行として並べる単位でもある。 */}
+          {group && group.faults.length > 1 && (
+            <GroupSection
+              group={group}
+              currentCode={fault.code}
+              onSelectFault={onSelectFault}
+            />
           )}
 
           {/* ケース選択 */}
@@ -213,6 +220,62 @@ const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, total, loading, er
             </p>
           )}
         </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * 震源グループ。同じ震源に属する断層を、まとめずに一覧で見せる。
+ * 見出しとリストの左罫にグループ色を敷いて「同じ震源のもの」であることを示す
+ * (地図側でも同じ色でこれらの断層を括っている)。
+ */
+const GroupSection: React.FC<{
+  group: ScenarioGroup;
+  currentCode: string;
+  onSelectFault: (code: string, name: string, src: string) => void;
+}> = ({ group, currentCode, onSelectFault }) => {
+  const [open, setOpen] = useState(false);
+  const color = groupColor(group.src);
+  const singles = group.faults.filter((f) => !f.combo);
+  const combos = group.faults.filter((f) => f.combo);
+  return (
+    <div className="rounded-lg border-l-4 pl-2 py-1" style={{ borderColor: color }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left flex items-start gap-1.5"
+      >
+        <Layers className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color }} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs text-gray-700 dark:text-gray-200 truncate">{group.name}</span>
+          <span className="block text-[11px] text-gray-400">
+            同じ震源の断層 {group.faults.length} 本
+            {combos.length > 0 && `（うち同時活動 ${combos.length}）`}
+            ・{open ? '閉じる' : '一覧'}
+          </span>
+        </span>
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5">
+          {[...singles, ...combos].map((f) => (
+            <li key={f.code}>
+              <button
+                type="button"
+                onClick={() => onSelectFault(f.code, f.name, group.src)}
+                className={
+                  'w-full text-left text-[11px] leading-snug px-1 py-0.5 rounded ' +
+                  (f.code === currentCode
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50')
+                }
+              >
+                {f.combo && <span className="text-gray-400">［同時活動］</span>}
+                {f.name || f.code}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

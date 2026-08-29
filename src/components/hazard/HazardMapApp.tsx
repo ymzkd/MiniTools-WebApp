@@ -17,8 +17,8 @@ import ResultsList from '../boring/ResultsList';
 import { fetchAndParseBoringData } from '../boring/api';
 // 想定地震(震源断層を特定した地震動予測地図)。地図で断層をクリックすると左パネルへ出す。
 import FaultDetailPanel from './FaultDetailPanel';
-import { fetchScenario } from './scenarioApi';
-import type { ScenarioFault } from './scenarioApi';
+import { fetchScenarioAt, fetchScenarioByCode, groupColor } from './scenarioApi';
+import type { ScenarioFault, ScenarioGroup } from './scenarioApi';
 import type { FaultPick } from './HazardMap';
 import type { MLITSearchResult, BoringData } from '../boring/types';
 import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
@@ -184,9 +184,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 地図で震源断層を踏むと、その震源に紐づく想定地震を左パネルに出す。ボーリング柱状図と同じく
   // 選択地点(point)は動かさない。断層とボーリングは同時に開かない(左パネルは1つなので)。
   const [selectedFault, setSelectedFault] = useState<FaultPick | null>(null);
+  const selectedFaultRef = useRef<FaultPick | null>(null);
+  selectedFaultRef.current = selectedFault;
   const [faultData, setFaultData] = useState<ScenarioFault[]>([]);
-  // その震源が持つ想定地震の総数(絞り込み前)。「他の区間にもある」ことを示すのに使う
-  const [faultTotal, setFaultTotal] = useState(0);
+  // 震源グループ(同じ震源に属する断層の一覧)。断層はまとめず、色で同じ震源だと示す
+  const [faultGroup, setFaultGroup] = useState<ScenarioGroup | null>(null);
   const [faultLoading, setFaultLoading] = useState(false);
   const [faultError, setFaultError] = useState<string | null>(null);
   const faultReq = useRef(0);
@@ -195,25 +197,28 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     faultReq.current++;
     setSelectedFault(null);
     setFaultData([]);
-    setFaultTotal(0);
+    setFaultGroup(null);
     setFaultLoading(false);
     setFaultError(null);
   }, []);
 
-  // 踏んだ場所(区間 or 座標)を渡して、そこに重なる想定地震だけを取る。
+  // 地図で個別の断層を踏んだらその断層コードで、震源(dissolve済み)を踏んだら座標で引く。
   // 同じ場所に重なるもの(傾斜角モデル違い・ケース違い・同時活動)はパネルの選択肢になる。
-  const handleFaultPick = useCallback((pick: FaultPick) => {
+  const openFault = useCallback((pick: FaultPick) => {
     const id = ++faultReq.current;
     setSelectedFault(pick);
     setFaultData([]);
-    setFaultTotal(0);
+    setFaultGroup(null);
     setFaultError(null);
     setFaultLoading(true);
-    fetchScenario(pick.src, { seg: pick.seg, lat: pick.lat, lng: pick.lng })
+    const req = pick.code
+      ? fetchScenarioByCode(pick.code)
+      : fetchScenarioAt(pick.src, pick.lat, pick.lng);
+    req
       .then((r) => {
         if (id !== faultReq.current) return;
         setFaultData(r.faults);
-        setFaultTotal(r.total);
+        setFaultGroup(r.group);
       })
       .catch((e) => {
         if (id !== faultReq.current) return;
@@ -224,6 +229,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         if (id === faultReq.current) setFaultLoading(false);
       });
   }, []);
+
+  // パネル内の一覧から別の断層へ移る(地図をクリックし直さずに切り替えられるように)
+  const selectFaultCode = useCallback(
+    (code: string, name: string, src: string) => {
+      const at = selectedFaultRef.current;
+      openFault({ src, name, code, lat: at?.lat ?? 0, lng: at?.lng ?? 0 });
+    },
+    [openFault]
+  );
 
   const clearBoring = useCallback(() => {
     boringReq.current++; // 取得途中の応答は破棄
@@ -764,7 +778,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               <FaultDetailPanel
                 faults={faultData}
                 srcName={selectedFault.name}
-                total={faultTotal}
+                group={faultGroup}
+                onSelectFault={selectFaultCode}
                 loading={faultLoading}
                 error={faultError}
                 onClose={clearFault}
@@ -1054,9 +1069,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               onPick={handleMapPick}
               onBoringPick={handleBoringPick}
               selectedBoringPoint={selectedBoring?.location ?? null}
-              onFaultPick={handleFaultPick}
+              onFaultPick={openFault}
+              selectedFaultCode={selectedFault?.code ?? null}
               selectedFaultSrc={selectedFault?.src ?? null}
-              selectedFaultSeg={selectedFault?.seg ?? null}
+              groupColor={selectedFault ? groupColor(selectedFault.src) : null}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
             />

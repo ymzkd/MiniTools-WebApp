@@ -96,43 +96,59 @@ export function pdfUrl(info: ScenarioInfo): string | null {
   return info.pdf ? JSHIS_ORIGIN + info.pdf : null;
 }
 
-/** 地図で踏んだ場所の情報。区間(seg)が分かればそれを、分からなければ座標を渡す。 */
-export interface ScenarioQuery {
-  /** 区間キー(segments.geojson の seg 属性)。区間レイヤを踏んだとき */
-  seg?: string | null;
-  /** クリック座標。震源ハイライトなど区間レイヤ以外を踏んだとき */
-  lat?: number;
-  lng?: number;
+/** 震源グループ。断層はまとめず、「どれが同じ震源か」だけを持つ。 */
+export interface ScenarioGroup {
+  /** 震源コード。影響度パネルの行と同じ単位 */
+  src: string;
+  name: string;
+  faults: { code: string; name: string; seg: string | null; combo: boolean }[];
 }
 
 export interface ScenarioResult {
+  /** 踏んだ断層と、同じ場所に重なっていて地図では選び分けられない断層 */
   faults: ScenarioFault[];
-  /** その震源が持つ想定地震の総数(絞り込み前)。「他にもある」ことを示すのに使う */
+  group: ScenarioGroup | null;
+  /** その震源グループに属する想定地震の総数 */
   total: number;
 }
 
+async function getScenario(params: URLSearchParams, signal?: AbortSignal): Promise<ScenarioResult> {
+  const res = await fetch(`/api/jshis/scenario?${params}`, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`jshis scenario error: ${res.status}`);
+  const j = (await res.json()) as { faults?: ScenarioFault[]; total?: number; group?: ScenarioGroup };
+  return { faults: j.faults ?? [], group: j.group ?? null, total: j.total ?? (j.faults?.length ?? 0) };
+}
+
 /**
- * 震源に紐づく想定地震。seg / 座標を渡すと「その場所に重なるもの」だけに絞られる。
+ * 断層コードで引く(地図で個別の断層を踏んだとき)。
  *
- * 想定地震は「区間 × 傾斜角モデル × 単独/同時活動」の積で同じ場所に何本も重なる
- * (中央構造線は1震源に39本)。地図に個別描画するのは単独区間だけなので、重なっている
- * 残りはここで拾ってパネルの選択肢に出す。
+ * 先頭が踏んだ断層で、続くのは**同じ場所に重なっている断層**。想定地震は
+ * 「区間 × 傾斜角モデル × 単独/同時活動」の積で、傾斜角モデル違い・ケース違いのコード・
+ * 同時活動の組合せは同じ場所に重なるため、地図では選び分けられずパネルの選択肢になる。
  */
-export async function fetchScenario(
+export function fetchScenarioByCode(code: string, signal?: AbortSignal): Promise<ScenarioResult> {
+  return getScenario(new URLSearchParams({ code }), signal);
+}
+
+/** 震源＋座標で引く(震源ハイライトなど dissolve 済みの面を踏んだとき)。 */
+export function fetchScenarioAt(
   src: string,
-  q: ScenarioQuery = {},
+  lat: number,
+  lng: number,
   signal?: AbortSignal
 ): Promise<ScenarioResult> {
-  const p = new URLSearchParams({ src });
-  if (q.seg) p.set('seg', q.seg);
-  if (q.lat != null && q.lng != null) {
-    p.set('lat', String(q.lat));
-    p.set('lng', String(q.lng));
-  }
-  const res = await fetch(`/api/jshis/scenario?${p}`, { signal, headers: { accept: 'application/json' } });
-  if (!res.ok) throw new Error(`jshis scenario error: ${res.status}`);
-  const j = (await res.json()) as { faults?: ScenarioFault[]; total?: number };
-  return { faults: j.faults ?? [], total: j.total ?? (j.faults?.length ?? 0) };
+  return getScenario(new URLSearchParams({ src, lat: String(lat), lng: String(lng) }), signal);
+}
+
+// 震源グループの色。断層をデータとしてまとめない代わりに、同じ震源であることをこの色で示す。
+// アスペリティの色(ASP_VARS)とは別系統にする(同じパネルに並ぶので、混ざると別の意味に読める)。
+const GROUP_COLORS = ['#0f766e', '#9333ea', '#b45309', '#0369a1', '#a21caf', '#4d7c0f'] as const;
+
+/** 震源コード → グループ色。コードから決まるので、開き直しても色が変わらない。 */
+export function groupColor(src: string): string {
+  let h = 0;
+  for (let i = 0; i < src.length; i++) h = (h * 31 + src.charCodeAt(i)) >>> 0;
+  return GROUP_COLORS[h % GROUP_COLORS.length];
 }
 
 /** ケース番号を数値順に並べる(オブジェクトのキー順に依存しない)。 */
