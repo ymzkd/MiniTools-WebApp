@@ -3,12 +3,14 @@
 //   - ケース選択(その断層に用意された CASE1〜n)
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
 //   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積)
+//   - 選択地点の速度波形(J-SHIS の公開波形。取得に数秒かかるのでボタン起動。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
 import React, { useEffect, useRef, useState } from 'react';
-import { X, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
+import { X, Activity, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
+import WaveformView from './WaveformView';
 import {
   aspArea,
   aspColor,
@@ -17,10 +19,11 @@ import {
   bgArea,
   caseNumbers,
   depthAt,
+  fetchWave,
   fmtStrike,
   pdfUrl,
 } from './scenarioApi';
-import type { ScenarioFault, ScenarioGroup } from './scenarioApi';
+import type { ScenarioFault, ScenarioGroup, WaveResult } from './scenarioApi';
 
 interface Props {
   /** 踏んだ場所に重なる想定地震。同じ場所に複数重なることがある */
@@ -31,12 +34,23 @@ interface Props {
   group: ScenarioGroup | null;
   /** グループ内の別の断層へ切り替える */
   onSelectFault: (code: string, name: string, src: string) => void;
+  /** ハザード情報の選択地点。この地点で揺れがどうなるかを波形で見る */
+  point: { lat: number; lng: number };
   loading: boolean;
   error: string | null;
   onClose: () => void;
 }
 
-const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, group, onSelectFault, loading, error, onClose }) => {
+const FaultDetailPanel: React.FC<Props> = ({
+  faults,
+  srcName,
+  group,
+  onSelectFault,
+  point,
+  loading,
+  error,
+  onClose,
+}) => {
   const [faultIdx, setFaultIdx] = useState(0);
   const [caseNo, setCaseNo] = useState<string | null>(null);
   // 展開図の幅はパネル幅に追従させる(左パネルは画面幅で伸縮するため)
@@ -185,6 +199,11 @@ const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, group, onSelectFau
             </div>
           )}
 
+          {/* 選択地点の波形 */}
+          {current && (
+            <WaveSection code={fault.code} caseNo={current} point={point} width={boxW - 32} />
+          )}
+
           {/* 断層情報 */}
           {kase && <FaultInfoTable fault={fault} caseNo={current ?? ''} />}
 
@@ -219,6 +238,148 @@ const FaultDetailPanel: React.FC<Props> = ({ faults, srcName, group, onSelectFau
               現在の震源モデルの区間区分とは一致しない場合があります。
             </p>
           )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * 選択地点の速度波形。J-SHIS が想定地震地図の元データとして公開している工学的基盤上の
+ * 時刻歴を取ってきて描く(断層モデルからの自前計算ではない)。
+ *
+ * **ボタン起動にしている理由**: 上流の応答が 0.5〜1.5MB あり、TTFB は 0.3 秒前後で安定して
+ * いるものの転送が 5〜10 秒に伸びることが 4〜5 回に1回ある。断層を開くたびに自動で走らせると
+ * パネルが待たされるので、見たいときだけ取りに行く。
+ * 一度取ったあとはケースを切り替えると自動で取り直す(もう見る意思は示されているため)。
+ * 断層や地点が変わったらボタンに戻す。
+ */
+const WaveSection: React.FC<{
+  code: string;
+  caseNo: string;
+  point: { lat: number; lng: number };
+  width: number;
+}> = ({ code, caseNo, point, width }) => {
+  const base = `${code}|${point.lat.toFixed(5)}|${point.lng.toFixed(5)}`;
+  const [armedBase, setArmedBase] = useState<string | null>(null);
+  const [data, setData] = useState<WaveResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(true);
+  const reqId = useRef(0);
+  const armed = armedBase === base;
+
+  useEffect(() => {
+    if (armed) return;
+    reqId.current++; // 断層・地点が変わったら取得中の応答は捨てる
+    setData(null);
+    setErr(null);
+    setBusy(false);
+  }, [armed]);
+
+  useEffect(() => {
+    if (!armed) return;
+    const id = ++reqId.current;
+    const ac = new AbortController();
+    setBusy(true);
+    setErr(null);
+    setData(null);
+    fetchWave(code, caseNo, point.lat, point.lng, ac.signal)
+      .then((r) => {
+        if (id === reqId.current) setData(r);
+      })
+      .catch((e) => {
+        if (id !== reqId.current || (e instanceof Error && e.name === 'AbortError')) return;
+        console.error('Failed to fetch wave:', e);
+        setErr('波形の取得に失敗しました');
+      })
+      .finally(() => {
+        if (id === reqId.current) setBusy(false);
+      });
+    return () => ac.abort();
+  }, [armed, code, caseNo, point.lat, point.lng]);
+
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
+        この地点の波形
+        <InfoTip>
+          J-SHIS が想定地震地図の元データとして公開している、工学的基盤（S波速度 600 m/s
+          層の上面）上の速度波形です。長周期成分を三次元差分法、短周期成分を統計的グリーン関数法で
+          計算し接続周期1秒で合成した（ハイブリッド合成法）もので、1.5 Hz
+          以上の帯域は NS と EW に同じ波形が使われています。その帯域で成分間の方向性は読み取れません。
+        </InfoTip>
+      </h4>
+      <p className="text-[11px] text-gray-400 mb-1.5">
+        選択地点 {point.lat.toFixed(4)}, {point.lng.toFixed(4)} を含む 1 km メッシュ
+        {data?.mesh && `（${data.mesh}）`}
+      </p>
+
+      {!armed && (
+        <button
+          type="button"
+          onClick={() => setArmedBase(base)}
+          className="w-full inline-flex items-center justify-center gap-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        >
+          <Activity className="w-4 h-4" />
+          この地点の波形を取得
+        </button>
+      )}
+
+      {busy && (
+        <div className="py-6 text-center">
+          <Loader2 className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            J-SHIS から波形を取得中… （数秒かかることがあります）
+          </p>
+        </div>
+      )}
+
+      {!busy && err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
+
+      {!busy && data && !data.available && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          この地点の波形は公開されていません。
+          <span className="block text-gray-400 mt-0.5">
+            公開されているのは、その断層の計算対象範囲内のメッシュだけです（断層からおおむね
+            100 km 圏内）。旧い断層コードでのみ公開されている断層にも波形はありません。
+          </span>
+        </p>
+      )}
+
+      {!busy && data && data.available && data.dt && (
+        <div>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-gray-600 dark:text-gray-300 mb-1">
+            {data.pgv_h != null && (
+              <span>
+                水平最大速度 <span className="tabular-nums font-medium">{data.pgv_h.toFixed(1)}</span> cm/s
+                <InfoTip>
+                  NS と EW をベクトル合成した最大値です。想定地震地図が「工学的基盤の最大速度」として
+                  公表しているのはこの値なので、地図の色と対応します。成分ごとの最大（各段の見出し）
+                  とは別物です。
+                </InfoTip>
+              </span>
+            )}
+            <span className="text-gray-400">記録長 {data.duration} 秒 ／ 120 Hz</span>
+          </div>
+          <WaveformView waves={data.waves} dt={data.dt} width={width} zoom={zoom} />
+          <label className="inline-flex items-center gap-1.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={!zoom}
+              onChange={(e) => setZoom(!e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600"
+            />
+            記録全体（{data.duration} 秒）を表示する
+          </label>
+          <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1">
+            工学的基盤（Vs = 600 m/s）上の値で、地表の揺れではありません。
+            <InfoTip>
+              表層地盤による増幅は含みません。J-SHIS の表層地盤増幅率 ARV は Vs = 400 m/s
+              基準なので、この波形にそのまま掛けると 1.41 倍過小になります。また公開されているのは
+              速度だけで、加速度は公開されていません。
+            </InfoTip>
+          </p>
         </div>
       )}
     </div>

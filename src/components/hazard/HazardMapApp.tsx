@@ -780,6 +780,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 srcName={selectedFault.name}
                 group={faultGroup}
                 onSelectFault={selectFaultCode}
+                point={point}
                 loading={faultLoading}
                 error={faultError}
                 onClose={clearFault}

@@ -247,3 +247,100 @@ export function fmtStrike(deg: number): string {
   const d = ((deg % 360) + 360) % 360;
   return d <= 180 ? `N${d.toFixed(1)}°E` : `N${(360 - d).toFixed(1)}°W`;
 }
+
+// ---------------------------------------------------------------- 公開波形(時刻歴)
+// J-SHIS は想定地震地図の元になった**工学的基盤上の速度波形**をメッシュ単位で公開している。
+// jiban-api が中継し、時刻列を落として「dt ＋ 値の配列」に詰め直したものを受け取る。
+// 断層モデルからの自前計算ではないので、地図の色(工学的基盤最大速度)と必ず整合する。
+
+/** 1成分ぶんの時刻歴。v[i] の時刻は (i+1)*dt 秒(破壊開始が t=0)。 */
+export interface WaveComponent {
+  /** NS / EW / UD */
+  dir: string;
+  /** その成分の最大速度(cm/s) */
+  pgv: number;
+  v: number[];
+}
+
+export interface WaveResult {
+  code: string;
+  name: string;
+  case: string;
+  /** 波形が引かれた3次メッシュ(1km)のコードと中心 */
+  mesh: string;
+  mesh_center: { lat: number; lng: number };
+  available: boolean;
+  /** available=false の理由。"out_of_area" = 断層の計算対象範囲の外 */
+  reason?: string;
+  /** サンプリング間隔(秒)。J-SHIS は 120Hz */
+  dt?: number;
+  n?: number;
+  /** 記録長(秒)。通常100秒だが、中央構造線の全区間同時活動は300秒 */
+  duration?: number;
+  /** 水平2成分のベクトル最大(cm/s)。想定地震地図の工学的基盤最大速度 BV と同じ値 */
+  pgv_h?: number | null;
+  waves: WaveComponent[];
+}
+
+/** その断層・ケースが起こす、指定地点の速度波形。取得に 0.3〜10 秒かかる。 */
+export async function fetchWave(
+  code: string,
+  caseNo: string,
+  lat: number,
+  lng: number,
+  signal?: AbortSignal
+): Promise<WaveResult> {
+  const q = new URLSearchParams({ code, case: caseNo, lat: String(lat), lng: String(lng) });
+  const res = await fetch(`/api/jshis/scenario/wave?${q}`, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`jshis wave error: ${res.status}`);
+  return (await res.json()) as WaveResult;
+}
+
+// 成分の色。アスペリティ(ASP_VARS)や震源グループとは別系統にする。
+const WAVE_VARS: Record<string, string> = {
+  NS: 'var(--viz-s1)',
+  EW: 'var(--viz-s2)',
+  UD: 'var(--viz-s3)',
+};
+
+/** 成分名 → 色。 */
+export function waveColor(dir: string): string {
+  return WAVE_VARS[dir] ?? 'var(--viz-ink2)';
+}
+
+/**
+ * 主要動の時間窓 [t0, t1] 秒。累積二乗速度(Arias強度に相当)の 1%〜99% の区間。
+ *
+ * 記録は 100 秒あるが揺れているのは十数秒で、全体を出すとパネル幅では潰れて読めない。
+ * 全成分をまとめて1つの窓にする(成分ごとに違う窓だと並べて比較できないため)。
+ */
+export function strongMotionWindow(waves: WaveComponent[], dt: number): [number, number] {
+  const n = Math.max(...waves.map((w) => w.v.length));
+  if (!n || !dt) return [0, 0];
+  const cum = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    let e = 0;
+    for (const w of waves) {
+      const x = w.v[i] ?? 0;
+      e += x * x;
+    }
+    cum[i + 1] = cum[i] + e;
+  }
+  const total = cum[n];
+  if (!total) return [0, n * dt];
+  const at = (frac: number) => {
+    const target = total * frac;
+    let lo = 0;
+    let hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] < target) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo * dt;
+  };
+  // 立ち上がりが切れないよう前後に余裕を持たせる
+  const t0 = Math.max(0, at(0.01) - 2);
+  const t1 = Math.min(n * dt, at(0.99) + 2);
+  return t1 > t0 ? [t0, t1] : [0, n * dt];
+}
