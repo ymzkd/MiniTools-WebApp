@@ -15,6 +15,11 @@ import type { ContribStatus } from './SeismicHazardPanel';
 import BoringLogViewer from '../boring/BoringLogViewer';
 import ResultsList from '../boring/ResultsList';
 import { fetchAndParseBoringData } from '../boring/api';
+// 想定地震(震源断層を特定した地震動予測地図)。地図で断層をクリックすると左パネルへ出す。
+import FaultDetailPanel from './FaultDetailPanel';
+import { fetchScenarioAt, fetchScenarioByCode, groupColor } from './scenarioApi';
+import type { ScenarioFault, ScenarioGroup } from './scenarioApi';
+import type { FaultPick } from './HazardMap';
 import type { MLITSearchResult, BoringData } from '../boring/types';
 import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
 import type { SpectrumResult, ContribResult, ContribSource, ProbKey, PeriodKey } from './jshisApi';
@@ -175,6 +180,65 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const [boringNearby, setBoringNearby] = useState<MLITSearchResult[]>([]);
   const boringReq = useRef(0);
 
+  // ---- 想定地震(断層クリック) ----
+  // 地図で震源断層を踏むと、その震源に紐づく想定地震を左パネルに出す。ボーリング柱状図と同じく
+  // 選択地点(point)は動かさない。断層とボーリングは同時に開かない(左パネルは1つなので)。
+  const [selectedFault, setSelectedFault] = useState<FaultPick | null>(null);
+  const selectedFaultRef = useRef<FaultPick | null>(null);
+  selectedFaultRef.current = selectedFault;
+  const [faultData, setFaultData] = useState<ScenarioFault[]>([]);
+  // 震源グループ(同じ震源に属する断層の一覧)。断層はまとめず、色で同じ震源だと示す
+  const [faultGroup, setFaultGroup] = useState<ScenarioGroup | null>(null);
+  const [faultLoading, setFaultLoading] = useState(false);
+  const [faultError, setFaultError] = useState<string | null>(null);
+  const faultReq = useRef(0);
+
+  const clearFault = useCallback(() => {
+    faultReq.current++;
+    setSelectedFault(null);
+    setFaultData([]);
+    setFaultGroup(null);
+    setFaultLoading(false);
+    setFaultError(null);
+  }, []);
+
+  // 地図で個別の断層を踏んだらその断層コードで、震源(dissolve済み)を踏んだら座標で引く。
+  // 同じ場所に重なるもの(傾斜角モデル違い・ケース違い・同時活動)はパネルの選択肢になる。
+  const openFault = useCallback((pick: FaultPick) => {
+    const id = ++faultReq.current;
+    setSelectedFault(pick);
+    setFaultData([]);
+    setFaultGroup(null);
+    setFaultError(null);
+    setFaultLoading(true);
+    const req = pick.code
+      ? fetchScenarioByCode(pick.code)
+      : fetchScenarioAt(pick.src, pick.lat, pick.lng);
+    req
+      .then((r) => {
+        if (id !== faultReq.current) return;
+        setFaultData(r.faults);
+        setFaultGroup(r.group);
+      })
+      .catch((e) => {
+        if (id !== faultReq.current) return;
+        console.error('Failed to fetch scenario:', e);
+        setFaultError('想定地震の取得に失敗しました');
+      })
+      .finally(() => {
+        if (id === faultReq.current) setFaultLoading(false);
+      });
+  }, []);
+
+  // パネル内の一覧から別の断層へ移る(地図をクリックし直さずに切り替えられるように)
+  const selectFaultCode = useCallback(
+    (code: string, name: string, src: string) => {
+      const at = selectedFaultRef.current;
+      openFault({ src, name, code, lat: at?.lat ?? 0, lng: at?.lng ?? 0 });
+    },
+    [openFault]
+  );
+
   const clearBoring = useCallback(() => {
     boringReq.current++; // 取得途中の応答は破棄
     setSelectedBoring(null);
@@ -222,10 +286,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 地図のマーカークリック(HazardMap から primary + 周辺の地点群が渡ってくる)
   const handleBoringPick = useCallback(
     (primary: MLITSearchResult, nearby: MLITSearchResult[]) => {
+      clearFault(); // 左パネルは1枚なので、柱状図を開くときは断層詳細を閉じる
       setBoringNearby(nearby);
       void selectBoring(primary);
     },
-    [selectBoring]
+    [selectBoring, clearFault]
   );
 
   // 選択中ボーリング地点の「地点の情報」: 住所(逆ジオコーディング)・標高(API)・
@@ -402,9 +467,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const handleMapPick = useCallback(
     (lat: number, lng: number) => {
       clearBoring(); // 任意地点の指定 → 左パネルはその地点のハザード情報に戻す
+      clearFault();
       setPoint({ lat, lng });
     },
-    [clearBoring]
+    [clearBoring, clearFault]
   );
 
   // カテゴリのアイコンを押したときの切替。未選択なら先頭 variant、選択中なら次の
@@ -430,6 +496,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         const lng = parseFloat(m[2]);
         if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
           clearBoring();
+          clearFault();
           setPoint({ lat, lng });
           setViewVersion((v) => v + 1);
           onSuccess?.(`緯度 ${lat}, 経度 ${lng} に移動しました`);
@@ -443,6 +510,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         const r = await geocode(q);
         if (r) {
           clearBoring();
+          clearFault();
           setPoint(r);
           setViewVersion((v) => v + 1);
           onSuccess?.(`「${q}」に移動しました`);
@@ -453,7 +521,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
         onError?.('住所検索に失敗しました');
       }
     },
-    [query, onSuccess, onError, clearBoring]
+    [query, onSuccess, onError, clearBoring, clearFault]
   );
 
   const radiusKm = design?.radius_km ?? 40;
@@ -659,7 +727,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               Hazard Map
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルと震源別影響度を表示します。ボーリング調査地点のマーカー（地図左のトグルで表示）をクリックすると柱状図に切り替わります。
+              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルと震源別影響度を表示します。ボーリング調査地点のマーカー（地図左のトグルで表示）をクリックすると柱状図に、震源断層オーバーレイで太く描かれた断層をクリックすると想定地震（アスペリティ配置・破壊開始点）に切り替わります。
             </p>
           </div>
           <button
@@ -704,7 +772,20 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               </button>
             </form>
 
-            {selectedBoring ? (
+            {selectedFault ? (
+              /* 震源断層を選択中: 想定地震(アスペリティ配置・破壊開始点・断層情報)。
+                 ×・任意地点のクリック・検索での移動でハザード情報へ戻る。 */
+              <FaultDetailPanel
+                faults={faultData}
+                srcName={selectedFault.name}
+                group={faultGroup}
+                onSelectFault={selectFaultCode}
+                point={point}
+                loading={faultLoading}
+                error={faultError}
+                onClose={clearFault}
+              />
+            ) : selectedBoring ? (
               <>
                 {/* ボーリング調査地点を選択中: 近接データの切替リスト(コンパクト表示)を上、
                     柱状図ビューアを下に。閉じる(×)・任意地点のクリック・検索での移動で
@@ -989,6 +1070,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               onPick={handleMapPick}
               onBoringPick={handleBoringPick}
               selectedBoringPoint={selectedBoring?.location ?? null}
+              onFaultPick={openFault}
+              selectedFaultCode={selectedFault?.code ?? null}
+              selectedFaultSrc={selectedFault?.src ?? null}
+              groupColor={selectedFault ? groupColor(selectedFault.src) : null}
               faultHighlights={faultHighlights}
               focusBbox={focusBbox}
             />
