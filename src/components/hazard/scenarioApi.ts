@@ -291,8 +291,6 @@ export interface WaveResult {
   pgv_h?: number | null;
   /** この物理量での水平2成分のベクトル最大 */
   peak_h?: number | null;
-  /** 主要動の時間窓 [t0,t1](秒)。**速度から**決めてあるので物理量を切り替えても動かない */
-  window?: [number, number];
   waves: WaveComponent[];
 }
 

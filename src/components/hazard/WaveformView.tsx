@@ -30,17 +30,16 @@ interface Props {
   unit: string;
   /** 描画に使える幅(px) */
   width: number;
-  /** 表示する時間区間(秒)。速度と加速度で時間軸が動かないよう呼び出し側が決める */
-  range: [number, number];
 }
 
-const WaveformView: React.FC<Props> = ({ waves, dt, unit, width, range }) => {
+const WaveformView: React.FC<Props> = ({ waves, dt, unit, width }) => {
   const n = Math.max(...waves.map((w) => w.v.length), 0);
   if (!n || !dt) return null;
 
-  const [t0, t1] = range;
-  const i0 = Math.max(0, Math.floor(t0 / dt));
-  const i1 = Math.min(n, Math.ceil(t1 / dt));
+  // 記録全体を描く。主要動だけ切り出すと揺れの前後が見えず、記録の長さも掴めないため
+  const [t0, t1] = [0, n * dt];
+  const i0 = 0;
+  const i1 = n;
 
   const plotW = Math.max(160, width - PAD_L - PAD_R);
   const svgW = PAD_L + plotW + PAD_R;

@@ -3,7 +3,8 @@
 //   - ケース選択(その断層に用意された CASE1〜n)。**この地点での揺れの大きさを並べて選ばせる**
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
 //   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積)
-//   - 選択地点の波形(J-SHIS の公開波形。速度⇔加速度を切り替えられ、CSV で書き出せる。WaveSection)
+//   - 選択地点の波形(J-SHIS の公開波形。速度⇔加速度を切り替えて見られ、加速度を CSV で
+//     書き出せる。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
 import React, { useEffect, useRef, useState } from 'react';
@@ -447,10 +448,7 @@ const WaveSection: React.FC<{
   const [data, setData] = useState<WaveResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(true);
   const [quantity, setQuantity] = useState<WaveQuantity>('vel');
-  // 書き出しは加速度が既定。解析ソフトの入力に使うのはたいてい加速度のため
-  const [dlQuantity, setDlQuantity] = useState<WaveQuantity>('acc');
   const [dlUnit, setDlUnit] = useState<WaveUnit>('cm');
   const [dlBusy, setDlBusy] = useState(false);
   const reqId = useRef(0);
@@ -476,16 +474,16 @@ const WaveSection: React.FC<{
     return () => ac.abort();
   }, [code, caseNo, point.lat, point.lng, quantity]);
 
-  // 書き出す物理量が表示中のものと違うときは、その物理量で取り直してから CSV にする
-  // (微分は jiban-api 側なので、こちらは持っていない)。速度はキャッシュ済みなので速い。
+  // 書き出すのは加速度だけ(解析ソフトの入力に使うのは加速度なので)。速度を表示している
+  // ときは加速度で取り直してから CSV にする。微分は jiban-api 側なのでこちらは持っていない。
   const onDownload = async () => {
     if (!data?.available) return;
     setDlBusy(true);
     try {
       const w =
-        dlQuantity === data.quantity
+        data.quantity === 'acc'
           ? data
-          : await fetchWave(code, caseNo, point.lat, point.lng, dlQuantity);
+          : await fetchWave(code, caseNo, point.lat, point.lng, 'acc');
       downloadWaveCsv(w, dlUnit);
     } catch (e) {
       console.error('Failed to download wave:', e);
@@ -497,10 +495,6 @@ const WaveSection: React.FC<{
 
   // dt は丸めた値なので、時間軸には記録長/点数を使う
   const dt = data?.duration && data.n ? data.duration / data.n : (data?.dt ?? 0);
-  // 主要動の区間はサーバが**速度から**決めて返す(物理量を切り替えても時間軸が動かない)
-  const range: [number, number] = zoom
-    ? (data?.window ?? [0, (data?.n ?? 0) * dt])
-    : [0, (data?.n ?? 0) * dt];
 
   return (
     <div>
@@ -578,38 +572,15 @@ const WaveSection: React.FC<{
 
           <WaveformView
             waves={data.waves}
-            dt={data.duration && data.n ? data.duration / data.n : data.dt}
+            dt={dt}
             unit={data.unit}
             width={width}
-            range={range}
           />
 
-          <label className="inline-flex items-center gap-1.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-            <input
-              type="checkbox"
-              checked={!zoom}
-              onChange={(e) => setZoom(!e.target.checked)}
-              className="rounded border-gray-300 dark:border-gray-600"
-            />
-            記録全体（{data.duration} 秒）を表示する
-          </label>
-
-          {/* 書き出し。物理量と単位は表示と独立に選べる(画面では速度を見ながら、解析ソフト用に
-              加速度を落とす、という使い方をするため)。表示は主要動に絞っていても書き出すのは
-              記録全体(切り出した波形を解析に使われると継続時間やエネルギーが変わるため)。 */}
+          {/* 書き出しは加速度だけ。解析ソフトの入力に使うのは加速度なので、速度を表示中でも
+              加速度で取り直して出す。単位だけ選べるようにしてある。 */}
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-            <select
-              value={dlQuantity}
-              onChange={(e) => setDlQuantity(e.target.value as WaveQuantity)}
-              className="text-[11px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-1.5 py-1"
-              aria-label="書き出す物理量"
-            >
-              {(['acc', 'vel'] as WaveQuantity[]).map((q) => (
-                <option key={q} value={q}>
-                  {QUANTITY_LABEL[q]}
-                </option>
-              ))}
-            </select>
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">加速度を書き出し</span>
             <select
               value={dlUnit}
               onChange={(e) => setDlUnit(e.target.value as WaveUnit)}
@@ -618,7 +589,7 @@ const WaveSection: React.FC<{
             >
               {UNIT_CHOICES.map((u) => (
                 <option key={u} value={u}>
-                  {unitLabel(dlQuantity, u)}
+                  {unitLabel('acc', u)}
                 </option>
               ))}
             </select>
@@ -640,18 +611,16 @@ const WaveSection: React.FC<{
               基準なので、この波形にそのまま掛けると 1.41 倍過小になります。
             </InfoTip>
           </p>
-          {(quantity === 'acc' || dlQuantity === 'acc') && (
-            <p className="text-[11px] text-amber-600 dark:text-amber-500">
-              加速度は公開されていないため、速度波形を微分した値です。
-              <InfoTip>
-                周波数領域で iω を掛けて求めています（差分近似より高周波の落ちが小さく、微分→積分で
-                元の速度に戻ることを確認しています）。ただし短周期側は統計的グリーン関数法の
-                fmax = 6 Hz より高い成分が元から入っていないため、実観測の加速度記録とは高周波の
-                中身が違います。また 1.5 Hz 以上は NS と EW が同一波形なので、加速度では成分間の差が
-                ほとんど消えます（加速度で方向性は議論できません）。
-              </InfoTip>
-            </p>
-          )}
+          <p className="text-[11px] text-amber-600 dark:text-amber-500">
+            加速度は公開されていないため、速度波形を微分した値です。
+            <InfoTip>
+              周波数領域で iω を掛けて求めています（差分近似より高周波の落ちが小さく、微分 → 積分で
+              元の速度に戻ることを確認しています）。ただし短周期側は統計的グリーン関数法の
+              fmax = 6 Hz より高い成分が元から入っていないため、実観測の加速度記録とは高周波の
+              中身が違います。また 1.5 Hz 以上は NS と EW が同一波形なので、加速度では成分間の差が
+              ほとんど消えます（加速度で方向性は議論できません）。
+            </InfoTip>
+          </p>
         </div>
       )}
     </div>
