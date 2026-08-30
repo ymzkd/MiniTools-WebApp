@@ -1,14 +1,15 @@
-// 想定地震の速度波形(インライン SVG)。J-SHIS が想定地震地図の元データとして公開している
+// 想定地震の波形(インライン SVG)。J-SHIS が想定地震地図の元データとして公開している
 // 工学的基盤(Vs=600m/s)上の時刻歴を、成分(NS/EW/UD)ごとに縦に並べて描く。
+// 速度と、それを微分した加速度のどちらも同じ描き方で扱う(単位だけ差し替える)。
 //
 // 振幅の縦軸は**全成分で共通**にする。成分ごとに正規化すると上下動が水平動と同じ大きさに
 // 見えてしまい、比較の意味が失われるため。
 //
 // 12,000〜36,000点をそのまま <path> にすると重いので、1px 列ごとに最小値と最大値を取って
 // 縦線を積む(包絡線)。間引きではないのでピークが消えない。
-import React, { useMemo } from 'react';
-import { strongMotionWindow, waveColor } from './scenarioApi';
-import type { WaveComponent } from './scenarioApi';
+import React from 'react';
+import { waveColor } from './scenarioApi';
+import type { WaveSeries } from './scenarioApi';
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const INK2 = 'var(--viz-ink2)';
@@ -23,20 +24,21 @@ const TRACE_H = 54; // 1成分の高さ
 const GAP = 10;
 
 interface Props {
-  waves: WaveComponent[];
+  waves: WaveSeries[];
   dt: number;
+  /** 見出しに出す単位("cm/s" や "gal") */
+  unit: string;
   /** 描画に使える幅(px) */
   width: number;
-  /** 主要動だけに絞る(既定)。false で記録全体 */
-  zoom?: boolean;
+  /** 表示する時間区間(秒)。速度と加速度で時間軸が動かないよう呼び出し側が決める */
+  range: [number, number];
 }
 
-const WaveformView: React.FC<Props> = ({ waves, dt, width, zoom = true }) => {
-  const win = useMemo(() => strongMotionWindow(waves, dt), [waves, dt]);
+const WaveformView: React.FC<Props> = ({ waves, dt, unit, width, range }) => {
   const n = Math.max(...waves.map((w) => w.v.length), 0);
   if (!n || !dt) return null;
 
-  const [t0, t1] = zoom ? win : [0, n * dt];
+  const [t0, t1] = range;
   const i0 = Math.max(0, Math.floor(t0 / dt));
   const i1 = Math.min(n, Math.ceil(t1 / dt));
 
@@ -60,7 +62,7 @@ const WaveformView: React.FC<Props> = ({ waves, dt, width, zoom = true }) => {
       viewBox={`0 0 ${svgW} ${svgH}`}
       style={{ fontFamily: FONT, display: 'block' }}
       role="img"
-      aria-label="工学的基盤上の速度波形"
+      aria-label={`工学的基盤上の波形（${unit}）`}
     >
       {waves.map((w, wi) => {
         const top = PAD_T + wi * (TRACE_H + GAP + PAD_T);
@@ -69,18 +71,18 @@ const WaveformView: React.FC<Props> = ({ waves, dt, width, zoom = true }) => {
         return (
           <g key={w.dir}>
             <text x={PAD_L} y={top - 3} fontSize={9.5} fill={INK2}>
-              {w.dir} ／ 最大 {w.pgv.toFixed(1)} cm/s
+              {w.dir} ／ 最大 {fmtPeak(w.peak)} {unit}
             </text>
             {/* 目盛り: 0 と ±最大 */}
             <line x1={PAD_L} y1={mid} x2={PAD_L + plotW} y2={mid} stroke={GRID} strokeWidth={0.8} />
             <text x={PAD_L - 4} y={top + 4} fontSize={8.5} fill={INK2} textAnchor="end">
-              {amp.toFixed(0)}
+              {fmtAxis(amp)}
             </text>
             <text x={PAD_L - 4} y={mid + 3} fontSize={8.5} fill={INK2} textAnchor="end">
               0
             </text>
             <text x={PAD_L - 4} y={top + TRACE_H} fontSize={8.5} fill={INK2} textAnchor="end">
-              −{amp.toFixed(0)}
+              −{fmtAxis(amp)}
             </text>
             <path
               d={envelope(w.v, i0, i1, plotW, TRACE_H / 2, amp)}
@@ -147,6 +149,23 @@ function envelope(v: number[], i0: number, i1: number, w: number, half: number, 
     out.push(`M${x} ${(-hi * k).toFixed(2)}V${(-lo * k).toFixed(2)}`);
   }
   return out.join('');
+}
+
+/** 最大値の表記。単位を変えると桁が大きく振れる(gal で3桁、m/s² で小数)ので有効数字で出す。 */
+function fmtPeak(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 10) return v.toFixed(1);
+  if (a >= 1) return v.toFixed(2);
+  return v.toPrecision(3);
+}
+
+/** 振幅目盛りの表記。ラベル幅(PAD_L)に収まるよう短く。 */
+function fmtAxis(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 1) return v.toFixed(a >= 10 ? 0 : 1);
+  return v.toPrecision(2);
 }
 
 /** 時間軸の目盛り。表示区間の長さから 1/2/5/10/20/30/60 秒刻みを選ぶ。 */

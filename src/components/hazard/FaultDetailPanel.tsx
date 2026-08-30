@@ -3,10 +3,10 @@
 //   - ケース選択(その断層に用意された CASE1〜n)。**この地点での揺れの大きさを並べて選ばせる**
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
 //   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積)
-//   - 選択地点の速度波形(J-SHIS の公開波形。CSV で書き出せる。WaveSection)
+//   - 選択地点の波形(J-SHIS の公開波形。速度⇔加速度を切り替えられ、CSV で書き出せる。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
@@ -25,8 +25,20 @@ import {
   fmtStrike,
   pdfUrl,
   shindoColor,
+  strongMotionWindow,
+  unitLabel,
+  waveSeries,
+  QUANTITY_LABEL,
+  UNIT_CHOICES,
 } from './scenarioApi';
-import type { CaseSummaryResult, ScenarioFault, ScenarioGroup, WaveResult } from './scenarioApi';
+import type {
+  CaseSummaryResult,
+  ScenarioFault,
+  ScenarioGroup,
+  WaveQuantity,
+  WaveResult,
+  WaveUnit,
+} from './scenarioApi';
 
 interface Props {
   /** 踏んだ場所に重なる想定地震。同じ場所に複数重なることがある */
@@ -438,6 +450,10 @@ const WaveSection: React.FC<{
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [zoom, setZoom] = useState(true);
+  const [quantity, setQuantity] = useState<WaveQuantity>('vel');
+  // 書き出しは加速度が既定。解析ソフトの入力に使うのはたいてい加速度のため
+  const [dlQuantity, setDlQuantity] = useState<WaveQuantity>('acc');
+  const [dlUnit, setDlUnit] = useState<WaveUnit>('cm');
   const reqId = useRef(0);
 
   useEffect(() => {
@@ -460,6 +476,20 @@ const WaveSection: React.FC<{
       });
     return () => ac.abort();
   }, [code, caseNo, point.lat, point.lng]);
+
+  // dt は丸めた値なので、時間軸には記録長/点数を使う
+  const dt = data?.duration && data.n ? data.duration / data.n : (data?.dt ?? 0);
+  // 表示する系列。加速度は微分が要るので、物理量が変わったときだけ作り直す
+  const shown = useMemo(
+    () => (data?.available ? waveSeries(data, quantity, 'cm') : []),
+    [data, quantity]
+  );
+  // 主要動の区間は**速度**から決める。加速度に切り替えたときに時間軸が動くと見比べられない
+  const win = useMemo(
+    () => (data?.available && dt ? strongMotionWindow(data.waves, dt) : ([0, 0] as [number, number])),
+    [data, dt]
+  );
+  const range: [number, number] = zoom ? win : [0, (data?.n ?? 0) * dt];
 
   return (
     <div>
@@ -500,49 +530,116 @@ const WaveSection: React.FC<{
 
       {!busy && data && data.available && data.dt && (
         <div>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-gray-600 dark:text-gray-300 mb-1">
-            {data.pgv_h != null && (
-              <span>
-                水平最大速度 <span className="tabular-nums font-medium">{data.pgv_h.toFixed(1)}</span> cm/s
-                <InfoTip>
-                  NS と EW をベクトル合成した最大値です。想定地震地図が「工学的基盤の最大速度」として
-                  公表しているのはこの値なので、地図の色と対応します。成分ごとの最大（各段の見出し）
-                  とは別物です。
-                </InfoTip>
-              </span>
-            )}
-            <span className="text-gray-400">記録長 {data.duration} 秒 ／ 120 Hz</span>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-1">
+            <div className="text-xs text-gray-600 dark:text-gray-300">
+              {data.pgv_h != null && (
+                <>
+                  水平最大速度 <span className="tabular-nums font-medium">{data.pgv_h.toFixed(1)}</span> cm/s
+                  <InfoTip>
+                    NS と EW をベクトル合成した最大値です。想定地震地図が「工学的基盤の最大速度」として
+                    公表しているのはこの値なので、地図の色と対応します。成分ごとの最大（各段の見出し）
+                    とは別物です。
+                  </InfoTip>
+                  <span className="text-gray-400"> ／ </span>
+                </>
+              )}
+              <span className="text-gray-400">記録長 {data.duration} 秒 ／ 120 Hz</span>
+            </div>
+            {/* 速度⇔加速度の切替。加速度は公開されていないので速度を微分して作る */}
+            <div className="inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden text-[11px]">
+              {(['vel', 'acc'] as WaveQuantity[]).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setQuantity(q)}
+                  className={
+                    'px-2 py-0.5 transition-colors ' +
+                    (quantity === q
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700')
+                  }
+                >
+                  {QUANTITY_LABEL[q]}
+                </button>
+              ))}
+            </div>
           </div>
-          <WaveformView waves={data.waves} dt={data.dt} width={width} zoom={zoom} />
-          <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
-            <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-              <input
-                type="checkbox"
-                checked={!zoom}
-                onChange={(e) => setZoom(!e.target.checked)}
-                className="rounded border-gray-300 dark:border-gray-600"
-              />
-              記録全体（{data.duration} 秒）を表示する
-            </label>
-            {/* 表示は主要動に絞っていても、書き出すのは記録全体(切り出した波形を
-                解析に使われると継続時間やエネルギーが変わってしまうため) */}
+
+          <WaveformView
+            waves={shown}
+            dt={data.duration && data.n ? data.duration / data.n : data.dt}
+            unit={unitLabel(quantity, 'cm')}
+            width={width}
+            range={range}
+          />
+
+          <label className="inline-flex items-center gap-1.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={!zoom}
+              onChange={(e) => setZoom(!e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600"
+            />
+            記録全体（{data.duration} 秒）を表示する
+          </label>
+
+          {/* 書き出し。物理量と単位は表示と独立に選べる(画面では速度を見ながら、解析ソフト用に
+              加速度を落とす、という使い方をするため)。表示は主要動に絞っていても書き出すのは
+              記録全体(切り出した波形を解析に使われると継続時間やエネルギーが変わるため)。 */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <select
+              value={dlQuantity}
+              onChange={(e) => setDlQuantity(e.target.value as WaveQuantity)}
+              className="text-[11px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-1.5 py-1"
+              aria-label="書き出す物理量"
+            >
+              {(['acc', 'vel'] as WaveQuantity[]).map((q) => (
+                <option key={q} value={q}>
+                  {QUANTITY_LABEL[q]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={dlUnit}
+              onChange={(e) => setDlUnit(e.target.value as WaveUnit)}
+              className="text-[11px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-1.5 py-1"
+              aria-label="書き出す単位"
+            >
+              {UNIT_CHOICES.map((u) => (
+                <option key={u} value={u}>
+                  {unitLabel(dlQuantity, u)}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
-              onClick={() => downloadWaveCsv(data)}
+              onClick={() => downloadWaveCsv(data, dlQuantity, dlUnit)}
               className="inline-flex items-center gap-1 text-[11px] rounded-lg border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
               <Download className="w-3.5 h-3.5" />
               CSV（{data.waves.map((w) => w.dir).join('/')}・{data.n} 点）
             </button>
           </div>
-          <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1">
+
+          <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1.5">
             工学的基盤（Vs = 600 m/s）上の値で、地表の揺れではありません。
             <InfoTip>
               表層地盤による増幅は含みません。J-SHIS の表層地盤増幅率 ARV は Vs = 400 m/s
-              基準なので、この波形にそのまま掛けると 1.41 倍過小になります。また公開されているのは
-              速度だけで、加速度は公開されていません。
+              基準なので、この波形にそのまま掛けると 1.41 倍過小になります。
             </InfoTip>
           </p>
+          {(quantity === 'acc' || dlQuantity === 'acc') && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-500">
+              加速度は公開されていないため、速度波形を微分した値です。
+              <InfoTip>
+                周波数領域で iω を掛けて求めています（差分近似より高周波の落ちが小さく、微分→積分で
+                元の速度に戻ることを確認しています）。ただし短周期側は統計的グリーン関数法の
+                fmax = 6 Hz より高い成分が元から入っていないため、実観測の加速度記録とは高周波の
+                中身が違います。また 1.5 Hz 以上は NS と EW が同一波形なので、加速度では成分間の差が
+                ほとんど消えます（加速度で方向性は議論できません）。
+              </InfoTip>
+            </p>
+          )}
         </div>
       )}
     </div>
