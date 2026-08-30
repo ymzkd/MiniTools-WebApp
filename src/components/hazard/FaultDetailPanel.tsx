@@ -6,7 +6,7 @@
 //   - 選択地点の波形(J-SHIS の公開波形。速度⇔加速度を切り替えられ、CSV で書き出せる。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
@@ -25,9 +25,7 @@ import {
   fmtStrike,
   pdfUrl,
   shindoColor,
-  strongMotionWindow,
   unitLabel,
-  waveSeries,
   QUANTITY_LABEL,
   UNIT_CHOICES,
 } from './scenarioApi';
@@ -454,6 +452,7 @@ const WaveSection: React.FC<{
   // 書き出しは加速度が既定。解析ソフトの入力に使うのはたいてい加速度のため
   const [dlQuantity, setDlQuantity] = useState<WaveQuantity>('acc');
   const [dlUnit, setDlUnit] = useState<WaveUnit>('cm');
+  const [dlBusy, setDlBusy] = useState(false);
   const reqId = useRef(0);
 
   useEffect(() => {
@@ -462,7 +461,7 @@ const WaveSection: React.FC<{
     setBusy(true);
     setErr(null);
     setData(null);
-    fetchWave(code, caseNo, point.lat, point.lng, ac.signal)
+    fetchWave(code, caseNo, point.lat, point.lng, quantity, ac.signal)
       .then((r) => {
         if (id === reqId.current) setData(r);
       })
@@ -475,21 +474,33 @@ const WaveSection: React.FC<{
         if (id === reqId.current) setBusy(false);
       });
     return () => ac.abort();
-  }, [code, caseNo, point.lat, point.lng]);
+  }, [code, caseNo, point.lat, point.lng, quantity]);
+
+  // 書き出す物理量が表示中のものと違うときは、その物理量で取り直してから CSV にする
+  // (微分は jiban-api 側なので、こちらは持っていない)。速度はキャッシュ済みなので速い。
+  const onDownload = async () => {
+    if (!data?.available) return;
+    setDlBusy(true);
+    try {
+      const w =
+        dlQuantity === data.quantity
+          ? data
+          : await fetchWave(code, caseNo, point.lat, point.lng, dlQuantity);
+      downloadWaveCsv(w, dlUnit);
+    } catch (e) {
+      console.error('Failed to download wave:', e);
+      setErr('波形の取得に失敗しました');
+    } finally {
+      setDlBusy(false);
+    }
+  };
 
   // dt は丸めた値なので、時間軸には記録長/点数を使う
   const dt = data?.duration && data.n ? data.duration / data.n : (data?.dt ?? 0);
-  // 表示する系列。加速度は微分が要るので、物理量が変わったときだけ作り直す
-  const shown = useMemo(
-    () => (data?.available ? waveSeries(data, quantity, 'cm') : []),
-    [data, quantity]
-  );
-  // 主要動の区間は**速度**から決める。加速度に切り替えたときに時間軸が動くと見比べられない
-  const win = useMemo(
-    () => (data?.available && dt ? strongMotionWindow(data.waves, dt) : ([0, 0] as [number, number])),
-    [data, dt]
-  );
-  const range: [number, number] = zoom ? win : [0, (data?.n ?? 0) * dt];
+  // 主要動の区間はサーバが**速度から**決めて返す(物理量を切り替えても時間軸が動かない)
+  const range: [number, number] = zoom
+    ? (data?.window ?? [0, (data?.n ?? 0) * dt])
+    : [0, (data?.n ?? 0) * dt];
 
   return (
     <div>
@@ -566,9 +577,9 @@ const WaveSection: React.FC<{
           </div>
 
           <WaveformView
-            waves={shown}
+            waves={data.waves}
             dt={data.duration && data.n ? data.duration / data.n : data.dt}
-            unit={unitLabel(quantity, 'cm')}
+            unit={data.unit}
             width={width}
             range={range}
           />
@@ -613,10 +624,11 @@ const WaveSection: React.FC<{
             </select>
             <button
               type="button"
-              onClick={() => downloadWaveCsv(data, dlQuantity, dlUnit)}
-              className="inline-flex items-center gap-1 text-[11px] rounded-lg border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              onClick={onDownload}
+              disabled={dlBusy}
+              className="inline-flex items-center gap-1 text-[11px] rounded-lg border border-gray-300 dark:border-gray-600 px-2 py-1 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
-              <Download className="w-3.5 h-3.5" />
+              {dlBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
               CSV（{data.waves.map((w) => w.dir).join('/')}・{data.n} 点）
             </button>
           </div>

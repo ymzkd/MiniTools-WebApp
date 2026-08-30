@@ -1,6 +1,6 @@
 // 想定地震の波形(インライン SVG)。J-SHIS が想定地震地図の元データとして公開している
 // 工学的基盤(Vs=600m/s)上の時刻歴を、成分(NS/EW/UD)ごとに縦に並べて描く。
-// 速度と、それを微分した加速度のどちらも同じ描き方で扱う(単位だけ差し替える)。
+// 速度と加速度(jiban-api が微分して返す)のどちらも同じ描き方で扱う(単位だけ差し替える)。
 //
 // 振幅の縦軸は**全成分で共通**にする。成分ごとに正規化すると上下動が水平動と同じ大きさに
 // 見えてしまい、比較の意味が失われるため。
@@ -9,7 +9,7 @@
 // 縦線を積む(包絡線)。間引きではないのでピークが消えない。
 import React from 'react';
 import { waveColor } from './scenarioApi';
-import type { WaveSeries } from './scenarioApi';
+import type { WaveComponent } from './scenarioApi';
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 const INK2 = 'var(--viz-ink2)';
@@ -24,7 +24,7 @@ const TRACE_H = 54; // 1成分の高さ
 const GAP = 10;
 
 interface Props {
-  waves: WaveSeries[];
+  waves: WaveComponent[];
   dt: number;
   /** 見出しに出す単位("cm/s" や "gal") */
   unit: string;

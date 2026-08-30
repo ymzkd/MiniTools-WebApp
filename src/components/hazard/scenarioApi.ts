@@ -252,13 +252,19 @@ export function fmtStrike(deg: number): string {
 // J-SHIS は想定地震地図の元になった**工学的基盤上の速度波形**をメッシュ単位で公開している。
 // jiban-api が中継し、時刻列を落として「dt ＋ 値の配列」に詰め直したものを受け取る。
 // 断層モデルからの自前計算ではないので、地図の色(工学的基盤最大速度)と必ず整合する。
+//
+// 加速度は J-SHIS が公開していないので jiban-api が微分して作る(quantity=acc)。信号処理は
+// すべてサーバ側に置いてある。ここでやるのは単位の掛け算と CSV の組み立てだけ。
+
+/** 表示・書き出しの物理量。サーバの quantity パラメータと同じ値。 */
+export type WaveQuantity = 'vel' | 'acc';
 
 /** 1成分ぶんの時刻歴。v[i] の時刻は (i+1)*dt 秒(破壊開始が t=0)。 */
 export interface WaveComponent {
   /** NS / EW / UD */
   dir: string;
-  /** その成分の最大速度(cm/s) */
-  pgv: number;
+  /** その成分の最大値(絶対値)。単位は WaveResult.unit */
+  peak: number;
   v: number[];
 }
 
@@ -277,20 +283,34 @@ export interface WaveResult {
   n?: number;
   /** 記録長(秒)。通常100秒だが、中央構造線の全区間同時活動は300秒 */
   duration?: number;
-  /** 水平2成分のベクトル最大(cm/s)。想定地震地図の工学的基盤最大速度 BV と同じ値 */
+  /** この応答の物理量と単位("cm/s" または "gal") */
+  quantity: WaveQuantity;
+  unit: string;
+  /** 水平2成分のベクトル最大**速度**(cm/s)。想定地震地図の工学的基盤最大速度 BV と同じ値。
+      物理量によらず常に入る(地図の色との対応を示すため) */
   pgv_h?: number | null;
+  /** この物理量での水平2成分のベクトル最大 */
+  peak_h?: number | null;
+  /** 主要動の時間窓 [t0,t1](秒)。**速度から**決めてあるので物理量を切り替えても動かない */
+  window?: [number, number];
   waves: WaveComponent[];
 }
 
-/** その断層・ケースが起こす、指定地点の速度波形。取得に 0.3〜10 秒かかる。 */
+/**
+ * その断層・ケースが起こす、指定地点の波形。
+ * 速度は J-SHIS から取るので 0.3〜10 秒。加速度はサーバ側のキャッシュから微分するので速い。
+ */
 export async function fetchWave(
   code: string,
   caseNo: string,
   lat: number,
   lng: number,
+  quantity: WaveQuantity = 'vel',
   signal?: AbortSignal
 ): Promise<WaveResult> {
-  const q = new URLSearchParams({ code, case: caseNo, lat: String(lat), lng: String(lng) });
+  const q = new URLSearchParams({
+    code, case: caseNo, lat: String(lat), lng: String(lng), quantity,
+  });
   const res = await fetch(`/api/jshis/scenario/wave?${q}`, { signal, headers: { accept: 'application/json' } });
   if (!res.ok) throw new Error(`jshis wave error: ${res.status}`);
   return (await res.json()) as WaveResult;
@@ -306,43 +326,6 @@ const WAVE_VARS: Record<string, string> = {
 /** 成分名 → 色。 */
 export function waveColor(dir: string): string {
   return WAVE_VARS[dir] ?? 'var(--viz-ink2)';
-}
-
-/**
- * 主要動の時間窓 [t0, t1] 秒。累積二乗速度(Arias強度に相当)の 1%〜99% の区間。
- *
- * 記録は 100 秒あるが揺れているのは十数秒で、全体を出すとパネル幅では潰れて読めない。
- * 全成分をまとめて1つの窓にする(成分ごとに違う窓だと並べて比較できないため)。
- */
-export function strongMotionWindow(waves: { v: number[] }[], dt: number): [number, number] {
-  const n = Math.max(...waves.map((w) => w.v.length));
-  if (!n || !dt) return [0, 0];
-  const cum = new Float64Array(n + 1);
-  for (let i = 0; i < n; i++) {
-    let e = 0;
-    for (const w of waves) {
-      const x = w.v[i] ?? 0;
-      e += x * x;
-    }
-    cum[i + 1] = cum[i] + e;
-  }
-  const total = cum[n];
-  if (!total) return [0, n * dt];
-  const at = (frac: number) => {
-    const target = total * frac;
-    let lo = 0;
-    let hi = n;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (cum[mid] < target) lo = mid + 1;
-      else hi = mid;
-    }
-    return lo * dt;
-  };
-  // 立ち上がりが切れないよう前後に余裕を持たせる
-  const t0 = Math.max(0, at(0.01) - 2);
-  const t1 = Math.min(n * dt, at(0.99) + 2);
-  return t1 > t0 ? [t0, t1] : [0, n * dt];
 }
 
 // ------------------------------------------------------- ケース別の地点の揺れ(一覧)
@@ -409,15 +392,17 @@ export function shindoColor(s: string | null): string {
 
 // ---------------------------------------------------------------- CSV 書き出し
 /**
- * 波形を CSV にする。1行目からのメタ情報は "#" 始まりのコメント行にして、
- * 表計算に読み込んでもデータ部だけ拾えるようにする。
- * 前提(物理量・基準面・単位)を落とすと値を取り違えるので、ヘッダに残す。
+ * 波形を CSV にする。物理量は取ってきた応答のもの(サーバが quantity=vel|acc で返す)、
+ * 単位だけここで掛ける。
+ * 1行目からのメタ情報は "#" 始まりのコメント行にして、表計算に読み込んでもデータ部だけ
+ * 拾えるようにする。前提(物理量・基準面・単位)を落とすと値を取り違えるので、ヘッダに残す。
  */
-export function waveToCsv(w: WaveResult, q: WaveQuantity, u: WaveUnit): string {
+export function waveToCsv(w: WaveResult, u: WaveUnit): string {
+  const q = w.quantity;
   const unit = unitLabel(q, u);
   const digits = csvDigits(q, u);
-  const series = waveSeries(w, q, u);
-  const n = Math.max(...series.map((c) => c.v.length), 0);
+  const k = unitScale(q, u);
+  const n = Math.max(...w.waves.map((c) => c.v.length), 0);
   const span = w.duration ?? (w.dt ?? 0) * n;
   const lines = [
     '# J-SHIS 想定地震（震源断層を特定した地震動予測地図）の公開波形',
@@ -428,9 +413,9 @@ export function waveToCsv(w: WaveResult, q: WaveQuantity, u: WaveUnit): string {
     '# 基準面,詳細法工学的基盤（S波速度 600 m/s 層の上面）',
     `# サンプリング,${span && n ? (n / span).toFixed(0) : ''},Hz,dt=${span && n ? span / n : ''},s`,
     `# 記録長,${w.duration},s`,
-    ...series.map((c) => `# 最大値,${c.dir},${c.peak.toFixed(digits)},${unit}`),
-    ...(q === 'vel' && w.pgv_h != null
-      ? [`# 最大値,水平ベクトル合成,${(w.pgv_h * unitScale(q, u)).toFixed(digits)},${unit}`]
+    ...w.waves.map((c) => `# 最大値,${c.dir},${(c.peak * k).toFixed(digits)},${unit}`),
+    ...(w.peak_h != null
+      ? [`# 最大値,水平ベクトル合成,${(w.peak_h * k).toFixed(digits)},${unit}`]
       : []),
     '# 注記,表層地盤の増幅は含みません（地表の値ではありません）',
     '# 注記,長周期は三次元差分法・短周期は統計的グリーン関数法のハイブリッド合成法。1.5Hz以上はNSとEWが同一波形です',
@@ -439,46 +424,35 @@ export function waveToCsv(w: WaveResult, q: WaveQuantity, u: WaveUnit): string {
          '# 注記,統計的グリーン関数法のfmax=6Hzより高い成分は元から含まれないため、実観測の加速度記録とは高周波の中身が異なります']
       : []),
     '# 出典,防災科学技術研究所 地震ハザードステーション J-SHIS,https://www.j-shis.bosai.go.jp/',
-    ['時刻(s)', ...series.map((c) => `${c.dir}(${unit})`)].join(','),
+    ['時刻(s)', ...w.waves.map((c) => `${c.dir}(${unit})`)].join(','),
   ];
   // 時刻は (i+1)*dt ではなく (i+1)*記録長/点数 で出す。dt は丸めた値なので、積むと末尾が
   // 99.999996 のようにずれる(等間隔なのに端数が付くと読み手が dt を疑う)。
   for (let i = 0; i < n; i++) {
     lines.push(
-      [(((i + 1) * span) / n).toFixed(6), ...series.map((c) => (c.v[i] ?? 0).toFixed(digits))].join(',')
+      [(((i + 1) * span) / n).toFixed(6),
+       ...w.waves.map((c) => ((c.v[i] ?? 0) * k).toFixed(digits))].join(',')
     );
   }
   return lines.join('\r\n') + '\r\n';
 }
 
 /** CSV をダウンロードさせる。Excel が UTF-8 と分かるよう BOM を付ける。 */
-export function downloadWaveCsv(w: WaveResult, q: WaveQuantity, u: WaveUnit): void {
-  const blob = new Blob(['\ufeff' + waveToCsv(w, q, u)], { type: 'text/csv;charset=utf-8' });
+export function downloadWaveCsv(w: WaveResult, u: WaveUnit): void {
+  const blob = new Blob(['\ufeff' + waveToCsv(w, u)], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `jshis_${q}_${w.code}_CASE${w.case}_${w.mesh}.csv`;
+  a.download = `jshis_${w.quantity}_${w.code}_CASE${w.case}_${w.mesh}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// ------------------------------------------------ 速度 → 加速度（微分）と単位の切り替え
-// J-SHIS が公開しているのは速度波形だけで、加速度は公開されていない。解析ソフトの入力には
-// 加速度を使うことが多いので、こちらで微分して作る。
-//
-// 微分は**周波数領域で iω を掛ける**。差分近似は高周波を落とすので最大加速度が小さく出る
-// (梅田×上町 CASE1 の NS で 中央差分 749 / 前進差分 768 / 周波数領域 788 gal)。周波数領域は
-// 帯域制限された信号の厳密な微分で、微分 → 台形積分で元の速度に戻すと誤差 0.24% に収まる
-// ことを実データで確認した。
-//
-// 注意: 得られる加速度には、統計的グリーン関数法の fmax = 6Hz より高い成分が元から入って
-// いない。実観測の加速度記録とは高周波の中身が違う。また 1.5Hz 以上は NS と EW が同一波形
-// なので、加速度では成分間の差がほとんど消える(方向性の議論には使えない)。
+// ------------------------------------------------------------------- 単位の切り替え
+// 微分などの信号処理は jiban-api 側。ここは表示・書き出しの単位を掛けるだけ。
 
-/** 表示・書き出しの物理量。 */
-export type WaveQuantity = 'vel' | 'acc';
 /** 長さの単位。加速度では cm = gal。 */
 export type WaveUnit = 'cm' | 'm' | 'mm';
 
@@ -491,7 +465,8 @@ interface UnitSpec {
 }
 
 const UNITS: Record<WaveQuantity, Record<WaveUnit, UnitSpec>> = {
-  // 速度の元データは 0.01 cm/s 刻みなので、単位を変えても同じ情報が残る桁を選ぶ
+  // 速度の元データは 0.01 cm/s 刻み、加速度はサーバが 0.001 gal 刻みで返す。
+  // 単位を変えても同じ情報が残る桁を選ぶ。
   vel: {
     cm: { k: 1, label: 'cm/s', digits: 2 },
     m: { k: 0.01, label: 'm/s', digits: 4 },
@@ -505,102 +480,11 @@ const UNITS: Record<WaveQuantity, Record<WaveUnit, UnitSpec>> = {
 };
 
 export const QUANTITY_LABEL: Record<WaveQuantity, string> = { vel: '速度', acc: '加速度' };
+export const UNIT_CHOICES: WaveUnit[] = ['cm', 'm', 'mm'];
 
 /** 単位の表示名。加速度の cm は gal。 */
 export function unitLabel(q: WaveQuantity, u: WaveUnit): string {
   return UNITS[q][u].label;
-}
-
-export const UNIT_CHOICES: WaveUnit[] = ['cm', 'm', 'mm'];
-
-/** 表示・書き出し用の1成分。速度なら元データ、加速度なら微分した系列。 */
-export interface WaveSeries {
-  dir: string;
-  /** その成分の最大値(絶対値) */
-  peak: number;
-  v: number[];
-}
-
-/** 基数2の FFT(その場で書き換え)。inv=true で逆変換。 */
-function fft(re: Float64Array, im: Float64Array, inv: boolean): void {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
-    }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = ((inv ? 2 : -2) * Math.PI) / len;
-    const wr = Math.cos(ang);
-    const wi = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let cr = 1;
-      let ci = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const ur = re[i + k];
-        const ui = im[i + k];
-        const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
-        const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
-        re[i + k] = ur + vr;
-        im[i + k] = ui + vi;
-        re[i + k + len / 2] = ur - vr;
-        im[i + k + len / 2] = ui - vi;
-        const nr = cr * wr - ci * wi;
-        ci = cr * wi + ci * wr;
-        cr = nr;
-      }
-    }
-  }
-  if (inv) {
-    for (let i = 0; i < n; i++) {
-      re[i] /= n;
-      im[i] /= n;
-    }
-  }
-}
-
-/**
- * 時刻歴を微分する（周波数領域で iω を掛ける）。
- * 長さは2のべきに零詰めして変換し、元の長さぶんだけ返す。ナイキスト成分は落とす
- * （実信号の微分では定義できないため）。
- */
-export function differentiate(v: number[], dt: number): number[] {
-  let n = 1;
-  while (n < v.length) n *= 2;
-  const re = new Float64Array(n);
-  const im = new Float64Array(n);
-  re.set(v);
-  fft(re, im, false);
-  for (let k = 0; k < n; k++) {
-    const kk = k <= n / 2 ? k : k - n; // 負の周波数へ折り返す
-    const w = (2 * Math.PI * kk) / (n * dt);
-    const r = re[k];
-    const m = im[k];
-    re[k] = -w * m;
-    im[k] = w * r;
-  }
-  re[n / 2] = 0;
-  im[n / 2] = 0;
-  fft(re, im, true);
-  return Array.from(re.subarray(0, v.length));
-}
-
-/**
- * 物理量と単位を指定して系列を取り出す。
- * 加速度は速度を微分して作る（J-SHIS は速度しか公開していない）。
- */
-export function waveSeries(w: WaveResult, q: WaveQuantity, u: WaveUnit = 'cm'): WaveSeries[] {
-  const dt = w.duration && w.n ? w.duration / w.n : (w.dt ?? 0);
-  const k = UNITS[q][u].k;
-  return w.waves.map((c) => {
-    const v = q === 'acc' && dt ? differentiate(c.v, dt) : c.v;
-    const scaled = k === 1 ? v : v.map((x) => x * k);
-    return { dir: c.dir, peak: Math.max(...scaled.map(Math.abs)), v: scaled };
-  });
 }
 
 /** cm 基準からの倍率。 */
