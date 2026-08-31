@@ -4,10 +4,10 @@
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
 //   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積、基準面の Vs)
 //   - 選択地点の波形(J-SHIS の公開波形。速度⇔加速度を切り替えて見られ、加速度を CSV で
-//     書き出せる。WaveSection)
+//     書き出せる。両方を先読みしてメモするので切替と書き出しに通信は起きない。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
@@ -431,14 +431,28 @@ const CaseTable: React.FC<{
   );
 };
 
+/** 1つの(断層・ケース・地点)についての波形メモ。物理量ごとに1本ずつ持つ。 */
+interface WaveStore {
+  key: string;
+  /** この組に対する取得をまとめて止めるための controller(断層を変えたら abort する) */
+  ac: AbortController;
+  got: Map<WaveQuantity, WaveResult>;
+  jobs: Map<WaveQuantity, Promise<WaveResult>>;
+}
+
 /**
  * 選択地点の波形。J-SHIS が想定地震地図の元データとして公開している詳細法工学的基盤上の
  * 時刻歴を取ってきて描く(断層モデルからの自前計算ではない)。
  *
  * 断層・ケース・地点が変わるたびに取り直す。上流は 0.5〜1.5MB あって数秒かかることが
  * あるので、待っている間はスピナーを出し、前のケースの波形は消してから差し替える
- * (古い波形が新しいケースの見出しの下に残ると読み違える)。取得中に切り替えられたら
- * 前の要求は abort する。
+ * (古い波形が新しいケースの見出しの下に残ると読み違える)。
+ *
+ * **速度と加速度は (断層・ケース・地点) ごとにメモして使い回す。** サーバ側では両者とも
+ * 同じ1本の速度波形から作られる(速度をキャッシュし、加速度はそれを微分して返す)ので、
+ * 切り替えのたびに 225〜266KB を取り直すのは無駄でしかない。表示中の波形が届いたら
+ * もう片方を裏で先読みしておき、切り替えと CSV 書き出しを通信なしで済ませる。
+ * 先読みの失敗は表示に影響しないので握りつぶす。
  */
 const WaveSection: React.FC<{
   code: string;
@@ -453,38 +467,75 @@ const WaveSection: React.FC<{
   const [dlUnit, setDlUnit] = useState<WaveUnit>('cm');
   const [dlBusy, setDlBusy] = useState(false);
   const reqId = useRef(0);
+  const store = useRef<WaveStore | null>(null);
+
+  const key = `${code}|${caseNo}|${point.lat}|${point.lng}`;
+
+  /**
+   * その物理量の波形を返す。メモにあれば即座に、無ければ取りに行く。
+   * 同じ物理量への同時要求は1本にまとめる(表示と先読みが競合しても2回投げない)。
+   */
+  const load = useCallback(
+    (q: WaveQuantity): Promise<WaveResult> => {
+      if (store.current?.key !== key) {
+        // 断層・ケース・地点が変わった。前の組の取得はもう要らないので止めてから捨てる
+        store.current?.ac.abort();
+        store.current = { key, ac: new AbortController(), got: new Map(), jobs: new Map() };
+      }
+      const st = store.current;
+      const hit = st.got.get(q);
+      if (hit) return Promise.resolve(hit);
+      let job = st.jobs.get(q);
+      if (!job) {
+        job = fetchWave(code, caseNo, point.lat, point.lng, q, st.ac.signal)
+          .then((r) => {
+            st.got.set(q, r);
+            return r;
+          })
+          .finally(() => {
+            st.jobs.delete(q);
+          });
+        st.jobs.set(q, job);
+      }
+      return job;
+    },
+    [key, code, caseNo, point.lat, point.lng]
+  );
+
+  // パネルを閉じたら走っている取得を止める(切り替えでは止めない。メモに入れたいので)
+  useEffect(() => () => store.current?.ac.abort(), []);
 
   useEffect(() => {
     const id = ++reqId.current;
-    const ac = new AbortController();
-    setBusy(true);
+    const hit = store.current?.key === key ? store.current.got.get(quantity) : undefined;
     setErr(null);
-    setData(null);
-    fetchWave(code, caseNo, point.lat, point.lng, quantity, ac.signal)
+    // メモにあるならスピナーを出さずに差し替える(切り替えが引っかからないように)
+    setData(hit ?? null);
+    setBusy(!hit);
+    load(quantity)
       .then((r) => {
-        if (id === reqId.current) setData(r);
+        if (id !== reqId.current) return;
+        setData(r);
+        setBusy(false);
+        // 表示できたら、もう片方の物理量を裏で温めておく。
+        // 範囲外(available=false)は中身が無いので取りに行かない。
+        if (r.available) load(quantity === 'vel' ? 'acc' : 'vel').catch(() => {});
       })
       .catch((e) => {
         if (id !== reqId.current || (e instanceof Error && e.name === 'AbortError')) return;
         console.error('Failed to fetch wave:', e);
         setErr('波形の取得に失敗しました');
-      })
-      .finally(() => {
-        if (id === reqId.current) setBusy(false);
+        setBusy(false);
       });
-    return () => ac.abort();
-  }, [code, caseNo, point.lat, point.lng, quantity]);
+  }, [load, key, quantity]);
 
-  // 書き出すのは加速度だけ(解析ソフトの入力に使うのは加速度なので)。速度を表示している
-  // ときは加速度で取り直してから CSV にする。微分は jiban-api 側なのでこちらは持っていない。
+  // 書き出すのは加速度だけ(解析ソフトの入力に使うのは加速度なので)。速度を表示していても
+  // 加速度は先読み済みなので、ふつうは通信が起きない。微分は jiban-api 側にある。
   const onDownload = async () => {
     if (!data?.available) return;
     setDlBusy(true);
     try {
-      const w =
-        data.quantity === 'acc'
-          ? data
-          : await fetchWave(code, caseNo, point.lat, point.lng, 'acc');
+      const w = data.quantity === 'acc' ? data : await load('acc');
       downloadWaveCsv(w, dlUnit);
     } catch (e) {
       console.error('Failed to download wave:', e);
