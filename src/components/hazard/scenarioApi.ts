@@ -56,6 +56,11 @@ export interface ScenarioCase {
 
 /** getLteInfo 由来の断層情報。旧コードの断層では確率などが空になる。 */
 export interface ScenarioInfo {
+  /** この断層の波形・想定地震地図が乗っている**詳細法工学的基盤の S 波速度**(m/s)。
+      600 とは限らない。2020年版の深部地盤モデル改訂で再計算された関東の13断層は 350。
+      断層ごとの定数（全断層を実測して同一断層内で割れないことを確認済み）。
+      想定地震地図が公開されていない旧断層コードでは null。 */
+  vs: number | null;
   /** 30年 / 50年発生確率 (%) */
   t30p: number | null;
   t50p: number | null;
@@ -275,6 +280,9 @@ export interface WaveResult {
   /** 波形が引かれた3次メッシュ(1km)のコードと中心 */
   mesh: string;
   mesh_center: { lat: number; lng: number };
+  /** 基準面（詳細法工学的基盤）の S 波速度(m/s)。600 とは限らない（関東の13断層は 350）。
+      断層ごとの定数なので、ケースや地点では変わらない。 */
+  vs: number | null;
   available: boolean;
   /** available=false の理由。"out_of_area" = 断層の計算対象範囲の外 */
   reason?: string;
@@ -335,7 +343,8 @@ export interface CaseSummary {
   case: string;
   available: boolean;
   reason?: string | null;
-  /** 工学的基盤(Vs=600m/s)上の最大速度(cm/s)。波形の水平ベクトル最大と一致する */
+  /** 詳細法工学的基盤上の最大速度(cm/s)。基準面の Vs は断層ごと(CaseSummaryResult.vs)。
+      想定地震地図の公表値なので、波形の水平ベクトル最大とは数%ずれる */
   pgv: number | null;
   /** 同・計測震度 */
   si_b: number | null;
@@ -408,7 +417,9 @@ export function waveToCsv(w: WaveResult, u: WaveUnit): string {
     `# ケース,CASE${w.case}`,
     `# メッシュ,${w.mesh},${w.mesh_center.lat},${w.mesh_center.lng}`,
     `# 物理量,${QUANTITY_LABEL[q]},${unit}`,
-    '# 基準面,詳細法工学的基盤（S波速度 600 m/s 層の上面）',
+    // 基準面の Vs は断層で変わる（関東の13断層は 350 m/s）。決め打ちにすると
+    // 書き出した CSV に誤った基準面が焼き込まれるので、必ず実データから出す。
+    `# 基準面,詳細法工学的基盤${w.vs != null ? `（S波速度 ${w.vs} m/s 層の上面）` : '（S波速度は不明）'}`,
     `# サンプリング,${span && n ? (n / span).toFixed(0) : ''},Hz,dt=${span && n ? span / n : ''},s`,
     `# 記録長,${w.duration},s`,
     ...w.waves.map((c) => `# 最大値,${c.dir},${(c.peak * k).toFixed(digits)},${unit}`),
