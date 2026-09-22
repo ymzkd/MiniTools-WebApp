@@ -17,5 +17,12 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY server.js ./
+# Keep production and PR-preview images distinct (Dokploy sets
+# BUILD_TARGET=preview for previews). Without this, a merge builds the same
+# tree as its preview, both tags share one image ID, and Dokploy's nightly
+# `docker image prune -a` strips the production tag, so the service can't
+# restart after a host reboot. Declared last so every layer above stays cached.
+ARG BUILD_TARGET=production
+LABEL minitools.build-target=$BUILD_TARGET
 EXPOSE 3000
 CMD ["node", "server.js"]
