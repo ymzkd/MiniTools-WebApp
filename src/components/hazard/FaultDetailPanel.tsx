@@ -2,12 +2,12 @@
 // 地図で断層をクリックすると、ボーリング柱状図と同じ要領でこのパネルへ差し替わる。
 //   - ケース選択(その断層に用意された CASE1〜n)。**この地点での揺れの大きさを並べて選ばせる**
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
-//   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積)
+//   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積、基準面の Vs)
 //   - 選択地点の波形(J-SHIS の公開波形。速度⇔加速度を切り替えて見られ、加速度を CSV で
-//     書き出せる。WaveSection)
+//     書き出せる。両方を先読みしてメモするので切替と書き出しに通信は起きない。WaveSection)
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { X, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
@@ -320,7 +320,8 @@ const CaseTable: React.FC<{
                 <th className="text-right font-normal pb-0.5">
                   基盤最大速度
                   <InfoTip>
-                    工学的基盤（Vs = 600 m/s）上の最大速度です。想定地震地図が公表している値で、
+                    詳細法工学的基盤{sum?.vs != null && `（Vs = ${sum.vs.toFixed(0)} m/s）`}
+                    上の最大速度です。想定地震地図が公表している値で、
                     地表の揺れではありません。棒の長さはこの断層のケース間の相対比です。
                   </InfoTip>
                 </th>
@@ -430,14 +431,28 @@ const CaseTable: React.FC<{
   );
 };
 
+/** 1つの(断層・ケース・地点)についての波形メモ。物理量ごとに1本ずつ持つ。 */
+interface WaveStore {
+  key: string;
+  /** この組に対する取得をまとめて止めるための controller(断層を変えたら abort する) */
+  ac: AbortController;
+  got: Map<WaveQuantity, WaveResult>;
+  jobs: Map<WaveQuantity, Promise<WaveResult>>;
+}
+
 /**
- * 選択地点の速度波形。J-SHIS が想定地震地図の元データとして公開している工学的基盤上の
+ * 選択地点の波形。J-SHIS が想定地震地図の元データとして公開している詳細法工学的基盤上の
  * 時刻歴を取ってきて描く(断層モデルからの自前計算ではない)。
  *
  * 断層・ケース・地点が変わるたびに取り直す。上流は 0.5〜1.5MB あって数秒かかることが
  * あるので、待っている間はスピナーを出し、前のケースの波形は消してから差し替える
- * (古い波形が新しいケースの見出しの下に残ると読み違える)。取得中に切り替えられたら
- * 前の要求は abort する。
+ * (古い波形が新しいケースの見出しの下に残ると読み違える)。
+ *
+ * **速度と加速度は (断層・ケース・地点) ごとにメモして使い回す。** サーバ側では両者とも
+ * 同じ1本の速度波形から作られる(速度をキャッシュし、加速度はそれを微分して返す)ので、
+ * 切り替えのたびに 225〜266KB を取り直すのは無駄でしかない。表示中の波形が届いたら
+ * もう片方を裏で先読みしておき、切り替えと CSV 書き出しを通信なしで済ませる。
+ * 先読みの失敗は表示に影響しないので握りつぶす。
  */
 const WaveSection: React.FC<{
   code: string;
@@ -452,38 +467,75 @@ const WaveSection: React.FC<{
   const [dlUnit, setDlUnit] = useState<WaveUnit>('cm');
   const [dlBusy, setDlBusy] = useState(false);
   const reqId = useRef(0);
+  const store = useRef<WaveStore | null>(null);
+
+  const key = `${code}|${caseNo}|${point.lat}|${point.lng}`;
+
+  /**
+   * その物理量の波形を返す。メモにあれば即座に、無ければ取りに行く。
+   * 同じ物理量への同時要求は1本にまとめる(表示と先読みが競合しても2回投げない)。
+   */
+  const load = useCallback(
+    (q: WaveQuantity): Promise<WaveResult> => {
+      if (store.current?.key !== key) {
+        // 断層・ケース・地点が変わった。前の組の取得はもう要らないので止めてから捨てる
+        store.current?.ac.abort();
+        store.current = { key, ac: new AbortController(), got: new Map(), jobs: new Map() };
+      }
+      const st = store.current;
+      const hit = st.got.get(q);
+      if (hit) return Promise.resolve(hit);
+      let job = st.jobs.get(q);
+      if (!job) {
+        job = fetchWave(code, caseNo, point.lat, point.lng, q, st.ac.signal)
+          .then((r) => {
+            st.got.set(q, r);
+            return r;
+          })
+          .finally(() => {
+            st.jobs.delete(q);
+          });
+        st.jobs.set(q, job);
+      }
+      return job;
+    },
+    [key, code, caseNo, point.lat, point.lng]
+  );
+
+  // パネルを閉じたら走っている取得を止める(切り替えでは止めない。メモに入れたいので)
+  useEffect(() => () => store.current?.ac.abort(), []);
 
   useEffect(() => {
     const id = ++reqId.current;
-    const ac = new AbortController();
-    setBusy(true);
+    const hit = store.current?.key === key ? store.current.got.get(quantity) : undefined;
     setErr(null);
-    setData(null);
-    fetchWave(code, caseNo, point.lat, point.lng, quantity, ac.signal)
+    // メモにあるならスピナーを出さずに差し替える(切り替えが引っかからないように)
+    setData(hit ?? null);
+    setBusy(!hit);
+    load(quantity)
       .then((r) => {
-        if (id === reqId.current) setData(r);
+        if (id !== reqId.current) return;
+        setData(r);
+        setBusy(false);
+        // 表示できたら、もう片方の物理量を裏で温めておく。
+        // 範囲外(available=false)は中身が無いので取りに行かない。
+        if (r.available) load(quantity === 'vel' ? 'acc' : 'vel').catch(() => {});
       })
       .catch((e) => {
         if (id !== reqId.current || (e instanceof Error && e.name === 'AbortError')) return;
         console.error('Failed to fetch wave:', e);
         setErr('波形の取得に失敗しました');
-      })
-      .finally(() => {
-        if (id === reqId.current) setBusy(false);
+        setBusy(false);
       });
-    return () => ac.abort();
-  }, [code, caseNo, point.lat, point.lng, quantity]);
+  }, [load, key, quantity]);
 
-  // 書き出すのは加速度だけ(解析ソフトの入力に使うのは加速度なので)。速度を表示している
-  // ときは加速度で取り直してから CSV にする。微分は jiban-api 側なのでこちらは持っていない。
+  // 書き出すのは加速度だけ(解析ソフトの入力に使うのは加速度なので)。速度を表示していても
+  // 加速度は先読み済みなので、ふつうは通信が起きない。微分は jiban-api 側にある。
   const onDownload = async () => {
     if (!data?.available) return;
     setDlBusy(true);
     try {
-      const w =
-        data.quantity === 'acc'
-          ? data
-          : await fetchWave(code, caseNo, point.lat, point.lng, 'acc');
+      const w = data.quantity === 'acc' ? data : await load('acc');
       downloadWaveCsv(w, dlUnit);
     } catch (e) {
       console.error('Failed to download wave:', e);
@@ -501,8 +553,9 @@ const WaveSection: React.FC<{
       <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
         この地点の波形
         <InfoTip>
-          J-SHIS が想定地震地図の元データとして公開している、工学的基盤（S波速度 600 m/s
-          層の上面）上の速度波形です。長周期成分を三次元差分法、短周期成分を統計的グリーン関数法で
+          J-SHIS が想定地震地図の元データとして公開している、詳細法工学的基盤
+          {data?.vs != null && `（S波速度 ${data.vs.toFixed(0)} m/s 層の上面）`}
+          上の速度波形です。長周期成分を三次元差分法、短周期成分を統計的グリーン関数法で
           計算し接続周期1秒で合成した（ハイブリッド合成法）もので、1.5 Hz
           以上の帯域は NS と EW に同じ波形が使われています。その帯域で成分間の方向性は読み取れません。
         </InfoTip>
@@ -604,11 +657,28 @@ const WaveSection: React.FC<{
             </button>
           </div>
 
+          {/* 基準面は断層で変わる。ARV(Vs=400基準)との関係も基準面で向きが変わるので、
+              600 のときだけ従来の 1.41 倍の話をし、350 のときは係数を書かずに注意だけ出す。 */}
           <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1.5">
-            工学的基盤（Vs = 600 m/s）上の値で、地表の揺れではありません。
+            詳細法工学的基盤{data.vs != null && `（Vs = ${data.vs.toFixed(0)} m/s）`}
+            上の値で、地表の揺れではありません。
             <InfoTip>
               表層地盤による増幅は含みません。J-SHIS の表層地盤増幅率 ARV は Vs = 400 m/s
-              基準なので、この波形にそのまま掛けると 1.41 倍過小になります。
+              基準なので、基準面を合わせずに掛けることはできません。
+              {data.vs != null && data.vs > 400 && (
+                <>
+                  {' '}この波形は Vs = {data.vs.toFixed(0)} m/s 上の値なので、ARV
+                  をそのまま掛けると 400 m/s までの増幅が抜け、過小評価になります
+                  （Vs = 600 m/s では約 1.41 倍の過小）。
+                </>
+              )}
+              {data.vs != null && data.vs < 400 && (
+                <>
+                  {' '}この波形は Vs = {data.vs.toFixed(0)} m/s
+                  上の値で、ARV の基準面（400 m/s）より浅い側にあります。ARV
+                  をそのまま掛けると 400 m/s から上の増幅を二重に数えることになります。
+                </>
+              )}
             </InfoTip>
           </p>
           <p className="text-[11px] text-amber-600 dark:text-amber-500">
@@ -755,6 +825,22 @@ const FaultInfoTable: React.FC<{ fault: ScenarioFault; caseNo: string }> = ({ fa
               v={`深さ ${(kase.des.dep / 1000).toFixed(1)} km（${kase.des.lat.toFixed(3)}, ${kase.des.lng.toFixed(3)}）`}
             />
           )}
+          {/* 波形と想定地震地図が乗っている基準面。600 決め打ちにできない（関東の13断層は
+              350）ので、断層ごとの実データを出す。 */}
+          <Row
+            k={
+              <>
+                詳細法工学的基盤
+                <InfoTip>
+                  この断層の波形・想定地震地図が定義されている基準面（S波速度がこの値の層の上面）です。
+                  多くの断層は 600 m/s ですが、2020年版の深部地盤モデル改訂で再計算された関東の
+                  13断層（立川・深谷・綾瀬川・伊勢原・三浦半島・関谷ほか）は 350 m/s
+                  の上面で計算されています。基準面が違うと、表層地盤の増幅率をそのまま掛けられません。
+                </InfoTip>
+              </>
+            }
+            v={i.vs != null ? `Vs = ${i.vs.toFixed(0)} m/s` : '—'}
+          />
           <Row k="平均活動間隔" v={yrs(i.avract)} />
           <Row k="最新活動からの経過" v={yrs(i.newact)} />
           <Row
