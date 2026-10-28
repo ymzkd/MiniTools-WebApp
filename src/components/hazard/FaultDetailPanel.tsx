@@ -44,7 +44,7 @@ interface Props {
   faults: ScenarioFault[];
   /** 地図のホバー等で表示した震源名(想定地震が無いときの見出しに使う) */
   srcName: string;
-  /** 震源グループ(＝影響度パネルが1行として並べる単位)と、そこに属する断層 */
+  /** 震源グループ(J-SHIS の震源コードの単位)と、そこに属する断層 */
   group: ScenarioGroup | null;
   /** グループ内の別の断層へ切り替える */
   onSelectFault: (code: string, name: string, src: string) => void;
@@ -101,7 +101,7 @@ const FaultDetailPanel: React.FC<Props> = ({
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             想定地震（震源断層を特定した地震動予測地図）
-            <InfoTip>その断層でその地震が起きたら、という条件付きの1シナリオです。確率論的地震動予測地図（応答スペクトル・震源別影響度）とは別のデータで、再現期間の概念を持ちません。</InfoTip>
+            <InfoTip>その断層でその地震が起きたら、という条件付きの1シナリオです。確率論的地震動予測地図（応答スペクトル）とは別のデータで、再現期間の概念を持ちません。</InfoTip>
           </p>
         </div>
         <button
@@ -168,8 +168,7 @@ const FaultDetailPanel: React.FC<Props> = ({
               </select>
             </label>
           )}
-          {/* 震源グループ。断層はデータとしてまとめず、同じ震源であることを色で示す。
-              影響度パネルが1行として並べる単位でもある。 */}
+          {/* 震源グループ。断層はデータとしてまとめず、同じ震源であることを色で示す。 */}
           {group && group.faults.length > 1 && (
             <GroupSection
               group={group}

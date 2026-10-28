@@ -2,7 +2,7 @@
 // jiban-api /jshis/scenario を同一オリジン /api/jshis/scenario で叩く(server.js がプロキシ)。
 //
 // データは jiban-api にビルド時同梱された静的バンドル(全国253断層・908ケースで 0.7MB)なので
-// 即時に返る。震源別影響度(contrib)のような取得待ちは無い。
+// 即時に返る。
 //
 // 1ケースは「断層面(planes) × アスペリティ(asp) × 破壊開始点(des)」で、屈曲断層は面が複数になる。
 // 要素断層の座標は持たず、面ごとの nx×ny グリッドとアスペリティ番号列(aspn)だけを持つ
@@ -98,7 +98,7 @@ export function pdfUrl(info: ScenarioInfo): string | null {
 
 /** 震源グループ。断層はまとめず、「どれが同じ震源か」だけを持つ。 */
 export interface ScenarioGroup {
-  /** 震源コード。影響度パネルの行と同じ単位 */
+  /** 震源コード */
   src: string;
   name: string;
   faults: { code: string; name: string; seg: string | null; combo: boolean }[];

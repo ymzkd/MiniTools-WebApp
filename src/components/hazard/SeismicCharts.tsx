@@ -1,20 +1,8 @@
 // J-SHIS 地震動ハザードのグラフ(インライン SVG)。
 //   ResponseSpectrumChart … 加速度応答スペクトル(周期 log軸 × Sa、50年超過確率4本の折れ線)
-//   ContributionChart     … 周期ごとの震源別寄与率(100%積み上げ棒)
-// 色は index.css の CSS 変数(--viz-*)で、ライト/ダークを切替える。系列色は jshisApi.ts の
-// スロット割当(順位順固定)に従い、地図のハイライトと一致させる。
+// 色は index.css の CSS 変数(--viz-*)で、ライト/ダークを切替える。
 import React, { useMemo, useRef, useState } from 'react';
-import {
-  JSHIS_PERIODS,
-  JSHIS_PERIOD_KEYS,
-  JSHIS_PROB_KEYS,
-  PROB_LABEL,
-  PROB_COLOR_VAR,
-  SERIES_VARS,
-  OTHER_VAR,
-  contribAt,
-} from './jshisApi';
-import type { ContribResult, PeriodKey, ProbKey, SourceSlot } from './jshisApi';
+import { JSHIS_PERIODS, JSHIS_PROB_KEYS, PROB_LABEL, PROB_COLOR_VAR } from './jshisApi';
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
@@ -42,12 +30,10 @@ function fmtNum(v: number): string {
 // ---------------------------------------------------------------- 応答スペクトル
 interface SpectrumChartProps {
   sa: Record<string, (number | null)[]>;
-  selectedPeriod: PeriodKey;
-  onSelectPeriod?: (p: PeriodKey) => void;
 }
 
 // 縦軸は対数固定。Sa は周期と超過確率で1桁以上開くため、線形だと短周期側に潰れて読めない。
-export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, selectedPeriod, onSelectPeriod }) => {
+export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa }) => {
   const W = 340;
   const H = 210;
   const ML = 44;
@@ -135,7 +121,6 @@ export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, select
     return best;
   };
 
-  const selIdx = JSHIS_PERIOD_KEYS.indexOf(selectedPeriod);
   const hi = hoverIdx;
 
   return (
@@ -148,8 +133,7 @@ export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, select
         aria-label="加速度応答スペクトル（周期と50年超過確率ごとの応答加速度）"
         onMouseMove={(e) => setHoverIdx(idxFromClientX(e.clientX))}
         onMouseLeave={() => setHoverIdx(null)}
-        onClick={(e) => onSelectPeriod?.(JSHIS_PERIOD_KEYS[idxFromClientX(e.clientX)])}
-        style={{ cursor: onSelectPeriod ? 'pointer' : 'default', fontFamily: FONT }}
+        style={{ fontFamily: FONT }}
       >
         {/* 目盛線 */}
         {yTicks.map((t) => (
@@ -168,8 +152,7 @@ export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, select
               y={MT + PH + 12}
               fontSize={8.5}
               textAnchor="middle"
-              fill={i === selIdx ? 'var(--viz-ink)' : 'var(--viz-muted)'}
-              fontWeight={i === selIdx ? 700 : 400}
+              fill="var(--viz-muted)"
             >
               {JSHIS_PERIODS[i]}
             </text>
@@ -191,19 +174,6 @@ export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, select
         >
           Sa (cm/s²)
         </text>
-        {/* 選択中の周期(影響度グラフと連動) */}
-        {selIdx >= 0 && (
-          <line
-            x1={xs[selIdx]}
-            x2={xs[selIdx]}
-            y1={MT}
-            y2={MT + PH}
-            stroke="var(--viz-ink2)"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-            opacity={0.7}
-          />
-        )}
         {/* 系列 */}
         {series.map((s) => (
           <path key={s.pk} d={s.d} fill="none" stroke={PROB_COLOR_VAR[s.pk]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
@@ -252,144 +222,6 @@ export const ResponseSpectrumChart: React.FC<SpectrumChartProps> = ({ sa, select
       <span className="sr-only">
         縦軸範囲 {fmtNum(yMin)}〜{fmtNum(yMax)} cm/s²
       </span>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------- 震源別寄与率
-interface ContributionChartProps {
-  contrib: ContribResult;
-  slots: SourceSlot[];
-  prob: ProbKey;
-  selectedPeriod: PeriodKey;
-  onSelectPeriod: (p: PeriodKey) => void;
-}
-
-export const ContributionChart: React.FC<ContributionChartProps> = ({ contrib, slots, prob, selectedPeriod, onSelectPeriod }) => {
-  const W = 340;
-  const H = 168;
-  const ML = 34;
-  const MR = 6;
-  const MT = 8;
-  const MB = 24;
-  const PW = W - ML - MR;
-  const PH = H - MT - MB;
-  const colW = PW / JSHIS_PERIODS.length;
-  const barW = colW * 0.62;
-  const GAP = 2; // 積み上げ区間の隙間(表面色)
-  const [hover, setHover] = useState<{ pi: number; code: string; share: number; x: number; y: number } | null>(null);
-
-  const columns = JSHIS_PERIOD_KEYS.map((pk, pi) => {
-    const row = contribAt(contrib, prob, pk);
-    const assigned = new Set(slots.map((s) => s.code));
-    let other = 0;
-    for (const [code, share] of Object.entries(row)) if (!assigned.has(code)) other += share;
-    const segs: { code: string; share: number; color: string; name: string }[] = slots.map((s) => ({
-      code: s.code,
-      share: row[s.code] ?? 0,
-      color: SERIES_VARS[s.slot],
-      name: s.source.name,
-    }));
-    if (other > 0.0005) segs.push({ code: '__other', share: other, color: OTHER_VAR, name: 'その他' });
-    // 下から積む(スロット順)。合計 1 に正規化(丸め誤差対策)
-    const total = segs.reduce((a, b) => a + b.share, 0) || 1;
-    let acc = 0;
-    const rects = segs
-      .filter((s) => s.share > 0)
-      .map((s) => {
-        const h = (s.share / total) * PH;
-        const y1 = MT + PH - acc - h;
-        acc += h;
-        return { ...s, y: y1, h };
-      });
-    return { pk, pi, x: ML + colW * pi + (colW - barW) / 2, rects };
-  });
-
-  const selIdx = JSHIS_PERIOD_KEYS.indexOf(selectedPeriod);
-
-  return (
-    <div className="relative select-none">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto block"
-        role="img"
-        aria-label="周期ごとの震源別寄与率（100%積み上げ棒）"
-        style={{ fontFamily: FONT }}
-        onMouseLeave={() => setHover(null)}
-      >
-        {/* 選択列の帯 */}
-        {selIdx >= 0 && <rect x={ML + colW * selIdx} y={MT - 4} width={colW} height={PH + 4} fill="var(--viz-grid)" opacity={0.55} rx={3} />}
-        {/* 目盛 */}
-        {[0, 0.25, 0.5, 0.75, 1].map((t) => (
-          <g key={t}>
-            <line x1={ML} x2={ML + PW} y1={MT + PH - t * PH} y2={MT + PH - t * PH} stroke="var(--viz-grid)" strokeWidth={1} />
-            <text x={ML - 5} y={MT + PH - t * PH + 3} fontSize={8.5} textAnchor="end" fill="var(--viz-muted)">
-              {Math.round(t * 100)}%
-            </text>
-          </g>
-        ))}
-        <line x1={ML} x2={ML + PW} y1={MT + PH} y2={MT + PH} stroke="var(--viz-axis)" strokeWidth={1} />
-        {/* 棒 */}
-        {columns.map((c) => (
-          <g key={c.pk} style={{ cursor: 'pointer' }} onClick={() => onSelectPeriod(c.pk)}>
-            {/* 列全体のヒット領域 */}
-            <rect x={ML + colW * c.pi} y={MT} width={colW} height={PH + MB} fill="transparent" />
-            {c.rects.map((r, k) => {
-              const isTop = k === c.rects.length - 1;
-              const y = r.y + (isTop ? 0 : GAP / 2);
-              const h = Math.max(0, r.h - (isTop ? GAP / 2 : GAP));
-              const rad = Math.min(3, h / 2, barW / 2);
-              const d = isTop
-                ? `M${c.x},${y + h} V${y + rad} Q${c.x},${y} ${c.x + rad},${y} H${c.x + barW - rad} Q${c.x + barW},${y} ${c.x + barW},${y + rad} V${y + h} Z`
-                : `M${c.x},${y} H${c.x + barW} V${y + h} H${c.x} Z`;
-              return (
-                <path
-                  key={r.code}
-                  d={d}
-                  fill={r.color}
-                  opacity={hover && (hover.code !== r.code) ? 0.45 : 1}
-                  onMouseEnter={() => setHover({ pi: c.pi, code: r.code, share: r.share, x: c.x + barW / 2, y })}
-                  onMouseMove={() => setHover({ pi: c.pi, code: r.code, share: r.share, x: c.x + barW / 2, y })}
-                >
-                  <title>
-                    {r.name}: {(r.share * 100).toFixed(1)}%
-                  </title>
-                </path>
-              );
-            })}
-            <text
-              x={ML + colW * c.pi + colW / 2}
-              y={MT + PH + 12}
-              fontSize={8.5}
-              textAnchor="middle"
-              fill={c.pi === selIdx ? 'var(--viz-ink)' : 'var(--viz-muted)'}
-              fontWeight={c.pi === selIdx ? 700 : 400}
-            >
-              {JSHIS_PERIODS[c.pi]}
-            </text>
-          </g>
-        ))}
-        <text x={ML + PW / 2} y={H - 2} fontSize={8.5} textAnchor="middle" fill="var(--viz-ink2)">
-          周期 T (s) ・ クリックで周期を選択
-        </text>
-      </svg>
-      {hover && (
-        <div
-          className="absolute pointer-events-none rounded-md shadow px-2 py-1 text-[11px] leading-snug bg-white/95 dark:bg-gray-900/95 border border-gray-200 dark:border-gray-700 max-w-[70%]"
-          style={{
-            top: `${(hover.y / H) * 100}%`,
-            left: (hover.x / W) * 100 < 55 ? `${(hover.x / W) * 100 + 4}%` : undefined,
-            right: (hover.x / W) * 100 >= 55 ? `${100 - (hover.x / W) * 100 + 4}%` : undefined,
-            transform: 'translateY(-100%)',
-          }}
-        >
-          <div className="text-gray-500 dark:text-gray-400">T = {JSHIS_PERIODS[hover.pi]} s</div>
-          <div className="text-gray-900 dark:text-gray-100">
-            {columns[hover.pi].rects.find((r) => r.code === hover.code)?.name}
-            <span className="ml-1 font-semibold tabular-nums">{(hover.share * 100).toFixed(1)}%</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

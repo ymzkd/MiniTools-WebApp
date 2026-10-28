@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Zap, Database } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Database } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
@@ -9,7 +9,6 @@ import InfoTip from './InfoTip';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
 import SeismicHazardPanel from './SeismicHazardPanel';
-import type { ContribStatus } from './SeismicHazardPanel';
 // ボーリング調査データ(柱状図ビューア・パーサ等は components/boring/ 配下)。
 // マーカークリック時に左パネルへ柱状図を出す。
 import BoringLogViewer from '../boring/BoringLogViewer';
@@ -21,8 +20,8 @@ import { fetchScenarioAt, fetchScenarioByCode, groupColor } from './scenarioApi'
 import type { ScenarioFault, ScenarioGroup } from './scenarioApi';
 import type { FaultPick } from './HazardMap';
 import type { MLITSearchResult, BoringData } from '../boring/types';
-import { fetchSpectrum, fetchContrib, assignSourceSlots, highlightsFromSlots } from './jshisApi';
-import type { SpectrumResult, ContribResult, ContribSource, ProbKey, PeriodKey } from './jshisApi';
+import { fetchSpectrum } from './jshisApi';
+import type { SpectrumResult } from './jshisApi';
 
 // 特定行政庁の区分(type)の日本語ラベル。
 const AUTHORITY_TYPE_LABEL: Record<AuthorityType, string> = {
@@ -49,7 +48,7 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     Icon: Activity,
     label: '地震',
     // 押すたびに 地域係数(告示) → 地盤増幅率(J-SHIS) → Vs350層深さ(J-SHIS) → 震源断層(J-SHIS)
-    // をループ切替。いずれも震源断層と影響度上位のハイライトを重ねる。
+    // をループ切替。
     variants: [
       { val: 'seismic', label: '地震地域係数' },
       { val: 'amp', label: '地盤増幅率' },
@@ -87,7 +86,7 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
   },
 ];
 
-// 地点の注記(海率円/海岸線測線/震源ハイライト)の表示トグル。面のオーバーレイと違って
+// 地点の注記(海率円/海岸線測線/ボーリング地点)の表示トグル。面のオーバーレイと違って
 // 排他ではなく個別に ON/OFF する。表示が重なって煩わしいときに個別に消せるようにするため。
 const ANNOT_TOGGLES: {
   key: keyof MapAnnotations;
@@ -97,13 +96,12 @@ const ANNOT_TOGGLES: {
 }[] = [
   { key: 'seaCircle', Icon: CircleDashed, label: '海率円', hint: '海率を算定する半径の円（積雪荷重）' },
   { key: 'shoreLine', Icon: Ruler, label: '海岸線測線', hint: '最寄りの海岸線・湖岸線までの測線（風荷重）' },
-  { key: 'faultHl', Icon: Zap, label: '震源', hint: 'この地点への影響度が大きい震源のハイライト' },
   { key: 'boringPts', Icon: MapPin, label: 'ボーリング地点', hint: 'ボーリング調査地点のマーカー（ズームインで表示。クリックで柱状図）' },
 ];
 
 const ANNOT_STORAGE_KEY = 'hazard.annotations';
 // 既定は海率円だけ。複数を同時に描くと地図が混むので、残りは必要なときに出してもらう。
-const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, faultHl: false, boringPts: false };
+const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, boringPts: false };
 
 // 前回セッションの表示状態を復元。未保存・壊れていれば既定値。
 function loadAnnotations(): MapAnnotations {
@@ -116,7 +114,6 @@ function loadAnnotations(): MapAnnotations {
     return {
       seaCircle: pick(j.seaCircle, 'seaCircle'),
       shoreLine: pick(j.shoreLine, 'shoreLine'),
-      faultHl: pick(j.faultHl, 'faultHl'),
       boringPts: pick(j.boringPts, 'boringPts'),
     };
   } catch {
@@ -352,15 +349,9 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     };
   }, [point.lat, point.lng]);
 
-  // ---- J-SHIS 地震動ハザード(応答スペクトル・震源別影響度) ----
+  // ---- J-SHIS 地震動ハザード(応答スペクトル) ----
   const [spectrum, setSpectrum] = useState<SpectrumResult | null>(null);
   const [spectrumLoading, setSpectrumLoading] = useState(false);
-  const [contrib, setContrib] = useState<ContribResult | null>(null);
-  const [contribStatus, setContribStatus] = useState<ContribStatus>({ state: 'idle', elapsedS: null });
-  const [contribRetry, setContribRetry] = useState(0);
-  const [jshisProb, setJshisProb] = useState<ProbKey>('0.10');
-  const [jshisPeriod, setJshisPeriod] = useState<PeriodKey>('0.20');
-  const [focusBbox, setFocusBbox] = useState<{ bbox: [number, number, number, number]; v: number } | null>(null);
 
   // 応答スペクトル(ローカルデータ・即時)
   useEffect(() => {
@@ -378,52 +369,6 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       });
     return () => ac.abort();
   }, [point.lat, point.lng]);
-
-  // 震源別影響度(J-SHIS CGI。初回は 1〜2 分)。連打を避けるため少し待ってから開始し、
-  // 202 pending の間はポーリング。地点が変わったら中断(サーバ側の取得は継続しキャッシュされる)。
-  useEffect(() => {
-    const ac = new AbortController();
-    setContrib(null);
-    setContribStatus({ state: 'loading', elapsedS: null });
-    const t = setTimeout(() => {
-      fetchContrib(point.lat, point.lng, {
-        signal: ac.signal,
-        onPending: (p) => {
-          if (!ac.signal.aborted) setContribStatus({ state: 'loading', elapsedS: p.elapsedS });
-        },
-        // 取得待ちの間は近傍メッシュ(10km以内)の暫定値を先に見せる。status は loading のままで、
-        // 本来の値が届いたら差し替わる。
-        onProvisional: (r) => {
-          if (!ac.signal.aborted) setContrib(r);
-        },
-      })
-        .then((r) => {
-          if (ac.signal.aborted) return;
-          setContrib(r);
-          setContribStatus({ state: 'ready', elapsedS: null });
-        })
-        .catch((e: unknown) => {
-          if (ac.signal.aborted) return;
-          const msg = e instanceof Error ? (e.message === 'timeout' ? '時間切れ' : e.message) : '不明なエラー';
-          setContribStatus({ state: 'error', elapsedS: null, message: msg });
-        });
-    }, 700);
-    return () => {
-      clearTimeout(t);
-      ac.abort();
-    };
-  }, [point.lat, point.lng, contribRetry]);
-
-  // 系列色の割当(順位順固定)と地図ハイライト
-  const sourceSlots = useMemo(() => (contrib ? assignSourceSlots(contrib) : []), [contrib]);
-  const faultHighlights = useMemo(() => highlightsFromSlots(sourceSlots), [sourceSlots]);
-  // 凡例の行クリック: その震源が収まるよう地図を寄せる(オーバーレイは変えない)。
-  // 震源ハイライトを消していた場合は「見たい」という意思表示なので自動で戻す。
-  const handleFocusSource = useCallback((s: ContribSource) => {
-    if (!s.bbox) return;
-    setAnnotations((a) => (a.faultHl ? a : { ...a, faultHl: true }));
-    setFocusBbox((prev) => ({ bbox: s.bbox!, v: (prev?.v ?? 0) + 1 }));
-  }, []);
 
   // 地点が変わったら住所を取得（デバウンス。Nominatim への過負荷を避ける）
   useEffect(() => {
@@ -727,7 +672,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               Hazard Map
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルと震源別影響度を表示します。ボーリング調査地点のマーカー（地図左のトグルで表示）をクリックすると柱状図に、震源断層オーバーレイで太く描かれた断層をクリックすると想定地震（アスペリティ配置・破壊開始点）に切り替わります。
+              地図をクリック、または検索ボックスに住所・地名か「緯度,経度」を入力すると、その地点の海率・標高と、建築基準法告示の積雪荷重係数・基準風速・地震地域係数・積雪深、所管する特定行政庁、J-SHISの応答スペクトルを表示します。ボーリング調査地点のマーカー（地図左のトグルで表示）をクリックすると柱状図に、震源断層オーバーレイで太く描かれた断層をクリックすると想定地震（アスペリティ配置・破壊開始点）に切り替わります。
             </p>
           </div>
           <button
@@ -1002,20 +947,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
                 )}
               </div>
 
-              {/* J-SHIS 地震動ハザード: 応答スペクトル + 震源別影響度(地図の断層ハイライトと連動) */}
-              <SeismicHazardPanel
-                spectrum={spectrum}
-                spectrumLoading={spectrumLoading}
-                contrib={contrib}
-                contribStatus={contribStatus}
-                onRetryContrib={() => setContribRetry((v) => v + 1)}
-                slots={sourceSlots}
-                prob={jshisProb}
-                period={jshisPeriod}
-                onProbChange={setJshisProb}
-                onPeriodChange={setJshisPeriod}
-                onFocusSource={handleFocusSource}
-              />
+              {/* J-SHIS 地震動ハザード: 応答スペクトル */}
+              <SeismicHazardPanel spectrum={spectrum} spectrumLoading={spectrumLoading} />
 
               {/* 特定行政庁（建築基準法） */}
               <div>
@@ -1074,8 +1007,6 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               selectedFaultCode={selectedFault?.code ?? null}
               selectedFaultSrc={selectedFault?.src ?? null}
               groupColor={selectedFault ? groupColor(selectedFault.src) : null}
-              faultHighlights={faultHighlights}
-              focusBbox={focusBbox}
             />
             <div className="absolute top-3 left-3 z-[2] flex flex-col gap-1 bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-1 backdrop-blur-sm">
               {/* オフは独立したボタン（カテゴリのループには含めない） */}
