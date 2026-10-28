@@ -20,17 +20,15 @@ const SeismicHazardPanel: React.FC<Props> = ({ spectrum, spectrumLoading }) => {
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2 flex items-center gap-1">
-        地震動ハザード
-        <InfoTip>
-          J-SHIS 確率論的地震動予測地図 2020年版。工学的基盤（Vs=400m/s）上の加速度応答スペクトル（減衰5%）と
-          最大加速度。
-        </InfoTip>
-      </h3>
-
-      {/* ---------------- 応答スペクトル ---------------- */}
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <div className="text-xs font-medium text-gray-700 dark:text-gray-200">加速度応答スペクトル Sa</div>
+      {/* 地震動ハザードの項目は応答スペクトルだけなので、それをセクションの見出しにする */}
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1">
+          加速度応答スペクトル Sa
+          <InfoTip>
+            J-SHIS 確率論的地震動予測地図 2020年版。工学的基盤（Vs=400m/s）上の加速度応答スペクトル（減衰5%）と
+            最大加速度。
+          </InfoTip>
+        </h3>
         <div className="flex items-center gap-1">
           <button
             type="button"
