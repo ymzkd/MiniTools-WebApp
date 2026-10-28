@@ -1,7 +1,7 @@
 // J-SHIS「震源断層を特定した地震動予測地図」(想定地震) の取得と、展開図を描くための整形。
 // jiban-api /jshis/scenario を同一オリジン /api/jshis/scenario で叩く(server.js がプロキシ)。
 //
-// データは jiban-api にビルド時同梱された静的バンドル(全国253断層・908ケースで 0.7MB)なので
+// データは jiban-api にビルド時同梱された静的バンドル(全国235断層・887ケースで 0.8MB)なので
 // 即時に返る。
 //
 // 1ケースは「断層面(planes) × アスペリティ(asp) × 破壊開始点(des)」で、屈曲断層は面が複数になる。
@@ -54,7 +54,7 @@ export interface ScenarioCase {
   fit: number;
 }
 
-/** getLteInfo 由来の断層情報。旧コードの断層では確率などが空になる。 */
+/** getLteInfo 由来の断層情報。 */
 export interface ScenarioInfo {
   /** 30年 / 50年発生確率 (%) */
   t30p: number | null;
@@ -77,11 +77,9 @@ export interface ScenarioFault {
   /** データのバージョン(V1〜V4) */
   ver: string;
   name: string;
-  /** 地図の震源コード。地図に無い断層は "S:<断層コード>" */
+  /** 震源コード(J-SHIS 確率論的地図の震源モデルの単位)。同じ震源の想定地震をまとめる */
   src: string;
-  /** 旧断層コードのデータか(2024年版の震源モデルにこのコードが無い) */
-  legacy: boolean;
-  /** 複数区間が同時に活動するシナリオか。地図には描かず、重なりとして選択肢に出る */
+  /** 複数区間が同時に活動するシナリオか。地図には普段描かず、一覧の選択肢として出る */
   combo: boolean;
   /** 区間キー "断層帯番号-区間コード"。傾斜角モデル違いは同じ区間キーになる */
   seg: string;
@@ -120,24 +118,14 @@ async function getScenario(params: URLSearchParams, signal?: AbortSignal): Promi
 }
 
 /**
- * 断層コードで引く(地図で個別の断層を踏んだとき)。
+ * 断層コードで引く(地図で断層を踏んだとき・一覧で選んだとき)。
  *
- * 先頭が踏んだ断層で、続くのは**同じ場所に重なっている断層**。想定地震は
+ * 先頭が指定した断層で、続くのは**同じ場所に重なっている断層**。想定地震は
  * 「区間 × 傾斜角モデル × 単独/同時活動」の積で、傾斜角モデル違い・ケース違いのコード・
- * 同時活動の組合せは同じ場所に重なるため、地図では選び分けられずパネルの選択肢になる。
+ * 同時活動の組合せは同じ場所に重なるため、地図では選び分けられずパネルの一覧で選ぶ。
  */
 export function fetchScenarioByCode(code: string, signal?: AbortSignal): Promise<ScenarioResult> {
   return getScenario(new URLSearchParams({ code }), signal);
-}
-
-/** 震源＋座標で引く(震源ハイライトなど dissolve 済みの面を踏んだとき)。 */
-export function fetchScenarioAt(
-  src: string,
-  lat: number,
-  lng: number,
-  signal?: AbortSignal
-): Promise<ScenarioResult> {
-  return getScenario(new URLSearchParams({ src, lat: String(lat), lng: String(lng) }), signal);
 }
 
 // 震源グループの色。断層をデータとしてまとめない代わりに、同じ震源であることをこの色で示す。

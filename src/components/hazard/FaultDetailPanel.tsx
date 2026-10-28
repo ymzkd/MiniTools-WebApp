@@ -1,5 +1,6 @@
 // Hazard Map 左パネルの「想定地震(震源断層を特定した地震動予測地図)」。
 // 地図で断層をクリックすると、ボーリング柱状図と同じ要領でこのパネルへ差し替わる。
+//   - 同じ震源の想定地震の一覧(この場所に重なるもの / 同じ震源のほか)。ホバーで地図を強調
 //   - ケース選択(その断層に用意された CASE1〜n)。**この地点での揺れの大きさを並べて選ばせる**
 //   - 断層面の展開図(アスペリティ配置と破壊開始点。FaultPlaneView)
 //   - 断層情報(長期評価の確率・活動間隔、断層モデルの諸元、アスペリティの面積)
@@ -8,7 +9,7 @@
 // ケースは「よく分かっていないアスペリティ位置と破壊開始点を両極端に振った直交表」で、
 // 平均ではなくばらつきの幅を見るための設定(レシピ2020)。その旨を注記に出す。
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Download, ExternalLink, FileText, Layers, Loader2, Star } from 'lucide-react';
 import InfoTip from './InfoTip';
 import FaultPlaneView from './FaultPlaneView';
 import WaveformView from './WaveformView';
@@ -40,14 +41,16 @@ import type {
 } from './scenarioApi';
 
 interface Props {
-  /** 踏んだ場所に重なる想定地震。同じ場所に複数重なることがある */
+  /** クリックした断層と、その場所に重なる想定地震(先頭がクリックした断層) */
   faults: ScenarioFault[];
-  /** 地図のホバー等で表示した震源名(想定地震が無いときの見出しに使う) */
-  srcName: string;
-  /** 震源グループ(J-SHIS の震源コードの単位)と、そこに属する断層 */
+  /** 震源グループ(J-SHIS の震源コードの単位)と、そこに属する想定地震 */
   group: ScenarioGroup | null;
-  /** グループ内の別の断層へ切り替える */
-  onSelectFault: (code: string, name: string, src: string) => void;
+  /** いま開いている想定地震(一覧で選んだもの)。取得中は null */
+  fault: ScenarioFault | null;
+  /** 一覧で想定地震を選ぶ */
+  onSelectFault: (code: string) => void;
+  /** 一覧でカーソルを合わせた想定地震(地図で強調する)。外れたら null */
+  onHoverFault: (code: string | null) => void;
   /** ハザード情報の選択地点。この地点で揺れがどうなるかを波形で見る */
   point: { lat: number; lng: number };
   loading: boolean;
@@ -57,15 +60,15 @@ interface Props {
 
 const FaultDetailPanel: React.FC<Props> = ({
   faults,
-  srcName,
   group,
+  fault,
   onSelectFault,
+  onHoverFault,
   point,
   loading,
   error,
   onClose,
 }) => {
-  const [faultIdx, setFaultIdx] = useState(0);
   const [caseNo, setCaseNo] = useState<string | null>(null);
   // 展開図の幅はパネル幅に追従させる(左パネルは画面幅で伸縮するため)
   const boxRef = useRef<HTMLDivElement | null>(null);
@@ -79,16 +82,12 @@ const FaultDetailPanel: React.FC<Props> = ({
     return () => ro.disconnect();
   }, [faults.length]);
 
-  // 断層が変わったらケース選択を先頭へ戻す
-  const fault = faults[Math.min(faultIdx, faults.length - 1)];
-  useEffect(() => {
-    setFaultIdx(0);
-  }, [faults]);
+  // 想定地震が変わったらケース選択を先頭へ戻す
   const cases = fault ? caseNumbers(fault) : [];
   const current = fault && caseNo && fault.cases[caseNo] ? caseNo : cases[0];
   useEffect(() => {
     setCaseNo(null);
-  }, [faultIdx, faults]);
+  }, [fault?.code]);
 
   const kase = fault && current ? fault.cases[current] : null;
 
@@ -97,7 +96,7 @@ const FaultDetailPanel: React.FC<Props> = ({
       <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
-            {fault ? fault.name || fault.code : srcName || '震源断層'}
+            {fault ? fault.name || fault.code : group?.name || '想定地震'}
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             想定地震（震源断層を特定した地震動予測地図）
@@ -124,56 +123,20 @@ const FaultDetailPanel: React.FC<Props> = ({
 
       {!loading && !error && !fault && (
         <div className="p-4 space-y-2">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            この震源には想定地震が公開されていません。
-          </p>
-          <p className="text-xs text-gray-400">
-            想定地震が用意されているのは主要活断層帯を中心とした一部の断層で、海溝型地震や
-            「震源をあらかじめ特定しにくい地震」（領域震源）にはありません。
-          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">この想定地震は見つかりませんでした。</p>
         </div>
       )}
 
       {!loading && fault && (
         <div className="p-4 space-y-4">
-          {/* 同じ場所に重なる想定地震の切替。地図では選び分けられないのでここで選ぶ。
-              単独区間(傾斜角モデル違い・ケース違いのコードを含む)と、複数区間が同時に
-              活動するシナリオは性質が違うので分ける。 */}
-          {faults.length > 1 && (
-            <label className="block">
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                この場所の想定地震（{faults.length}件）
-                <InfoTip>同じ断層でも、傾斜角の違うモデル・別ケースとして登録された断層・複数区間が同時に活動するシナリオが同じ場所に重なります。地図では選び分けられないのでここで切り替えます。</InfoTip>
-              </span>
-              <select
-                value={faultIdx}
-                onChange={(e) => setFaultIdx(Number(e.target.value))}
-                className="mt-1 w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1.5"
-              >
-                {['single', 'combo'].map((g) => {
-                  const items = faults
-                    .map((f, i) => ({ f, i }))
-                    .filter(({ f }) => (g === 'combo' ? f.combo : !f.combo));
-                  if (!items.length) return null;
-                  return (
-                    <optgroup key={g} label={g === 'combo' ? '複数区間が同時に活動' : 'この区間の断層'}>
-                      {items.map(({ f, i }) => (
-                        <option key={f.code} value={i}>
-                          {f.name || f.code}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-              </select>
-            </label>
-          )}
-          {/* 震源グループ。断層はデータとしてまとめず、同じ震源であることを色で示す。 */}
+          {/* 同じ震源の想定地震の一覧。クリックした場所に重なるものを上に分けて出す */}
           {group && group.faults.length > 1 && (
             <GroupSection
               group={group}
+              hereCodes={faults.map((f) => f.code)}
               currentCode={fault.code}
               onSelectFault={onSelectFault}
+              onHoverFault={onHoverFault}
             />
           )}
 
@@ -235,12 +198,6 @@ const FaultDetailPanel: React.FC<Props> = ({
               </a>
             )}
           </div>
-          {fault.legacy && (
-            <p className="text-[11px] text-amber-600 dark:text-amber-500">
-              この断層の想定地震は旧い断層コード（{fault.code}・{fault.ver}）でのみ公開されているデータです。
-              現在の震源モデルの区間区分とは一致しない場合があります。
-            </p>
-          )}
         </div>
       )}
     </div>
@@ -626,57 +583,87 @@ const WaveSection: React.FC<{
   );
 };
 
+// 「同じ震源のほか」をはじめから開いておく上限。中央構造線(39本)のように多い震源では
+// 畳んでおき、クリックした場所に重なるものだけを見せる。
+const OTHERS_OPEN_MAX = 6;
+
 /**
- * 震源グループ。同じ震源に属する断層を、まとめずに一覧で見せる。
- * 見出しとリストの左罫にグループ色を敷いて「同じ震源のもの」であることを示す
- * (地図側でも同じ色でこれらの断層を括っている)。
+ * 同じ震源の想定地震の一覧。クリックした場所に重なるもの(傾斜角モデル違い・同時活動)を
+ * 「この場所に重なる」として上に、残りを「同じ震源のほか」として下に出す。
+ * 行にカーソルを合わせると地図でその断層面を強調し、クリックでその想定地震に切り替える。
+ * 左罫のグループ色は、地図で同じ震源の断層を括る破線と同じ色。
  */
 const GroupSection: React.FC<{
   group: ScenarioGroup;
+  hereCodes: string[];
   currentCode: string;
-  onSelectFault: (code: string, name: string, src: string) => void;
-}> = ({ group, currentCode, onSelectFault }) => {
-  const [open, setOpen] = useState(false);
+  onSelectFault: (code: string) => void;
+  onHoverFault: (code: string | null) => void;
+}> = ({ group, hereCodes, currentCode, onSelectFault, onHoverFault }) => {
   const color = groupColor(group.src);
-  const singles = group.faults.filter((f) => !f.combo);
-  const combos = group.faults.filter((f) => f.combo);
-  return (
-    <div className="rounded-lg border-l-4 pl-2 py-1" style={{ borderColor: color }}>
+  const byCode = new Map(group.faults.map((f) => [f.code, f]));
+  const here = hereCodes.map((c) => byCode.get(c)).filter((f): f is ScenarioGroup['faults'][number] => !!f);
+  const hereSet = new Set(here.map((f) => f.code));
+  const others = group.faults.filter((f) => !hereSet.has(f.code));
+  const [othersOpen, setOthersOpen] = useState(others.length <= OTHERS_OPEN_MAX);
+  // 一覧が消えるとき(断層を閉じた・別の震源へ移った)にホバーの強調を残さない
+  useEffect(() => () => onHoverFault(null), [onHoverFault]);
+
+  const row = (f: ScenarioGroup['faults'][number]) => (
+    <li key={f.code}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full text-left flex items-start gap-1.5"
+        onClick={() => onSelectFault(f.code)}
+        onMouseEnter={() => onHoverFault(f.code)}
+        onMouseLeave={() => onHoverFault(null)}
+        onFocus={() => onHoverFault(f.code)}
+        onBlur={() => onHoverFault(null)}
+        className={
+          'w-full text-left text-xs leading-snug px-1.5 py-1 rounded ' +
+          (f.code === currentCode
+            ? 'bg-blue-50 dark:bg-blue-900/30 text-gray-900 dark:text-gray-100 font-medium'
+            : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60')
+        }
       >
+        {f.combo && <span className="text-gray-400">［同時活動］</span>}
+        {f.name || f.code}
+      </button>
+    </li>
+  );
+
+  return (
+    <div className="rounded-lg border-l-4 pl-2 py-1" style={{ borderColor: color }}>
+      <div className="flex items-start gap-1.5">
         <Layers className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color }} />
         <span className="min-w-0 flex-1">
-          <span className="block text-xs text-gray-700 dark:text-gray-200 truncate">{group.name}</span>
+          <span className="block text-xs text-gray-700 dark:text-gray-200">{group.name}</span>
           <span className="block text-[11px] text-gray-400">
-            同じ震源の断層 {group.faults.length} 本
-            {combos.length > 0 && `（うち同時活動 ${combos.length}）`}
-            ・{open ? '閉じる' : '一覧'}
+            同じ震源の想定地震 {group.faults.length} 件
+            <InfoTip>
+              想定地震は「区間 × 傾斜角のモデル × 単独か複数区間の同時活動か」ごとに定義されていて、同じ場所に何件も重なることがあります。
+              カーソルを合わせると地図でその断層面を強調します。
+            </InfoTip>
           </span>
         </span>
-      </button>
-      {open && (
-        <ul className="mt-1 space-y-0.5">
-          {[...singles, ...combos].map((f) => (
-            <li key={f.code}>
-              <button
-                type="button"
-                onClick={() => onSelectFault(f.code, f.name, group.src)}
-                className={
-                  'w-full text-left text-[11px] leading-snug px-1 py-0.5 rounded ' +
-                  (f.code === currentCode
-                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50')
-                }
-              >
-                {f.combo && <span className="text-gray-400">［同時活動］</span>}
-                {f.name || f.code}
-              </button>
-            </li>
-          ))}
-        </ul>
+      </div>
+      {here.length > 0 && (
+        <>
+          <div className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">この場所に重なる</div>
+          <ul className="mt-0.5 space-y-0.5">{here.map(row)}</ul>
+        </>
+      )}
+      {others.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOthersOpen((v) => !v)}
+            className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            {othersOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            同じ震源のほか（{others.length}件）
+          </button>
+          {othersOpen && <ul className="mt-0.5 space-y-0.5">{others.map(row)}</ul>}
+        </>
       )}
     </div>
   );
