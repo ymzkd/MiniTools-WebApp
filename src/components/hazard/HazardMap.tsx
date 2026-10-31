@@ -1196,8 +1196,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         map.getCanvas().style.cursor = onSourcePickRef.current ? 'pointer' : 'crosshair';
       }
       if (ov === 'none') {
-        // オーバーレイ無しでも、近隣の震源の断層の上は押せる(pointer は上で設定済み)
-        if (!sfHit) map.getCanvas().style.cursor = 'crosshair';
+        // オーバーレイ無しでも、近隣の震源の断層の上は押せる(pointer は上で設定済み)。
+        // ボーリング地点(注記で表示中)の上も、専用ハンドラが付けた pointer を残す
+        if (!sfHit && !boringHoverKeyRef.current) map.getCanvas().style.cursor = 'crosshair';
         return;
       }
       // 断層は押せるので pointer(上で設定済み)。ボーリング側の mousemove は専用ハンドラで
