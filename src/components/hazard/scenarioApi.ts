@@ -128,6 +128,82 @@ export function fetchScenarioByCode(code: string, signal?: AbortSignal): Promise
   return getScenario(new URLSearchParams({ code }), signal);
 }
 
+/** 地点に波形がある想定地震の断層(近隣の震源)1件。 */
+export interface NearbyFault {
+  code: string;
+  name: string;
+  src: string;
+  seg: string | null;
+  /** 震源グループ名 */
+  group: string;
+  /** 同時活動(複数区間が一緒に動く)シナリオか */
+  combo: boolean;
+  ncase: number;
+  mag: string | null;
+  /** 30年発生確率 (%) */
+  t30p: number | null;
+  /** 断層面の地表投影までの最短距離(km)。内側なら 0 */
+  dist_km: number;
+  /** 計算対象範囲 [西経度, 南緯度, 東経度, 北緯度] */
+  area: [number, number, number, number];
+}
+
+/**
+ * 地点に**波形がある**想定地震の断層。断層ごとの計算対象範囲(J-SHIS が断層ごとに決めている
+ * 経緯度矩形)に地点を含むものを、単独区間・同時活動の順、それぞれ距離の近い順で返す。
+ * jiban-api の同梱データを引くだけなので即時。
+ */
+export async function fetchNearbyFaults(lat: number, lng: number, signal?: AbortSignal): Promise<NearbyFault[]> {
+  const q = new URLSearchParams({ lat: lat.toFixed(5), lng: lng.toFixed(5) });
+  const res = await fetch(`/api/jshis/scenario/nearby?${q}`, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`jshis nearby error: ${res.status}`);
+  const j = (await res.json()) as { faults?: NearbyFault[] };
+  return j.faults ?? [];
+}
+
+/** 確率論的地図の震源モデルの1断層(海溝型は1モデル)。 */
+export interface SourceMember {
+  code: string;
+  name: string;
+  mag: number | null;
+  mag_kind: string | null;
+  /** 30年・50年発生確率(0〜1)。海溝型は元データに無く null */
+  t30: number | null;
+  t50: number | null;
+  /** 確率の計算方法(POI=ポアソン過程、BPT など) */
+  proc: string | null;
+  len: number | null;
+  wid: number | null;
+  str: number | null;
+  dip: number | null;
+  dep: number | null;
+  z_min: number | null;
+  z_max: number | null;
+}
+
+/** 確率論的地図の震源1つ(想定地震の無い震源を地図で踏んだときの左パネル用)。 */
+export interface SourceInfo {
+  src: string;
+  name: string;
+  layer: string;
+  /** 地震の種類(主要活断層帯以外の活断層に発生する地震、など) */
+  layer_name: string | null;
+  /** land=陸域・浅い地震 / inter=プレート間 / sub=その他 */
+  cat: string;
+  /** rect=矩形断層 / points=震源域の点群 */
+  kind: string;
+  members: SourceMember[];
+}
+
+export async function fetchSourceInfo(src: string, signal?: AbortSignal): Promise<SourceInfo> {
+  const res = await fetch(`/api/jshis/source?${new URLSearchParams({ src })}`, {
+    signal,
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`jshis source error: ${res.status}`);
+  return (await res.json()) as SourceInfo;
+}
+
 // 震源グループの色。断層をデータとしてまとめない代わりに、同じ震源であることをこの色で示す。
 // アスペリティの色(ASP_VARS)とは別系統にする(同じパネルに並ぶので、混ざると別の意味に読める)。
 const GROUP_COLORS = ['#0f766e', '#9333ea', '#b45309', '#0369a1', '#a21caf', '#4d7c0f'] as const;

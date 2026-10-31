@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Database } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Database, Radar } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
@@ -16,8 +16,11 @@ import ResultsList from '../boring/ResultsList';
 import { fetchAndParseBoringData } from '../boring/api';
 // 想定地震(震源断層を特定した地震動予測地図)。地図で断層をクリックすると左パネルへ出す。
 import FaultDetailPanel from './FaultDetailPanel';
-import { fetchScenarioByCode, groupColor } from './scenarioApi';
-import type { ScenarioFault, ScenarioGroup } from './scenarioApi';
+import { fetchNearbyFaults, fetchScenarioByCode, groupColor } from './scenarioApi';
+import type { NearbyFault, ScenarioFault, ScenarioGroup } from './scenarioApi';
+import NearbyFaultsPanel from './NearbyFaultsPanel';
+import SourceDetailPanel from './SourceDetailPanel';
+import type { SourcePick } from './SourceDetailPanel';
 import type { FaultPick } from './HazardMap';
 import type { MLITSearchResult, BoringData } from '../boring/types';
 import { fetchSpectrum } from './jshisApi';
@@ -97,11 +100,13 @@ const ANNOT_TOGGLES: {
   { key: 'seaCircle', Icon: CircleDashed, label: '海率円', hint: '海率を算定する半径の円（積雪荷重）' },
   { key: 'shoreLine', Icon: Ruler, label: '海岸線測線', hint: '最寄りの海岸線・湖岸線までの測線（風荷重）' },
   { key: 'boringPts', Icon: MapPin, label: 'ボーリング地点', hint: 'ボーリング調査地点のマーカー（ズームインで表示。クリックで柱状図）' },
+  { key: 'nearbyFaults', Icon: Radar, label: '近隣の震源', hint: 'この地点に想定地震の波形がある断層を強調' },
 ];
 
 const ANNOT_STORAGE_KEY = 'hazard.annotations';
 // 既定は海率円だけ。複数を同時に描くと地図が混むので、残りは必要なときに出してもらう。
-const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, boringPts: false };
+// 近隣の震源は地点の地震情報の主役なので、これも既定で出す。
+const ANNOT_DEFAULT: MapAnnotations = { seaCircle: true, shoreLine: false, boringPts: false, nearbyFaults: true };
 
 // 前回セッションの表示状態を復元。未保存・壊れていれば既定値。
 function loadAnnotations(): MapAnnotations {
@@ -115,6 +120,7 @@ function loadAnnotations(): MapAnnotations {
       seaCircle: pick(j.seaCircle, 'seaCircle'),
       shoreLine: pick(j.shoreLine, 'shoreLine'),
       boringPts: pick(j.boringPts, 'boringPts'),
+      nearbyFaults: pick(j.nearbyFaults, 'nearbyFaults'),
     };
   } catch {
     return ANNOT_DEFAULT;
@@ -194,9 +200,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   const [faultExtra, setFaultExtra] = useState<Record<string, ScenarioFault>>({});
   // 一覧でカーソルを合わせている想定地震(地図で強調する)
   const [hoverFaultCode, setHoverFaultCode] = useState<string | null>(null);
+  // 近隣の震源の一覧でカーソル中の断層の計算対象範囲(地図に破線で出す)
+  const [hoverArea, setHoverArea] = useState<NearbyFault['area'] | null>(null);
+  // 地図で踏んだ震源モデル(想定地震の無い震源)。左パネルは1枚なので想定地震・柱状図とは排他
+  const [selectedSource, setSelectedSource] = useState<SourcePick | null>(null);
   const faultReq = useRef(0);
 
   const clearFault = useCallback(() => {
+    setSelectedSource(null);
+    setHoverArea(null);
     faultReq.current++;
     setSelectedFault(null);
     setFaultData([]);
@@ -212,6 +224,9 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
   // 同時活動)は一覧の「この場所に重なる」になる。
   const openFault = useCallback((pick: FaultPick) => {
     const id = ++faultReq.current;
+    setSelectedSource(null);
+    setHoverFaultCode(null);
+    setHoverArea(null);
     setSelectedFault(pick);
     setFaultData([]);
     setFaultGroup(null);
@@ -303,6 +318,16 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     [onError]
   );
 
+  // 震源モデル(想定地震の無い震源)を踏んだ。想定地震・柱状図のパネルは閉じる
+  const openSource = useCallback(
+    (pick: SourcePick) => {
+      clearBoring();
+      clearFault();
+      setSelectedSource(pick);
+    },
+    [clearBoring, clearFault]
+  );
+
   // 地図のマーカークリック(HazardMap から primary + 周辺の地点群が渡ってくる)
   const handleBoringPick = useCallback(
     (primary: MLITSearchResult, nearby: MLITSearchResult[]) => {
@@ -371,6 +396,35 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       cancelled = true;
     };
   }, [point.lat, point.lng]);
+
+  // ---- 近隣の震源(地点に想定地震の波形がある断層) ----
+  // 同梱データを引くだけで即時。地点が変わるたびに引き直す
+  const [nearby, setNearby] = useState<NearbyFault[] | null>(null);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    setNearbyLoading(true);
+    setNearbyError(null);
+    fetchNearbyFaults(point.lat, point.lng, ac.signal)
+      .then((r) => {
+        if (!ac.signal.aborted) setNearby(r);
+      })
+      .catch(() => {
+        if (ac.signal.aborted) return;
+        setNearby(null);
+        setNearbyError('近隣の震源を取得できませんでした');
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setNearbyLoading(false);
+      });
+    return () => ac.abort();
+  }, [point.lat, point.lng]);
+  const nearbyCodes = useMemo(() => (nearby ?? []).map((f) => f.code), [nearby]);
+  const hoverNearby = useCallback((f: NearbyFault | null) => {
+    setHoverFaultCode(f?.code ?? null);
+    setHoverArea(f?.area ?? null);
+  }, []);
 
   // ---- J-SHIS 地震動ハザード(応答スペクトル) ----
   const [spectrum, setSpectrum] = useState<SpectrumResult | null>(null);
@@ -740,7 +794,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               </button>
             </form>
 
-            {selectedFault ? (
+            {selectedSource ? (
+              /* 想定地震の無い震源(震源モデル)を選択中 */
+              <SourceDetailPanel pick={selectedSource} onClose={clearFault} />
+            ) : selectedFault ? (
               /* 震源断層を選択中: 想定地震(アスペリティ配置・破壊開始点・断層情報)。
                  ×・任意地点のクリック・検索での移動でハザード情報へ戻る。 */
               <FaultDetailPanel
@@ -974,6 +1031,15 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               {/* J-SHIS 地震動ハザード: 応答スペクトル */}
               <SeismicHazardPanel spectrum={spectrum} spectrumLoading={spectrumLoading} />
 
+              {/* 近隣の震源(この地点に想定地震の波形がある断層) */}
+              <NearbyFaultsPanel
+                faults={nearby}
+                loading={nearbyLoading}
+                error={nearbyError}
+                onOpen={(f) => openFault({ src: f.src, name: f.name, code: f.code })}
+                onHover={hoverNearby}
+              />
+
               {/* 特定行政庁（建築基準法） */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">
@@ -1032,6 +1098,10 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               selectedFaultSrc={selectedFault?.src ?? null}
               groupColor={selectedFault ? groupColor(selectedFault.src) : null}
               hoverFaultCode={hoverFaultCode}
+              onSourcePick={openSource}
+              selectedSourceSrc={selectedSource?.src ?? null}
+              nearbyCodes={nearbyCodes}
+              hoverArea={hoverArea}
             />
             <div className="absolute top-3 left-3 z-[2] flex flex-col gap-1 bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-1 backdrop-blur-sm">
               {/* オフは独立したボタン（カテゴリのループには含めない） */}
