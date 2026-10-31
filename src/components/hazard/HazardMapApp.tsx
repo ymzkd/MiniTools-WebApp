@@ -318,6 +318,16 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     [onError]
   );
 
+  // 地図で想定地震の断層を踏んだ。柱状図を開いていたら閉じる(残すと選択リングが地図に残り、
+  // 断層のパネルを閉じたときに地点の情報ではなく前の柱状図に戻ってしまう)
+  const pickFaultOnMap = useCallback(
+    (pick: FaultPick) => {
+      clearBoring();
+      openFault(pick);
+    },
+    [clearBoring, openFault]
+  );
+
   // 震源モデル(想定地震の無い震源)を踏んだ。想定地震・柱状図のパネルは閉じる
   const openSource = useCallback(
     (pick: SourcePick) => {
@@ -1033,6 +1043,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
 
               {/* 近隣の震源(この地点に想定地震の波形がある断層) */}
               <NearbyFaultsPanel
+                // 地点が変わったら「ほか n 件」「同時活動」の開閉を初期状態に戻す
+                key={`${point.lat},${point.lng}`}
                 faults={nearby}
                 loading={nearbyLoading}
                 error={nearbyError}
@@ -1093,7 +1105,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
               onPick={handleMapPick}
               onBoringPick={handleBoringPick}
               selectedBoringPoint={selectedBoring?.location ?? null}
-              onFaultPick={openFault}
+              onFaultPick={pickFaultOnMap}
               selectedFaultCode={selectedFault ? activeCode : null}
               selectedFaultSrc={selectedFault?.src ?? null}
               groupColor={selectedFault ? groupColor(selectedFault.src) : null}

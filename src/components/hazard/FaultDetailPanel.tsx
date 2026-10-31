@@ -614,7 +614,7 @@ const WaveSection: React.FC<{
           </div>
 
           {/* 基準面は断層で変わる。ARV(Vs=400基準)との関係も基準面で向きが変わるので、
-              600 のときだけ従来の 1.41 倍の話をし、350 のときは係数を書かずに注意だけ出す。 */}
+              どちらも J-SHIS が 600→400 の換算に使う (Vs比)^0.852 で係数を示す。 */}
           <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1.5">
             詳細法工学的基盤{data.vs != null && `（Vs = ${data.vs.toFixed(0)} m/s）`}
             上の値で、地表の揺れではありません。
@@ -632,7 +632,9 @@ const WaveSection: React.FC<{
                 <>
                   {' '}この波形は Vs = {data.vs.toFixed(0)} m/s
                   上の値で、ARV の基準面（400 m/s）より浅い側にあります。ARV
-                  をそのまま掛けると 400 m/s から上の増幅を二重に数えることになります。
+                  をそのまま掛けると、400 m/s の層から {data.vs.toFixed(0)} m/s
+                  の層までの増幅を二重に数えることになります（同じ換算式なら ARV を約{' '}
+                  {Math.pow(400 / data.vs, 0.852).toFixed(2)} で割る）。
                 </>
               )}
             </InfoTip>
