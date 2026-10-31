@@ -12,7 +12,7 @@ export const NGI_ONLY_COLOR = '#a78bfa';   // NGIC(publicweb)にしか無い分 
 export const SELECTED_COLOR = '#2563eb';
 
 // 全地点を単一PMTilesから描画する。?v= はタイル再生成時のキャッシュバスト用。
-export const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=5';
+export const PMTILES_URL = '/api/ngi/tiles/points.pmtiles?v=6';
 export const POINTS_LAYER = 'points'; // tippecanoe -l points
 
 export interface TileProps {
