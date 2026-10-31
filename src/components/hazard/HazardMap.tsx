@@ -11,7 +11,6 @@ import {
   ampHeightAt,
   vs350HeightAt,
 } from './valueRaster';
-import type { MapHighlight } from './jshisApi';
 // ボーリング調査地点タイル(共有定義は boring/pointsTiles.ts)。ヒートマップはオーバーレイの1つ、
 // 個別マーカーは注記トグル(annotations.boringPts)として描く。
 import {
@@ -27,6 +26,7 @@ import {
 } from '../boring/pointsTiles';
 import type { TileProps } from '../boring/pointsTiles';
 import type { MLITSearchResult } from '../boring/types';
+import type { SourcePick } from './SourceDetailPanel';
 
 interface LatLng {
   lat: number;
@@ -48,13 +48,13 @@ export type ZoneOverlay =
 
 // 全断層(下塗り・面・断層線)を描くのは 'faults'(震源断層)オーバーレイのときだけ —
 // 常時だと全国の断層が重なって読みづらいため。
-// 一方、海率円・海岸線への測線・影響度上位の震源ハイライトは「その地点の情報」であり、
+// 一方、海率円・海岸線への測線・ボーリング地点は「その地点の情報」であり、
 // 面のオーバーレイ(overlay)とは独立に、下の annotations で個別に表示切替する。
 export interface MapAnnotations {
   seaCircle: boolean; // 海率算定の円(半径 R)
   shoreLine: boolean; // 最寄りの海岸線/湖岸線への測線＋最寄り点
-  faultHl: boolean; // 選択地点への影響度上位の震源ハイライト
   boringPts: boolean; // ボーリング調査地点のマーカー(z10以上。クリックで柱状図)
+  nearbyFaults: boolean; // 近隣の震源(地点に波形がある想定地震の断層)の強調
 }
 
 interface HazardMapProps {
@@ -65,7 +65,7 @@ interface HazardMapProps {
   viewVersion: number;
   overlay: ZoneOverlay; // 薄いオーバーレイ（none / 風速区分 / 地震 / 積雪深）
   shorePoint: LatLng | null; // 最寄りの海岸線/湖岸線の点（中心からの測線を表示）
-  annotations: MapAnnotations; // 地点の注記(海率円/測線/震源ハイライト)の表示切替
+  annotations: MapAnnotations; // 地点の注記(海率円/測線/ボーリング地点)の表示切替
   onPick: (lat: number, lng: number) => void;
   // ボーリング地点マーカーのクリック。primary=踏んだ地点、nearby=周辺12px内の地点群(重なりの巡回用)。
   // ハザードの選択地点(onPick)は動かさない — 近隣の調査地点を巡回して見るユースケースのため。
@@ -81,10 +81,16 @@ interface HazardMapProps {
   selectedFaultSrc?: string | null;
   /** 震源グループの色。同じ震源の断層をこの色で括る */
   groupColor?: string | null;
-  // 選択地点への影響度上位の震源(断層要素 fid 群と系列色)。地震系オーバーレイ表示中に強調描画する。
-  faultHighlights?: MapHighlight[];
-  // 凡例行クリック等で「この震源の範囲へ寄せる」要求。v が変わったとき bbox(と地点)に fit する。
-  focusBbox?: { bbox: [number, number, number, number]; v: number } | null;
+  /** 左パネルの一覧でカーソルを合わせている断層。地図でその断層面を強調する */
+  hoverFaultCode?: string | null;
+  /** 震源モデル(想定地震の無い震源)のクリック。想定地震の断層より優先度は低い */
+  onSourcePick?: (pick: SourcePick) => void;
+  /** 左パネルで開いている震源モデルの src(青で強調) */
+  selectedSourceSrc?: string | null;
+  /** 近隣の震源(地点に波形がある想定地震の断層コード)。注記 nearbyFaults で強調する */
+  nearbyCodes?: string[];
+  /** 計算対象範囲 [西経度, 南緯度, 東経度, 北緯度]。近隣の震源の一覧でカーソル中の断層のもの */
+  hoverArea?: [number, number, number, number] | null;
 }
 
 // PDFレポート用に、現在の地図表示をPNG(dataURL)で取り出すためのハンドル。
@@ -203,55 +209,44 @@ const AUTHORITY_TYPE_LABEL: Record<string, string> = {
   special_ward: '特別区',
 };
 
-// J-SHIS 震源断層(2024年版 P-Y2024-PRM-SHAPE)。jiban-api pipelines/jshis/build_fault_tiles.sh の PMTiles。
-//   sources:       震源単位に dissolve した面 / source_traces: 震源単位の断層線(鉛直断層はこれのみ)
-// 「震源」は影響度パネルが1行として並べる単位で、属性 src が影響度コードそのもの。個別の断層面を
-// そのまま描くと、ひとつの震源が「破壊シナリオ × 断層面」に分かれて何十枚も重なり(北海道〜千島では
-// 1点に最大42枚)潰れて読めないため、タイル側でまとめてある。
-// 属性 cat: land(陸域・沿岸の地震=活断層など) / inter(海溝型巨大地震・プレート間) / sub(海溝型その他)。
-// 下地は彩度を落とした3色(ハイライトの系列色を目立たせるため)。
-const FAULT_PMTILES = '/api/design/tiles/jshis_faults.pmtiles';
-const FAULT_CAT_FILL: maplibregl.ExpressionSpecification = [
-  'match', ['get', 'cat'], 'land', '#b08a5a', 'inter', '#6f8fbf', 'sub', '#9a86b8', '#9ca3af',
-];
-const FAULT_CAT_LINE: maplibregl.ExpressionSpecification = [
-  'match', ['get', 'cat'], 'land', '#7a4f26', 'inter', '#3d5f95', 'sub', '#6b568c', '#6b7280',
-];
-const FAULT_CAT_LEGEND = [
-  { color: '#b08a5a', line: '#7a4f26', label: '活断層など（陸域・沿岸）' },
-  { color: '#6f8fbf', line: '#3d5f95', label: '海溝型巨大地震（プレート間）' },
-  { color: '#9a86b8', line: '#6b568c', label: '海溝型その他（プレート内・領域）' },
-];
-const FAULT_BASE_LAYERS = ['sources-fill', 'sources-line', 'sources-traces'] as const;
-// 左パネルで開いている断層の震源グループ。同じ震源の断層は色を揃えて示す
-// (データとしてまとめない代わりに、グループであることを色で表す)。
-const GROUP_INK_DEFAULT = '#0f766e';
-// 左パネルで開いている震源。ホバー強調(墨)とぶつからない青で括る。
-const FAULT_SEL_LAYERS = ['sources-sel-fill', 'sources-sel-line', 'sources-sel-traces'] as const;
-const FAULT_SEL_INK = '#2563eb';
-
-// 想定地震の断層(jiban-api /jshis/scenario/faults.geojson。同時活動を除く192本・64KB)。
-// **断層コードごとに1件**でまとめない。断層タイルの sources は震源単位に dissolve してあり、
-// 中央構造線のように1震源へ39本ぶら下がるものが1つの面になってしまうため、想定地震のある
-// 震源はこちらで置き換える(applySources で dissolve 側を落とす)。
-// タイルにするには小さすぎるので GeoJSON のまま読む(全ズームでそのまま出せる利点もある)。
+// 想定地震の断層(jiban-api /jshis/scenario/faults.geojson)。J-SHIS「震源断層を特定した
+// 地震動予測地図」の断層面で、**断層コードごとに1件**でまとめない。震源断層オーバーレイは
+// これだけを描く(確率論的地図の震源モデル=海溝型などは描かない。地点への影響を個別に見られる
+// のは想定地震だけなので)。タイルにするには小さいので GeoJSON のまま読む。
+// 鉛直断層の面は地表投影が線に潰れるので、データ側で上端の LineString になっている
+// (線レイヤだけが描き、塗りレイヤは素通りする)。
+// 同時活動(combo=1)は構成区間と同じ場所に重なる長い面なので普段は描かず、一覧のホバーと
+// 選択の強調にだけ使う。
 const SFAULT_GEOJSON = '/api/jshis/scenario/faults.geojson';
 const SFAULT_LAYERS = ['sfault-fill', 'sfault-line'] as const;
-const SFAULT_INK = '#7a4f26';   // 活断層(陸域)の区分色に合わせる
-const SFAULT_HL_LAYERS = ['sfault-hl-casing', 'sfault-hl-fill', 'sfault-hl-line'] as const;
-// 想定地震のある震源は dissolve 済みの面を描かない(個別の断層で置き換えるため)。
-const NO_SCENARIO: maplibregl.ExpressionSpecification = ['!=', ['get', 'has_scenario'], 1];
-const FAULT_HL_LAYERS = [
-  'sources-hl-fill', 'sources-hl-line-casing', 'sources-hl-line',
-  'sources-hl-traces-casing', 'sources-hl-traces',
-] as const;
-// カーソル下の震源を強調する層。薄い墨の塗り＋太めの墨の輪郭で括る。系列色(SERIES_LIGHT)や
-// 区分色と衝突しない中立色にする。白フチは付けない: ハイライト中の震源に重ねると系列色の輪郭を
-// 塗り潰してしまうため、色線の上に細めの墨線を載せて色を縁に残す。
-const FAULT_HOVER_LAYERS = ['sources-hover-fill', 'sources-hover-line', 'sources-hover-traces'] as const;
+const SFAULT_INK = '#7a4f26';
+const SFAULT_FILL = '#b08a5a';
+const NOT_COMBO: maplibregl.ExpressionSpecification = ['!=', ['get', 'combo'], 1];
+// 左パネルで開いている震源の断層は、断層をまとめず同じ色の破線で括る(グループ色)。
+const GROUP_INK_DEFAULT = '#0f766e';
+// 選択中の断層は青、カーソル下(地図・一覧のどちらでも)は墨で強調する。
+const FAULT_SEL_INK = '#2563eb';
 const FAULT_HOVER_INK = '#111827';
-// 震源どうしはもう重ならない(残る重なりは別の想定地震)ので、塗りは1枚分の濃さでよい。
-const FAULT_HOVER_FILL_OPACITY = 0.14;
+const LIST_HOVER_LAYERS = ['sfault-listhover-fill', 'sfault-listhover'] as const;
+// 近隣の震源(地点に波形がある想定地震の断層)。オーバーレイと関係なく、注記 nearbyFaults で出す。
+const NEAR_LAYERS = ['sfault-near-fill', 'sfault-near'] as const;
+// 想定地震の断層(茶)と見分けが付くよう、地点マーカー(赤)に寄せた系統にする
+const NEAR_INK = '#e11d48';
+// 想定地震の無い震源(確率論的地図の震源モデル。jiban-api の PMTiles)。タイルの kind 属性で描き分ける:
+//   fault … 想定地震の無い活断層(主要活断層帯の残り・それ以外の活断層)。想定地震の断層と同じ
+//           面＋断層線の描き方で、灰色にして区別する
+//   sea   … 海溝型の巨大地震・日本海東縁の海域の地震。震源域が広く陸を覆うので輪郭線だけ
+//   (scenario は上の GeoJSON で1本ずつ描くので使わない。area=震源を特定しにくい地震の領域は描かない)
+const SRCM_PMTILES = '/api/design/tiles/jshis_faults.pmtiles';
+const SRCM_LAYERS = ['srcm-fault-fill', 'srcm-fault-traces', 'srcm-sea-line'] as const;
+const SRCM_HOVER_LAYERS = ['srcm-hover-fill', 'srcm-hover-line', 'srcm-hover-traces'] as const;
+const SRCM_SEL_LAYERS = ['srcm-sel-fill', 'srcm-sel-line', 'srcm-sel-traces'] as const;
+const SRCM_FAULT_INK = '#6b7280';
+const SRCM_FAULT_FILL = '#9ca3af';
+const SRCM_SEA_INK = '#4b6a9b';
+const KIND_FAULT: maplibregl.ExpressionSpecification = ['==', ['get', 'kind'], 'fault'];
+const KIND_SEA: maplibregl.ExpressionSpecification = ['==', ['get', 'kind'], 'sea'];
+const EMPTY_SRC_FILTER: maplibregl.FilterSpecification = ['==', ['get', 'src'], ''] as unknown as maplibregl.FilterSpecification;
 // 地点の注記レイヤー(annotations で個別に表示切替する)。マーカーは地点そのものなので常時表示。
 const CIRCLE_LAYERS = ['circle-fill', 'circle-line'] as const;
 const SHORE_LAYERS = ['shore-line', 'shore-pt'] as const;
@@ -260,43 +255,46 @@ const POINT_ZOOM = 12;
 const EMPTY_FILTER: maplibregl.FilterSpecification = ['in', ['get', 'src'], ['literal', []]] as unknown as maplibregl.FilterSpecification;
 const EMPTY_CODE_FILTER: maplibregl.FilterSpecification = ['in', ['get', 'code'], ['literal', []]] as unknown as maplibregl.FilterSpecification;
 
-// ハイライト用の paint 式とフィルタ。タイルが震源単位なので src(=影響度コード)1本で引ける。
-// match のラベルは一意である必要があるので、同じコードが二度来ても最初のスロットだけ残す。
-function highlightColorExpr(hls: MapHighlight[]): maplibregl.ExpressionSpecification | string {
-  const seen = new Set<string>();
-  const expr: unknown[] = ['match', ['get', 'src']];
-  for (const h of hls) {
-    if (seen.has(h.code)) continue;
-    seen.add(h.code);
-    expr.push(h.code, h.color);
+// 想定地震の断層と震源モデルは、震源断層オーバーレイのときだけ出す。
+function applyScenarioFaults(map: maplibregl.Map, overlay: ZoneOverlay) {
+  const vis = overlay === 'faults' ? 'visible' : 'none';
+  for (const id of [...SFAULT_LAYERS, ...SRCM_LAYERS]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
   }
-  if (!seen.size) return '#000000';
-  expr.push('#000000');
-  return expr as unknown as maplibregl.ExpressionSpecification;
-}
-function highlightFilter(hls: MapHighlight[]): maplibregl.FilterSpecification {
-  return ['in', ['get', 'src'], ['literal', hls.map((h) => h.code)]] as unknown as maplibregl.FilterSpecification;
-}
-/** dissolve 済みレイヤ用。想定地震のある震源は個別の断層側で塗るので外す。 */
-function highlightFilterNoScenario(hls: MapHighlight[]): maplibregl.FilterSpecification {
-  return ['all', highlightFilter(hls), NO_SCENARIO] as unknown as maplibregl.FilterSpecification;
 }
 
-// 想定地震の断層レイヤの表示を切り替える。震源断層オーバーレイでは全断層、影響度ハイライト
-// だけのときはその震源の断層だけ出す(全国の断層を常時出すと地図が埋まるため)。
-function applyScenarioFaults(map: maplibregl.Map, overlay: ZoneOverlay, faultHl: boolean, hls: MapHighlight[]) {
-  if (!map.getLayer('sfault-fill')) return;
-  const all = overlay === 'faults';
-  const onlyHl = !all && faultHl && hls.length > 0;
-  const vis = all || onlyHl ? 'visible' : 'none';
-  const filter: maplibregl.FilterSpecification = onlyHl
-    ? (['in', ['get', 'src'], ['literal', hls.map((h) => h.code)]] as unknown as maplibregl.FilterSpecification)
-    : (['literal', true] as unknown as maplibregl.FilterSpecification);
-  for (const id of SFAULT_LAYERS) {
-    if (!map.getLayer(id)) continue;
-    map.setLayoutProperty(id, 'visibility', vis);
-    map.setFilter(id, filter);
+// 震源モデルの src でフィルタする(カーソル下 / 選択中)。null で解除。
+function setSrcFilter(map: maplibregl.Map, ids: readonly string[], src: string | null) {
+  const filter: maplibregl.FilterSpecification = src
+    ? (['==', ['get', 'src'], src] as unknown as maplibregl.FilterSpecification)
+    : EMPTY_SRC_FILTER;
+  for (const id of ids) {
+    if (map.getLayer(id)) map.setFilter(id, filter);
   }
+}
+
+// 近隣の震源(断層コードの一覧)を強調する。同時活動は構成区間と重なるので描かない。
+function setNearFilter(map: maplibregl.Map, codes: string[]) {
+  const filter = [
+    'all',
+    ['in', ['get', 'code'], ['literal', codes]],
+    NOT_COMBO,
+  ] as unknown as maplibregl.FilterSpecification;
+  for (const id of NEAR_LAYERS) {
+    if (map.getLayer(id)) map.setFilter(id, filter);
+  }
+}
+
+function areaFeature(a: [number, number, number, number] | null | undefined): GeoJSON.FeatureCollection {
+  if (!a) return EMPTY_FC;
+  const [w, s, e, n] = a;
+  return {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature', properties: {},
+      geometry: { type: 'LineString', coordinates: [[w, s], [e, s], [e, n], [w, n], [w, s]] },
+    }],
+  };
 }
 
 // 断層コードでフィルタする(カーソル下 / 選択中)。null で解除。
@@ -317,30 +315,11 @@ function setGroupOutline(map: maplibregl.Map, src: string | null, exclude: strin
         'all',
         ['==', ['get', 'src'], src],
         ['!=', ['get', 'code'], exclude ?? ''],
+        NOT_COMBO,
       ] as unknown as maplibregl.FilterSpecification)
     : EMPTY_FILTER;
   map.setFilter('sfault-group', filter);
   map.setPaintProperty('sfault-group', 'line-color', color);
-}
-
-// 選択中(左パネルで開いている)震源のフィルタを差し替える。null で解除。
-function setFaultSelected(map: maplibregl.Map, src: string | null) {
-  if (!map.getLayer('sources-sel-fill')) return;
-  const filter: maplibregl.FilterSpecification =
-    src ? (['==', ['get', 'src'], src] as unknown as maplibregl.FilterSpecification) : EMPTY_FILTER;
-  for (const id of FAULT_SEL_LAYERS) {
-    if (map.getLayer(id)) map.setFilter(id, filter);
-  }
-}
-
-// ホバー強調層のフィルタを差し替える。null で強調を消す。
-function setFaultHover(map: maplibregl.Map, src: string | null) {
-  if (!map.getLayer('sources-hover-fill')) return;
-  const filter: maplibregl.FilterSpecification =
-    src ? (['==', ['get', 'src'], src] as unknown as maplibregl.FilterSpecification) : EMPTY_FILTER;
-  for (const id of FAULT_HOVER_LAYERS) {
-    if (map.getLayer(id)) map.setFilter(id, filter);
-  }
 }
 
 // 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
@@ -410,16 +389,16 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '440 m',
   },
   faults: {
-    title: '震源断層（J-SHIS 2024年版）',
-    // 実際の凡例は FAULT_CAT_LEGEND のスウォッチ表示(下の JSX で分岐)。grad は未使用。
-    grad: 'linear-gradient(to right,#b08a5a 0 33%,#6f8fbf 33% 66%,#9a86b8 66% 100%)',
+    title: '震源断層（J-SHIS）',
+    // 実際の凡例はスウォッチと注記(下の JSX で分岐)。grad は未使用。
+    grad: 'linear-gradient(to right,#b08a5a,#b08a5a)',
     min: '',
     max: '',
   },
   boring: {
     title: 'ボーリング調査データ',
-    // 帯は密度ヒートマップの色ランプと対応(ズームインでマーカー表示に切り替わる)。
-    // マーカー色分けの凡例は出さない(データソースは地点クリック時に左パネルで示す)。
+    // 実際の凡例はデータソース別のマーカー色(下の JSX の BORING_LEGEND)。密度ヒートマップは
+    // 「そこにデータがある」ことを示すだけなので帯は出さない。grad は未使用。
     grad:
       'linear-gradient(to right,rgba(33,102,172,0.55),rgba(103,169,207,0.7),' +
       'rgba(253,184,99,0.85),rgba(239,138,98,0.9),rgba(178,24,43,0.95))',
@@ -427,6 +406,14 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '密度高',
   },
 };
+
+// ボーリング調査データの凡例。マーカーの色(boringColorExpr)と対応させる。
+const BORING_LEGEND: { color: string; label: string; ring?: boolean }[] = [
+  { color: NGI_COLOR, label: '国土地盤（KuniJiban掲載）' },
+  { color: NGI_ONLY_COLOR, label: '国土地盤（NGICのみ）' },
+  { color: TOKYO_COLOR, label: '東京の地盤（GIS版）' },
+  { color: BORING_SELECTED_COLOR, label: '選択中', ring: true },
+];
 
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
 // (全タブ常時マウントのSPAなので、片方のアンマウントで他方を壊さないよう removeProtocol しない)。
@@ -502,8 +489,11 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     selectedFaultCode,
     selectedFaultSrc,
     groupColor,
-    faultHighlights,
-    focusBbox,
+    hoverFaultCode,
+    onSourcePick,
+    selectedSourceSrc,
+    nearbyCodes,
+    hoverArea,
   },
   ref
 ) {
@@ -525,15 +515,27 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
   onFaultPickRef.current = onFaultPick;
   const selectedFaultSrcRef = useRef(selectedFaultSrc);
   selectedFaultSrcRef.current = selectedFaultSrc;
+  const groupColorRef = useRef(groupColor);
+  groupColorRef.current = groupColor;
+  const hoverFaultCodeRef = useRef(hoverFaultCode);
+  hoverFaultCodeRef.current = hoverFaultCode;
   const selectedFaultCodeRef = useRef(selectedFaultCode);
   selectedFaultCodeRef.current = selectedFaultCode;
+  const onSourcePickRef = useRef(onSourcePick);
+  onSourcePickRef.current = onSourcePick;
+  const selectedSourceSrcRef = useRef(selectedSourceSrc);
+  selectedSourceSrcRef.current = selectedSourceSrc;
+  const nearbyCodesRef = useRef(nearbyCodes);
+  nearbyCodesRef.current = nearbyCodes;
+  const hoverAreaRef = useRef(hoverArea);
+  hoverAreaRef.current = hoverArea;
+  // 拡大表示中の震源モデル(srcm-hover のフィルタ比較用)
+  const srcmHoverKeyRef = useRef<string | null>(null);
   // 拡大表示中の想定地震断層(sfault-hover のフィルタ比較用)
   const sfaultHoverKeyRef = useRef<string | null>(null);
   // カーソル位置のオーバーレイ値（地図左下に控えめ表示）
   const [hover, setHover] = useState<string | null>(null);
   const hoverTokenRef = useRef(0);
-  // 強調中の震源のキー。mousemove ごとにフィルタを張り替えないための比較用。
-  const faultHoverKeyRef = useRef<string | null>(null);
   // 拡大表示中のボーリング地点ID(boring-hover のフィルタ比較用)。
   const boringHoverKeyRef = useRef<string | null>(null);
 
@@ -683,20 +685,11 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       map.setLayoutProperty('boring-heat', 'visibility', kind === 'boring' ? 'visible' : 'none');
     }
     applyBoringPts(kind, annotRef.current);
-    // 全断層(下塗り・面・断層線)は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると
-    // 読みづらいため)。選択地点への影響度上位の震源(ハイライト)はオーバーレイに依らず、
-    // 地点の注記トグル(annotations.faultHl)だけで決まる。
-    const showAll = kind === 'faults' ? 'visible' : 'none';
-    applyScenarioFaults(map, kind, annotRef.current.faultHl, highlightsRef.current);
-    for (const id of FAULT_BASE_LAYERS) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', showAll);
-    }
-    // 拾えるレイヤが変わるので、切替前のホバー強調は残さない。
-    faultHoverKeyRef.current = null;
-    setFaultHover(map, null);
+    // 断層は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると読みづらいため)。
+    applyScenarioFaults(map, kind);
   }, [applyBoringPts]);
 
-  // 地点の注記(海率円/測線/震源ハイライト)の表示切替。データはそのまま持っているので
+  // 地点の注記(海率円/測線/ボーリング地点)の表示切替。データはそのまま持っているので
   // visibility を差し替えるだけ＝再取得は発生しない。
   const applyAnnotations = useCallback((a: MapAnnotations) => {
     const map = mapRef.current;
@@ -708,15 +701,9 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     };
     setVis(CIRCLE_LAYERS, a.seaCircle);
     setVis(SHORE_LAYERS, a.shoreLine);
-    setVis(FAULT_HL_LAYERS, a.faultHl);
-    applyScenarioFaults(map, overlayRef.current, a.faultHl, highlightsRef.current);
+    setVis(NEAR_LAYERS, a.nearbyFaults);
     applyBoringPts(overlayRef.current, a);
-    faultHoverKeyRef.current = null;
-    setFaultHover(map, null);
   }, [applyBoringPts]);
-  // ハイライト対象(fid 群と色)。初期化時にも参照するため ref に保持。
-  const highlightsRef = useRef<MapHighlight[]>(faultHighlights ?? []);
-  highlightsRef.current = faultHighlights ?? [];
   // viewVersion 効果が最新の中心・半径を参照するための ref（中心変化では再fitしないため依存に入れない）
   const latestRef = useRef({ center, radiusKm });
   latestRef.current = { center, radiusKm };
@@ -844,114 +831,71 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         paint: { 'fill-color': AUTHORITY_TYPE_COLOR, 'fill-opacity': 0.5 },
       });
 
-      // J-SHIS 震源断層。面(sources) → 断層線(source_traces) → ハイライト → ホバー強調 の順。
-      // 解析円・マーカーより下に置く。地震系オーバーレイのときだけ可視(applyOverlay)。
-      map.addSource('faults', { type: 'vector', url: `pmtiles://${origin}${FAULT_PMTILES}` });
+      // 想定地震の無い震源(震源モデル)。想定地震の断層の下に敷く。海溝型の輪郭 → 活断層の面 →
+      // 断層線 の順。強調(カーソル下・選択中)は想定地震の断層と同じく常に可視の層で描く。
+      map.addSource('srcm', { type: 'vector', url: `pmtiles://${origin}${SRCM_PMTILES}` });
       map.addLayer({
-        id: 'sources-fill', type: 'fill', source: 'faults', 'source-layer': 'sources',
-        filter: NO_SCENARIO,
-        layout: { visibility: 'none' }, paint: { 'fill-color': FAULT_CAT_FILL, 'fill-opacity': 0.16 },
+        id: 'srcm-sea-line', type: 'line', source: 'srcm', 'source-layer': 'sources', filter: KIND_SEA,
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: { 'line-color': SRCM_SEA_INK, 'line-width': 1.4, 'line-opacity': 0.85, 'line-dasharray': [3, 2] },
       });
       map.addLayer({
-        id: 'sources-line', type: 'line', source: 'faults', 'source-layer': 'sources',
-        layout: { visibility: 'none' },
-        filter: NO_SCENARIO,
-        paint: { 'line-color': FAULT_CAT_LINE, 'line-width': 0.9, 'line-opacity': 0.6 },
+        id: 'srcm-fault-fill', type: 'fill', source: 'srcm', 'source-layer': 'sources', filter: KIND_FAULT,
+        layout: { visibility: 'none' }, paint: { 'fill-color': SRCM_FAULT_FILL, 'fill-opacity': 0.18 },
       });
       map.addLayer({
-        id: 'sources-traces', type: 'line', source: 'faults', 'source-layer': 'source_traces',
-        layout: { visibility: 'none', 'line-cap': 'round' },
-        filter: NO_SCENARIO,
-        paint: { 'line-color': FAULT_CAT_LINE, 'line-width': 1.4, 'line-opacity': 0.9 },
+        id: 'srcm-fault-traces', type: 'line', source: 'srcm', 'source-layer': 'source_traces', filter: KIND_FAULT,
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: { 'line-color': SRCM_FAULT_INK, 'line-width': 1.2, 'line-opacity': 0.9 },
       });
-      const hlColor = highlightColorExpr(highlightsRef.current);
-      // dissolve 側のハイライトは想定地震を持たない震源だけ。想定地震のある震源は
-      // sfault-hl-* が個々の断層に同じ系列色を塗る(まとめないがグループ色は揃う)。
-      const hlFilter = highlightFilterNoScenario(highlightsRef.current);
-      map.addLayer({
-        id: 'sources-hl-fill', type: 'fill', source: 'faults', 'source-layer': 'sources', filter: hlFilter,
-        layout: { visibility: 'visible' }, paint: { 'fill-color': hlColor, 'fill-opacity': 0.38 },
-      });
-      map.addLayer({
-        id: 'sources-hl-line-casing', type: 'line', source: 'faults', 'source-layer': 'sources', filter: hlFilter,
-        layout: { visibility: 'visible' }, paint: { 'line-color': '#ffffff', 'line-width': 4.5, 'line-opacity': 0.9 },
-      });
-      map.addLayer({
-        id: 'sources-hl-line', type: 'line', source: 'faults', 'source-layer': 'sources', filter: hlFilter,
-        layout: { visibility: 'visible' }, paint: { 'line-color': hlColor, 'line-width': 2.2 },
-      });
-      map.addLayer({
-        id: 'sources-hl-traces-casing', type: 'line', source: 'faults', 'source-layer': 'source_traces', filter: hlFilter,
-        layout: { visibility: 'visible', 'line-cap': 'round' },
-        paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.9 },
-      });
-      map.addLayer({
-        id: 'sources-hl-traces', type: 'line', source: 'faults', 'source-layer': 'source_traces', filter: hlFilter,
-        layout: { visibility: 'visible', 'line-cap': 'round' },
-        paint: { 'line-color': hlColor, 'line-width': 3.5 },
-      });
+      const srcmHi = (prefix: string, ink: string, fillOpacity: number, width: number) => {
+        map.addLayer({
+          id: `${prefix}-fill`, type: 'fill', source: 'srcm', 'source-layer': 'sources',
+          filter: EMPTY_SRC_FILTER, paint: { 'fill-color': ink, 'fill-opacity': fillOpacity },
+        });
+        map.addLayer({
+          id: `${prefix}-line`, type: 'line', source: 'srcm', 'source-layer': 'sources',
+          filter: EMPTY_SRC_FILTER, layout: { 'line-join': 'round' },
+          paint: { 'line-color': ink, 'line-width': width },
+        });
+        map.addLayer({
+          id: `${prefix}-traces`, type: 'line', source: 'srcm', 'source-layer': 'source_traces',
+          filter: EMPTY_SRC_FILTER, layout: { 'line-join': 'round' },
+          paint: { 'line-color': ink, 'line-width': width },
+        });
+      };
+      // 海溝型の震源域は広いので、強調でも塗りは薄くする
+      srcmHi('srcm-hover', FAULT_HOVER_INK, 0.08, 2.2);
+      srcmHi('srcm-sel', FAULT_SEL_INK, 0.12, 2.6);
 
-      // カーソル下の震源の強調(setFaultHover でフィルタを差し替える。初期は何にも当たらない)。
-      // ハイライトの色線(2.2px)より細い墨線を載せ、色を縁に残す。
-      map.addLayer({
-        id: 'sources-hover-fill', type: 'fill', source: 'faults', 'source-layer': 'sources',
-        filter: EMPTY_FILTER, layout: { visibility: 'visible' },
-        paint: { 'fill-color': FAULT_HOVER_INK, 'fill-opacity': FAULT_HOVER_FILL_OPACITY },
-      });
-      map.addLayer({
-        id: 'sources-hover-line', type: 'line', source: 'faults', 'source-layer': 'sources',
-        filter: EMPTY_FILTER, layout: { visibility: 'visible' },
-        paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 1.6, 'line-opacity': 0.9 },
-      });
-      map.addLayer({
-        id: 'sources-hover-traces', type: 'line', source: 'faults', 'source-layer': 'source_traces',
-        filter: EMPTY_FILTER, layout: { visibility: 'visible', 'line-cap': 'round' },
-        paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 2, 'line-opacity': 0.9 },
-      });
-
-      // 左パネルで開いている震源(setFaultSelected でフィルタを差し替える)。
-      map.addLayer({
-        id: 'sources-sel-fill', type: 'fill', source: 'faults', 'source-layer': 'sources',
-        filter: EMPTY_FILTER, layout: { visibility: 'visible' },
-        paint: { 'fill-color': FAULT_SEL_INK, 'fill-opacity': 0.18 },
-      });
-      map.addLayer({
-        id: 'sources-sel-line', type: 'line', source: 'faults', 'source-layer': 'sources',
-        filter: EMPTY_FILTER, layout: { visibility: 'visible' },
-        paint: { 'line-color': FAULT_SEL_INK, 'line-width': 2.4 },
-      });
-      map.addLayer({
-        id: 'sources-sel-traces', type: 'line', source: 'faults', 'source-layer': 'source_traces',
-        filter: EMPTY_FILTER, layout: { visibility: 'visible', 'line-cap': 'round' },
-        paint: { 'line-color': FAULT_SEL_INK, 'line-width': 4, 'line-opacity': 0.9 },
-      });
-
-      // 想定地震の区間。dissolve 済みの sources の上に重ね、これをクリック対象にする。
+      // 想定地震の断層。普段の描画 → 震源グループの破線 → カーソル下 → 選択中 の順に重ねる。
+      // 解析円・マーカーより下に置く。普段の描画は震源断層オーバーレイのときだけ可視(applyOverlay)、
+      // 強調の層は常に可視(一覧からのホバー・選択はオーバーレイと関係なく見せる)。
       map.addSource('scenario-faults', { type: 'geojson', data: SFAULT_GEOJSON });
       map.addLayer({
-        id: 'sfault-fill', type: 'fill', source: 'scenario-faults',
-        layout: { visibility: 'none' }, paint: { 'fill-color': SFAULT_INK, 'fill-opacity': 0.14 },
+        id: 'sfault-fill', type: 'fill', source: 'scenario-faults', filter: NOT_COMBO,
+        layout: { visibility: 'none' }, paint: { 'fill-color': SFAULT_FILL, 'fill-opacity': 0.16 },
       });
       map.addLayer({
-        id: 'sfault-line', type: 'line', source: 'scenario-faults',
+        id: 'sfault-line', type: 'line', source: 'scenario-faults', filter: NOT_COMBO,
         layout: { visibility: 'none', 'line-join': 'round' },
         paint: { 'line-color': SFAULT_INK, 'line-width': 1.6, 'line-opacity': 0.95 },
       });
-      // 影響度上位のハイライト。dissolve 済みの面ではなく個々の断層に系列色を塗る
-      // (同じ震源の断層が同じ色になるので、まとめなくてもグループが分かる)。
+      // 近隣の震源(地点に波形がある断層)。注記 nearbyFaults で出し入れする(applyAnnotations)。
       map.addLayer({
-        id: 'sfault-hl-casing', type: 'line', source: 'scenario-faults', filter: EMPTY_FILTER,
-        layout: { visibility: 'visible', 'line-join': 'round' },
-        paint: { 'line-color': '#ffffff', 'line-width': 5, 'line-opacity': 0.9 },
+        id: 'sfault-near-fill', type: 'fill', source: 'scenario-faults', filter: EMPTY_CODE_FILTER,
+        layout: { visibility: 'none' }, paint: { 'fill-color': NEAR_INK, 'fill-opacity': 0.16 },
       });
       map.addLayer({
-        id: 'sfault-hl-fill', type: 'fill', source: 'scenario-faults', filter: EMPTY_FILTER,
-        layout: { visibility: 'visible' }, paint: { 'fill-color': '#000000', 'fill-opacity': 0.38 },
+        id: 'sfault-near', type: 'line', source: 'scenario-faults', filter: EMPTY_CODE_FILTER,
+        layout: { visibility: 'none', 'line-join': 'round' },
+        paint: { 'line-color': NEAR_INK, 'line-width': 2 },
       });
+      // 一覧でカーソル中の断層の計算対象範囲(この矩形の中にだけ波形がある)
+      map.addSource('nearby-area', { type: 'geojson', data: EMPTY_FC });
       map.addLayer({
-        id: 'sfault-hl-line', type: 'line', source: 'scenario-faults', filter: EMPTY_FILTER,
-        layout: { visibility: 'visible', 'line-join': 'round' },
-        paint: { 'line-color': '#000000', 'line-width': 2.6 },
+        id: 'nearby-area', type: 'line', source: 'nearby-area',
+        paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 1.4, 'line-dasharray': [3, 2], 'line-opacity': 0.8 },
       });
       // 選択中の断層と同じ震源グループの断層(グループ色で括る。まとめて塗らず1本ずつ)
       map.addLayer({
@@ -959,11 +903,22 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         layout: { visibility: 'visible', 'line-join': 'round' },
         paint: { 'line-color': GROUP_INK_DEFAULT, 'line-width': 2.4, 'line-dasharray': [2, 1.4] },
       });
-      // カーソル下・選択中の断層(フィルタを差し替えて1本だけ描く)
+      // カーソル下の断層(地図のホバーと、左パネルの一覧のホバーで別の層。フィルタを差し替えて
+      // 1本だけ描く)。一覧のホバーは同時活動のように普段描かない断層も指すので、塗りも付ける。
       map.addLayer({
         id: 'sfault-hover', type: 'line', source: 'scenario-faults', filter: EMPTY_CODE_FILTER,
         layout: { visibility: 'visible', 'line-join': 'round' },
         paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 2.6 },
+      });
+      map.addLayer({
+        id: 'sfault-listhover-fill', type: 'fill', source: 'scenario-faults', filter: EMPTY_CODE_FILTER,
+        layout: { visibility: 'visible' },
+        paint: { 'fill-color': FAULT_HOVER_INK, 'fill-opacity': 0.22 },
+      });
+      map.addLayer({
+        id: 'sfault-listhover', type: 'line', source: 'scenario-faults', filter: EMPTY_CODE_FILTER,
+        layout: { visibility: 'visible', 'line-join': 'round' },
+        paint: { 'line-color': FAULT_HOVER_INK, 'line-width': 3 },
       });
       map.addLayer({
         id: 'sfault-sel-fill', type: 'fill', source: 'scenario-faults', filter: EMPTY_CODE_FILTER,
@@ -1123,9 +1078,13 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       maybeInitialFit();
       applyOverlay(overlayRef.current); // マウント時にオーバーレイ選択済みなら反映
       applyAnnotations(annotRef.current); // 同上（前回セッションのトグル状態を復元）
-      setFaultSelected(map, selectedFaultSrcRef.current ?? null);
       setCodeFilter(map, ['sfault-sel-fill', 'sfault-sel'], selectedFaultCodeRef.current ?? null);
-      applyScenarioFaults(map, overlayRef.current, annotRef.current.faultHl, highlightsRef.current);
+      setGroupOutline(map, selectedFaultSrcRef.current ?? null, selectedFaultCodeRef.current ?? null,
+                      groupColorRef.current || GROUP_INK_DEFAULT);
+      setCodeFilter(map, LIST_HOVER_LAYERS, hoverFaultCodeRef.current ?? null);
+      setSrcFilter(map, SRCM_SEL_LAYERS, selectedSourceSrcRef.current ?? null);
+      setNearFilter(map, nearbyCodesRef.current ?? []);
+      (map.getSource('nearby-area') as maplibregl.GeoJSONSource).setData(areaFeature(hoverAreaRef.current));
     });
 
     // クリックの優先順位: 可視のボーリング地点マーカーを踏んだらその調査データを選択し、
@@ -1161,21 +1120,20 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           return;
         }
       }
-      // 想定地震(Sデータ)を持つ震源を踏んだら、その詳細を左パネルへ。ボーリング地点と同様、
+      // 想定地震の断層を踏んだら、その詳細を左パネルへ。ボーリング地点と同様、
       // ハザードの選択地点は動かさない(断層を見比べている最中に地点が飛ぶと使いにくいため)。
-      // 想定地震を持たない断層はここを素通りし、従来どおり地点指定になる。
       if (onFaultPickRef.current) {
-        const lat = e.lngLat.lat;
-        const lng = normLng(e.lngLat.lng);
-        // 個別の断層が優先。踏めなければ dissolve 済みの震源から拾い、座標で重なりを絞る
         const sf = scenarioFaultAt(map, e.point);
         if (sf?.code) {
-          onFaultPickRef.current({ src: sf.src, name: sf.name, code: sf.code, lat, lng });
+          onFaultPickRef.current({ src: sf.src, name: sf.name, code: sf.code });
           return;
         }
-        const hit = faultsAt(map, e.point, overlayRef.current).find((f) => f.hasScenario);
-        if (hit) {
-          onFaultPickRef.current({ src: hit.src, name: hit.name, code: null, lat, lng });
+      }
+      // 想定地震の無い震源(震源モデル)。想定地震の断層と重なる所では想定地震を優先する。
+      if (onSourcePickRef.current) {
+        const sm = sourceModelAt(map, e.point);
+        if (sm) {
+          onSourcePickRef.current(sm);
           return;
         }
       }
@@ -1213,13 +1171,6 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     //   区分(snow/wind)はベクタを queryRenderedFeatures で即時取得。
     //   積雪深はラスターなので PMTiles のタイル画素を復号(同一タイルはキャッシュ)。
     // 対象が変わったときだけフィルタを差し替える(mousemove ごとの setFilter は無駄が大きい)。
-    const applyFaultHover = (hit: FaultHit | null) => {
-      const src = hit?.src ?? null;
-      if (src === faultHoverKeyRef.current) return;
-      faultHoverKeyRef.current = src;
-      setFaultHover(map, src);
-    };
-
     // カーソル下の断層を1本だけ強調し、押せることを伝える
     const applyScenarioHover = (code: string | null) => {
       if (code === sfaultHoverKeyRef.current) return;
@@ -1227,39 +1178,38 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       setCodeFilter(map, ['sfault-hover'], code);
     };
 
+    const applySourceHover = (src: string | null) => {
+      if (src === srcmHoverKeyRef.current) return;
+      srcmHoverKeyRef.current = src;
+      setSrcFilter(map, SRCM_HOVER_LAYERS, src);
+    };
+
     map.on('mousemove', (e) => {
       const ov = overlayRef.current;
-      // 区間レイヤは震源断層オーバーレイでも影響度ハイライトだけのときも出るので、
-      // オーバーレイの種類に依らず先に見る。
       const sfHit = scenarioFaultAt(map, e.point);
       applyScenarioHover(sfHit?.code ?? null);
+      const smHit = sfHit ? null : sourceModelAt(map, e.point);
+      applySourceHover(smHit?.src ?? null);
       if (sfHit) {
         map.getCanvas().style.cursor = onFaultPickRef.current ? 'pointer' : 'crosshair';
+      } else if (smHit) {
+        map.getCanvas().style.cursor = onSourcePickRef.current ? 'pointer' : 'crosshair';
       }
       if (ov === 'none') {
-        // オーバーレイが無くても、影響度ハイライトの震源は描かれていてクリックできる。
-        // 何も反応しないと押せることが伝わらないので、断層名とホバー強調だけは出す。
-        const hits = faultsAt(map, e.point, ov);
-        applyFaultHover(hits[0] ?? null);
-        setHover(sfHit ? `断層: ${sfHit.name}（クリックで想定地震）` : faultText(hits));
-        if (!sfHit) {
-          map.getCanvas().style.cursor =
-            onFaultPickRef.current && hits.some((h) => h.hasScenario) ? 'pointer' : 'crosshair';
-        }
+        // オーバーレイ無しでも、近隣の震源の断層の上は押せる(pointer は上で設定済み)
+        if (!sfHit) map.getCanvas().style.cursor = 'crosshair';
         return;
       }
-      // カーソル下の震源断層名も併記し、その震源(＝同じ断層コードの面すべて)を強調する
-      // (面は点、線は 5px 幅で拾う)。非表示レイヤーは queryRenderedFeatures が拾わないので、
-      // ハイライトを消していれば強調もラベルも自動的に出なくなる。
-      const hits = faultsAt(map, e.point, ov);
-      applyFaultHover(hits[0] ?? null);
-      // 想定地震を持つ断層は押せるので pointer にする(ボーリング地点マーカーと同じ扱い)。
-      // ボーリング側の mousemove は専用ハンドラで別に pointer にしているので上書きしない。
-      if (!boringHoverKeyRef.current && !sfHit) {
-        map.getCanvas().style.cursor =
-          onFaultPickRef.current && hits.some((h) => h.hasScenario) ? 'pointer' : 'crosshair';
+      // 断層は押せるので pointer(上で設定済み)。ボーリング側の mousemove は専用ハンドラで
+      // 別に pointer にしているので上書きしない。
+      if (!boringHoverKeyRef.current && !sfHit && !smHit) {
+        map.getCanvas().style.cursor = 'crosshair';
       }
-      const faultTxt = sfHit ? `断層: ${sfHit.name}（クリックで想定地震）` : faultText(hits);
+      const faultTxt = sfHit
+        ? `断層: ${sfHit.name}（クリックで想定地震）`
+        : smHit
+          ? `${smHit.kind === 'sea' ? '海溝型・海域' : '活断層'}: ${smHit.name}（想定地震なし）`
+          : null;
       const withFault = (t: string | null): string | null => (t && faultTxt ? `${t} ｜ ${faultTxt}` : t ?? faultTxt);
       if (ov === 'faults') {
         setHover(faultTxt);
@@ -1362,7 +1312,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     });
     map.on('mouseout', () => {
       setHover(null);
-      applyFaultHover(null);
+      applyScenarioHover(null);
+      applySourceHover(null);
     });
 
     const ro = new ResizeObserver(() => {
@@ -1409,38 +1360,38 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
-    setFaultSelected(map, selectedFaultSrc ?? null);
     setCodeFilter(map, ['sfault-sel-fill', 'sfault-sel'], selectedFaultCode ?? null);
     setGroupOutline(map, selectedFaultSrc ?? null, selectedFaultCode ?? null,
                     groupColor || GROUP_INK_DEFAULT);
   }, [selectedFaultSrc, selectedFaultCode, groupColor]);
 
-  // 影響度上位の震源(ハイライト)が変わったら src フィルタと色を更新
+  // 左パネルの一覧でカーソルを合わせた断層を強調する
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !readyRef.current || !map.getLayer('sources-hl-fill')) return;
-    const hls = faultHighlights ?? [];
-    const color = highlightColorExpr(hls);
-    const filter = hls.length ? highlightFilterNoScenario(hls) : EMPTY_FILTER;
-    for (const id of FAULT_HL_LAYERS) {
-      map.setFilter(id, filter);
-      if (!id.endsWith('casing')) {
-        map.setPaintProperty(id, id.includes('fill') ? 'fill-color' : 'line-color', color);
-      }
-    }
-    // 想定地震のある震源は、個々の断層に同じ系列色を塗る。まとめて1枚の面にしないが、
-    // 同じ震源の断層は同じ色になるのでグループとして読める。
-    const segFilter = hls.length ? highlightFilter(hls) : EMPTY_FILTER;
-    for (const id of SFAULT_HL_LAYERS) {
-      if (!map.getLayer(id)) continue;
-      map.setFilter(id, segFilter);
-      if (!id.endsWith('casing')) {
-        map.setPaintProperty(id, id.includes('fill') ? 'fill-color' : 'line-color', color);
-      }
-    }
-    // 影響度ハイライトだけを出しているときは、区間レイヤもその震源に絞る
-    applyScenarioFaults(map, overlayRef.current, annotRef.current.faultHl, hls);
-  }, [faultHighlights]);
+    if (!map || !readyRef.current) return;
+    setCodeFilter(map, LIST_HOVER_LAYERS, hoverFaultCode ?? null);
+  }, [hoverFaultCode]);
+
+  // 近隣の震源の一覧でカーソル中の断層の計算対象範囲
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    (map.getSource('nearby-area') as maplibregl.GeoJSONSource | undefined)?.setData(areaFeature(hoverArea));
+  }, [hoverArea]);
+
+  // 近隣の震源の強調
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    setNearFilter(map, nearbyCodes ?? []);
+  }, [nearbyCodes]);
+
+  // 左パネルで開いている震源モデルの強調
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    setSrcFilter(map, SRCM_SEL_LAYERS, selectedSourceSrc ?? null);
+  }, [selectedSourceSrc]);
 
   // 選択中のボーリング地点の青ハイライト(GeoJSON 更新)。タイル非依存なので、広域ズームで
   // タイル側の点が間引かれても消えない。
@@ -1464,18 +1415,6 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.isStyleLoaded()) apply();
     else map.once('idle', apply);
   }, [selectedBoringPoint]);
-
-  // 凡例行クリック: その震源の範囲(＋選択地点)に表示範囲を合わせる
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !readyRef.current || !focusBbox) return;
-    const [w, s, e, n] = focusBbox.bbox;
-    const b = new maplibregl.LngLatBounds([w, s], [e, n]);
-    const c = latestRef.current.center;
-    b.extend([c.lng, c.lat]);
-    map.fitBounds(b, { padding: 50, maxZoom: 11, duration: 600 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusBbox?.v]);
 
   // 中心・最寄り点が変わったら測線を更新
   useEffect(() => {
@@ -1501,16 +1440,46 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           </div>
           {overlay === 'faults' ? (
             <div className="mt-1 space-y-0.5">
-              {FAULT_CAT_LEGEND.map((c) => (
-                <div key={c.label} className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
-                  <span className="inline-block w-4 h-2.5 rounded-sm" style={{ background: c.color, boxShadow: `inset 0 0 0 1px ${c.line}` }} />
-                  {c.label}
+              <div className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
+                <span className="inline-block w-4 h-2.5 rounded-sm" style={{ background: SFAULT_FILL, boxShadow: `inset 0 0 0 1px ${SFAULT_INK}` }} />
+                想定地震のある活断層（クリックで地点の揺れ）
+              </div>
+              <div className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
+                <span className="inline-block w-4 h-2.5 rounded-sm" style={{ background: `${SRCM_FAULT_FILL}55`, boxShadow: `inset 0 0 0 1px ${SRCM_FAULT_INK}` }} />
+                想定地震のない活断層
+              </div>
+              <div className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
+                <span className="inline-block w-4 h-2.5 rounded-sm" style={{ border: `1.5px dashed ${SRCM_SEA_INK}` }} />
+                海溝型・海域の地震の震源域（想定地震なし）
+              </div>
+              {annotations.nearbyFaults && (
+                <div className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
+                  <span className="inline-block w-4 h-2.5 rounded-sm" style={{ background: `${NEAR_INK}33`, boxShadow: `inset 0 0 0 1.5px ${NEAR_INK}` }} />
+                  近隣の震源（この地点に波形がある想定地震）
+                </div>
+              )}
+              <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">
+                地点の揺れ（震度・波形）があるのは想定地震のある活断層だけ。ほかの震源の影響は左パネルの応答スペクトルに含まれます
+              </div>
+            </div>
+          ) : overlay === 'boring' ? (
+            <div className="mt-1 space-y-0.5">
+              {BORING_LEGEND.map((b) => (
+                <div key={b.label} className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
+                  <span
+                    className="inline-block rounded-full shadow"
+                    style={{
+                      background: b.color,
+                      width: b.ring ? 11 : 9,
+                      height: b.ring ? 11 : 9,
+                      border: `${b.ring ? 2 : 1}px solid #ffffff`,
+                    }}
+                  />
+                  {b.label}
                 </div>
               ))}
               <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">
-                面・線とも震源ごとにまとめて表示（線＝断層線。鉛直断層は線のみ）
-                {annotations.faultHl && '／太い色付き＝選択地点への影響度上位（左の凡例と同色）'}
-                ／濃い輪郭＝カーソル上の震源
+                広域ではデータのある所を濃淡で表示。ズームインで個別地点（クリックで柱状図）
               </div>
             </div>
           ) : (
@@ -1520,11 +1489,6 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
                 <span>{LEGEND[overlay].min}</span>
                 <span>{LEGEND[overlay].max}</span>
               </div>
-              {annotations.faultHl && (
-                <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
-                  ＋選択地点への影響度上位の震源（全断層は「震源断層」で表示）
-                </div>
-              )}
             </>
           )}
           <div className="text-[11px] mt-1 font-medium text-gray-900 dark:text-gray-100 min-h-[15px]">
@@ -1552,33 +1516,21 @@ function updateData(map: maplibregl.Map, center: LatLng, radiusKm: number) {
   });
 }
 
-// カーソル位置の震源(地震系オーバーレイのホバー用)。面は点で、線は 5px 四方の矩形で拾う。
-// 参照するレイヤは「そのオーバーレイで実際に描いているもの」に合わせる:
-//   'faults'      … 全震源(sources/source_traces)。非表示レイヤは queryRenderedFeatures が拾わないため。
-//   その他の地震系 … 影響度上位のハイライトのみ(sources-hl-*)。
-// タイルが震源単位なので、重複排除も src だけで足りる(同じ震源が複数タイルにまたがる場合の除去)。
-interface FaultHit {
-  src: string;
-  name: string;
-  /** 想定地震(Sデータ)を持つ震源か。クリックで詳細パネルを開けるのはこれだけ */
-  hasScenario: boolean;
-}
-
-/** 地図で選ばれた断層。code があれば個別の断層、無ければ震源(dissolve済み)を踏んだということ。 */
+/** 地図で選ばれた断層(想定地震の断層コード)と、その震源。 */
 export interface FaultPick {
   src: string;
   name: string;
-  code: string | null;
-  lat: number;
-  lng: number;
+  code: string;
 }
 
-/** カーソル位置の想定地震の断層(断層レイヤが可視のときだけ拾える)。 */
+/** カーソル位置の想定地震の断層(断層レイヤか近隣の震源の強調が可視のときだけ拾える)。 */
 function scenarioFaultAt(
   map: maplibregl.Map,
   pt: maplibregl.Point
 ): { code: string; src: string; name: string } | null {
-  const layers = SFAULT_LAYERS.filter((l) => map.getLayer(l));
+  // 近隣の震源の強調(NEAR_LAYERS)も拾う: 震源断層オーバーレイを出していなくても、
+  // 注記で見えている近隣の断層は地図で選べるようにする(非表示レイヤは拾われない)
+  const layers = [...SFAULT_LAYERS, ...NEAR_LAYERS].filter((l) => map.getLayer(l));
   if (!layers.length) return null;
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [
     [pt.x - 4, pt.y - 4],
@@ -1589,36 +1541,25 @@ function scenarioFaultAt(
   const p = f.properties || {};
   return { code: String(p.code ?? ''), src: String(p.src ?? ''), name: String(p.name ?? '') };
 }
-function faultsAt(map: maplibregl.Map, pt: maplibregl.Point, overlay: ZoneOverlay): FaultHit[] {
-  if (!map.getLayer('sources-fill')) return [];
+/** カーソル位置の震源モデル(想定地震の無い震源。震源断層オーバーレイのときだけ拾える)。 */
+function sourceModelAt(map: maplibregl.Map, pt: maplibregl.Point): SourcePick | null {
+  const layers = SRCM_LAYERS.filter((l) => map.getLayer(l));
+  if (!layers.length) return null;
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [
-    [pt.x - 5, pt.y - 5],
-    [pt.x + 5, pt.y + 5],
+    [pt.x - 4, pt.y - 4],
+    [pt.x + 4, pt.y + 4],
   ];
-  const lineLayers = overlay === 'faults' ? ['sources-traces'] : ['sources-hl-traces'];
-  const fillLayers = overlay === 'faults' ? ['sources-fill'] : ['sources-hl-fill'];
-  const lines = map.queryRenderedFeatures(box, { layers: lineLayers.filter((l) => map.getLayer(l)) });
-  const polys = map.queryRenderedFeatures(pt, { layers: fillLayers.filter((l) => map.getLayer(l)) });
-  const seen = new Set<string>();
-  const hits: FaultHit[] = [];
-  for (const f of [...lines, ...polys]) {
-    const p = f.properties || {};
-    const src = String(p.src ?? '');
-    if (!src || seen.has(src)) continue;
-    seen.add(src);
-    const mag = p.mag != null && p.mag !== '' ? ` ${p.mag_kind ?? 'M'}${Number(p.mag).toFixed(1)}` : '';
-    hits.push({ src, name: `${p.name ?? src}${mag}`, hasScenario: Number(p.has_scenario) === 1 });
-  }
-  return hits;
+  const fs = map.queryRenderedFeatures(box, { layers });
+  // 活断層を海溝型の輪郭より優先する(海溝型の輪郭は広く、陸の断層と重なりやすい)
+  const f = fs.find((x) => x.properties?.kind === 'fault') ?? fs[0];
+  if (!f) return null;
+  const p = f.properties || {};
+  return {
+    src: String(p.src ?? ''),
+    name: String(p.name ?? ''),
+    kind: p.kind === 'sea' ? 'sea' : 'fault',
+  };
 }
-// 重なる震源(同じプレート境界に設定された別の想定地震など)は先頭＋件数で示す。
-function faultText(hits: FaultHit[]): string | null {
-  if (!hits.length) return null;
-  const more = hits.length > 1 ? ` ほか${hits.length - 1}件` : '';
-  const tip = hits.some((h) => h.hasScenario) ? '（クリックで想定地震）' : '';
-  return `断層: ${hits[0].name}${more}${tip}`;
-}
-
 // 中心→最寄りの海岸線/湖岸線の点 の測線（と最寄り点）を反映。shorePoint が無ければ消す。
 function updateShore(map: maplibregl.Map, center: LatLng, shorePoint: LatLng | null) {
   const src = map.getSource('shore') as maplibregl.GeoJSONSource | undefined;

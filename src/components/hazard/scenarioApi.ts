@@ -1,8 +1,8 @@
 // J-SHIS「震源断層を特定した地震動予測地図」(想定地震) の取得と、展開図を描くための整形。
 // jiban-api /jshis/scenario を同一オリジン /api/jshis/scenario で叩く(server.js がプロキシ)。
 //
-// データは jiban-api にビルド時同梱された静的バンドル(全国253断層・908ケースで 0.7MB)なので
-// 即時に返る。震源別影響度(contrib)のような取得待ちは無い。
+// データは jiban-api にビルド時同梱された静的バンドル(全国235断層・887ケースで 0.8MB)なので
+// 即時に返る。
 //
 // 1ケースは「断層面(planes) × アスペリティ(asp) × 破壊開始点(des)」で、屈曲断層は面が複数になる。
 // 要素断層の座標は持たず、面ごとの nx×ny グリッドとアスペリティ番号列(aspn)だけを持つ
@@ -54,7 +54,7 @@ export interface ScenarioCase {
   fit: number;
 }
 
-/** getLteInfo 由来の断層情報。旧コードの断層では確率などが空になる。 */
+/** getLteInfo 由来の断層情報。 */
 export interface ScenarioInfo {
   /** 30年 / 50年発生確率 (%) */
   t30p: number | null;
@@ -77,11 +77,9 @@ export interface ScenarioFault {
   /** データのバージョン(V1〜V4) */
   ver: string;
   name: string;
-  /** 地図の震源コード。地図に無い断層は "S:<断層コード>" */
+  /** 震源コード(J-SHIS 確率論的地図の震源モデルの単位)。同じ震源の想定地震をまとめる */
   src: string;
-  /** 旧断層コードのデータか(2024年版の震源モデルにこのコードが無い) */
-  legacy: boolean;
-  /** 複数区間が同時に活動するシナリオか。地図には描かず、重なりとして選択肢に出る */
+  /** 複数区間が同時に活動するシナリオか。地図には普段描かず、一覧の選択肢として出る */
   combo: boolean;
   /** 区間キー "断層帯番号-区間コード"。傾斜角モデル違いは同じ区間キーになる */
   seg: string;
@@ -98,7 +96,7 @@ export function pdfUrl(info: ScenarioInfo): string | null {
 
 /** 震源グループ。断層はまとめず、「どれが同じ震源か」だけを持つ。 */
 export interface ScenarioGroup {
-  /** 震源コード。影響度パネルの行と同じ単位 */
+  /** 震源コード */
   src: string;
   name: string;
   faults: { code: string; name: string; seg: string | null; combo: boolean }[];
@@ -120,24 +118,90 @@ async function getScenario(params: URLSearchParams, signal?: AbortSignal): Promi
 }
 
 /**
- * 断層コードで引く(地図で個別の断層を踏んだとき)。
+ * 断層コードで引く(地図で断層を踏んだとき・一覧で選んだとき)。
  *
- * 先頭が踏んだ断層で、続くのは**同じ場所に重なっている断層**。想定地震は
+ * 先頭が指定した断層で、続くのは**同じ場所に重なっている断層**。想定地震は
  * 「区間 × 傾斜角モデル × 単独/同時活動」の積で、傾斜角モデル違い・ケース違いのコード・
- * 同時活動の組合せは同じ場所に重なるため、地図では選び分けられずパネルの選択肢になる。
+ * 同時活動の組合せは同じ場所に重なるため、地図では選び分けられずパネルの一覧で選ぶ。
  */
 export function fetchScenarioByCode(code: string, signal?: AbortSignal): Promise<ScenarioResult> {
   return getScenario(new URLSearchParams({ code }), signal);
 }
 
-/** 震源＋座標で引く(震源ハイライトなど dissolve 済みの面を踏んだとき)。 */
-export function fetchScenarioAt(
-  src: string,
-  lat: number,
-  lng: number,
-  signal?: AbortSignal
-): Promise<ScenarioResult> {
-  return getScenario(new URLSearchParams({ src, lat: String(lat), lng: String(lng) }), signal);
+/** 地点に波形がある想定地震の断層(近隣の震源)1件。 */
+export interface NearbyFault {
+  code: string;
+  name: string;
+  src: string;
+  seg: string | null;
+  /** 震源グループ名 */
+  group: string;
+  /** 同時活動(複数区間が一緒に動く)シナリオか */
+  combo: boolean;
+  ncase: number;
+  mag: string | null;
+  /** 30年発生確率 (%) */
+  t30p: number | null;
+  /** 断層面の地表投影までの最短距離(km)。内側なら 0 */
+  dist_km: number;
+  /** 計算対象範囲 [西経度, 南緯度, 東経度, 北緯度] */
+  area: [number, number, number, number];
+}
+
+/**
+ * 地点に**波形がある**想定地震の断層。断層ごとの計算対象範囲(J-SHIS が断層ごとに決めている
+ * 経緯度矩形)に地点を含むものを、単独区間・同時活動の順、それぞれ距離の近い順で返す。
+ * jiban-api の同梱データを引くだけなので即時。
+ */
+export async function fetchNearbyFaults(lat: number, lng: number, signal?: AbortSignal): Promise<NearbyFault[]> {
+  const q = new URLSearchParams({ lat: lat.toFixed(5), lng: lng.toFixed(5) });
+  const res = await fetch(`/api/jshis/scenario/nearby?${q}`, { signal, headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`jshis nearby error: ${res.status}`);
+  const j = (await res.json()) as { faults?: NearbyFault[] };
+  return j.faults ?? [];
+}
+
+/** 確率論的地図の震源モデルの1断層(海溝型は1モデル)。 */
+export interface SourceMember {
+  code: string;
+  name: string;
+  mag: number | null;
+  mag_kind: string | null;
+  /** 30年・50年発生確率(0〜1)。海溝型は元データに無く null */
+  t30: number | null;
+  t50: number | null;
+  /** 確率の計算方法(POI=ポアソン過程、BPT など) */
+  proc: string | null;
+  len: number | null;
+  wid: number | null;
+  str: number | null;
+  dip: number | null;
+  dep: number | null;
+  z_min: number | null;
+  z_max: number | null;
+}
+
+/** 確率論的地図の震源1つ(想定地震の無い震源を地図で踏んだときの左パネル用)。 */
+export interface SourceInfo {
+  src: string;
+  name: string;
+  layer: string;
+  /** 地震の種類(主要活断層帯以外の活断層に発生する地震、など) */
+  layer_name: string | null;
+  /** land=陸域・浅い地震 / inter=プレート間 / sub=その他 */
+  cat: string;
+  /** rect=矩形断層 / points=震源域の点群 */
+  kind: string;
+  members: SourceMember[];
+}
+
+export async function fetchSourceInfo(src: string, signal?: AbortSignal): Promise<SourceInfo> {
+  const res = await fetch(`/api/jshis/source?${new URLSearchParams({ src })}`, {
+    signal,
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`jshis source error: ${res.status}`);
+  return (await res.json()) as SourceInfo;
 }
 
 // 震源グループの色。断層をデータとしてまとめない代わりに、同じ震源であることをこの色で示す。
