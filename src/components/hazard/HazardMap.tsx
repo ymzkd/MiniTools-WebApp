@@ -397,8 +397,8 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
   },
   boring: {
     title: 'ボーリング調査データ',
-    // 帯は密度ヒートマップの色ランプと対応(ズームインでマーカー表示に切り替わる)。
-    // マーカー色分けの凡例は出さない(データソースは地点クリック時に左パネルで示す)。
+    // 実際の凡例はデータソース別のマーカー色(下の JSX の BORING_LEGEND)。密度ヒートマップは
+    // 「そこにデータがある」ことを示すだけなので帯は出さない。grad は未使用。
     grad:
       'linear-gradient(to right,rgba(33,102,172,0.55),rgba(103,169,207,0.7),' +
       'rgba(253,184,99,0.85),rgba(239,138,98,0.9),rgba(178,24,43,0.95))',
@@ -406,6 +406,14 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     max: '密度高',
   },
 };
+
+// ボーリング調査データの凡例。マーカーの色(boringColorExpr)と対応させる。
+const BORING_LEGEND: { color: string; label: string; ring?: boolean }[] = [
+  { color: NGI_COLOR, label: '国土地盤（KuniJiban掲載）' },
+  { color: NGI_ONLY_COLOR, label: '国土地盤（NGICのみ）' },
+  { color: TOKYO_COLOR, label: '東京の地盤（GIS版）' },
+  { color: BORING_SELECTED_COLOR, label: '選択中', ring: true },
+];
 
 // pmtiles プロトコルはグローバル登録。boring 側でも使うため重複登録を避け、解除もしない
 // (全タブ常時マウントのSPAなので、片方のアンマウントで他方を壊さないよう removeProtocol しない)。
@@ -1451,6 +1459,26 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
               )}
               <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">
                 地点の揺れ（震度・波形）があるのは想定地震のある活断層だけ。ほかの震源の影響は左パネルの応答スペクトルに含まれます
+              </div>
+            </div>
+          ) : overlay === 'boring' ? (
+            <div className="mt-1 space-y-0.5">
+              {BORING_LEGEND.map((b) => (
+                <div key={b.label} className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
+                  <span
+                    className="inline-block rounded-full shadow"
+                    style={{
+                      background: b.color,
+                      width: b.ring ? 11 : 9,
+                      height: b.ring ? 11 : 9,
+                      border: `${b.ring ? 2 : 1}px solid #ffffff`,
+                    }}
+                  />
+                  {b.label}
+                </div>
+              ))}
+              <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">
+                広域ではデータのある所を濃淡で表示。ズームインで個別地点（クリックで柱状図）
               </div>
             </div>
           ) : (
