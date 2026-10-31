@@ -1196,7 +1196,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         map.getCanvas().style.cursor = onSourcePickRef.current ? 'pointer' : 'crosshair';
       }
       if (ov === 'none') {
-        map.getCanvas().style.cursor = 'crosshair';
+        // オーバーレイ無しでも、近隣の震源の断層の上は押せる(pointer は上で設定済み)
+        if (!sfHit) map.getCanvas().style.cursor = 'crosshair';
         return;
       }
       // 断層は押せるので pointer(上で設定済み)。ボーリング側の mousemove は専用ハンドラで
@@ -1522,12 +1523,14 @@ export interface FaultPick {
   code: string;
 }
 
-/** カーソル位置の想定地震の断層(断層レイヤが可視のときだけ拾える)。 */
+/** カーソル位置の想定地震の断層(断層レイヤか近隣の震源の強調が可視のときだけ拾える)。 */
 function scenarioFaultAt(
   map: maplibregl.Map,
   pt: maplibregl.Point
 ): { code: string; src: string; name: string } | null {
-  const layers = SFAULT_LAYERS.filter((l) => map.getLayer(l));
+  // 近隣の震源の強調(NEAR_LAYERS)も拾う: 震源断層オーバーレイを出していなくても、
+  // 注記で見えている近隣の断層は地図で選べるようにする(非表示レイヤは拾われない)
+  const layers = [...SFAULT_LAYERS, ...NEAR_LAYERS].filter((l) => map.getLayer(l));
   if (!layers.length) return null;
   const box: [maplibregl.PointLike, maplibregl.PointLike] = [
     [pt.x - 4, pt.y - 4],
