@@ -27,7 +27,9 @@ test('printed location links round-trip coordinates and reject invalid input', a
       locationUrl: url.href, qrDataUrl: qr,
     }));
     assert.ok(markup.includes('この地点を地図で開くQRコード'));
-    assert.ok(markup.includes('width:25mm;height:25mm'));
+    assert.ok(markup.includes('width:16mm;height:16mm'));
+    assert.ok(!markup.includes('<div>この地点を地図で開く</div>'));
+    assert.ok(markup.indexOf('この地点を地図で開くQRコード') < markup.indexOf('所在地 / LOCATION'));
     assert.ok(markup.includes(qr));
   } finally { await server.close(); }
 });

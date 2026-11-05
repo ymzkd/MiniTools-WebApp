@@ -74,20 +74,25 @@ export function HazardReportView({ data, locationUrl, qrDataUrl }: {
   return (
     <div style={sheet}>
       {/* ヘッダー */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid rgb(36,59,83)', paddingBottom: '10px' }}>
+      <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '2px solid rgb(36,59,83)', paddingBottom: '10px', paddingRight: qrDataUrl && locationUrl ? '18mm' : undefined }}>
         <div>
-          <div style={{ fontFamily: MINCHO, fontWeight: 700, fontSize: '25px', letterSpacing: '0.04em', color: 'rgb(28,28,26)' }}>
+          <div style={{ fontFamily: MINCHO, fontWeight: 700, fontSize: qrDataUrl && locationUrl ? '22px' : '25px', whiteSpace: 'nowrap', letterSpacing: '0.04em', color: 'rgb(28,28,26)' }}>
             設計積雪量・風速・地域係数レポート
           </div>
           <div style={{ fontSize: '11px', color: 'rgb(107,104,98)', marginTop: '6px' }}>
             建築基準法告示に基づく 積雪・風・地震 の地域諸元
           </div>
         </div>
-        <div style={{ textAlign: 'right', fontSize: '10px', color: 'rgb(58,56,51)', lineHeight: 1.7 }}>
+        <div style={{ textAlign: 'right', fontSize: '10px', color: 'rgb(58,56,51)', lineHeight: 1.7, whiteSpace: 'nowrap' }}>
           <div><span style={{ color: 'rgb(154,151,143)' }}>作成日</span>&nbsp;&nbsp;{dateDot}</div>
           <div><span style={{ color: 'rgb(154,151,143)' }}>座標系</span>&nbsp;&nbsp;WGS84 / 世界測地系</div>
           <div><span style={{ color: 'rgb(154,151,143)' }}>出&nbsp;&nbsp;典</span>&nbsp;&nbsp;国土地理院 ほか</div>
         </div>
+        {qrDataUrl && locationUrl && (
+          <a href={locationUrl} aria-label="この地点を地図で開く" style={{ position: 'absolute', top: 0, right: 0, lineHeight: 0 }}>
+            <img src={qrDataUrl} alt="この地点を地図で開くQRコード" style={{ display: 'block', width: '16mm', height: '16mm' }} />
+          </a>
+        )}
       </div>
 
       {/* 所在地バー */}
@@ -256,12 +261,6 @@ export function HazardReportView({ data, locationUrl, qrDataUrl }: {
           {data.geocodingNotice && <div>{data.geocodingNotice}</div>}
         </div>
         <div style={{ textAlign: 'right', fontSize: '9px', color: 'rgb(107,104,98)', lineHeight: 1.7, whiteSpace: 'nowrap' }}>
-          {qrDataUrl && locationUrl && (
-            <a href={locationUrl} style={{ display: 'block', color: 'inherit', textDecoration: 'none', textAlign: 'center' }}>
-              <img src={qrDataUrl} alt="この地点を地図で開くQRコード" style={{ display: 'block', width: '25mm', height: '25mm', marginLeft: 'auto' }} />
-              <div>この地点を地図で開く</div>
-            </a>
-          )}
           <div style={{ fontFamily: MINCHO, fontWeight: 600, color: 'rgb(36,59,83)' }}>Hazard Map</div>
           <div>設計用地域情報レポート</div>
         </div>
