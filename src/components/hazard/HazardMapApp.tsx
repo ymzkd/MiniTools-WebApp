@@ -10,6 +10,7 @@ import { roughnessCases } from './roughness';
 import InfoTip from './InfoTip';
 import type { DesignResult, Authority, AuthorityType } from './api';
 import type { HazardReportData } from './report/types';
+import { readLocationLink } from './locationLink';
 import SeismicHazardPanel from './SeismicHazardPanel';
 // ボーリング調査データ(柱状図ビューア・パーサ等は components/boring/ 配下)。
 // マーカークリック時に左パネルへ柱状図を出す。
@@ -151,7 +152,9 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     return () => { cancelled = true; };
   }, []);
   // 選択中の地点は内部状態として保持（緯度経度の入力欄は持たない）。
-  const [point, setPoint] = useState<LatLng>(DEFAULT_POINT);
+  const [point, setPoint] = useState<LatLng>(() =>
+    (typeof window !== 'undefined' ? readLocationLink(window.location.search) : null) ?? DEFAULT_POINT
+  );
   // 検索ボックス：住所・地名、または「緯度,経度」を受け付ける。
   const [query, setQuery] = useState('');
   // 加算されると地図が円全体に表示範囲を合わせる（検索時のみ。クリックでは加算しない）
