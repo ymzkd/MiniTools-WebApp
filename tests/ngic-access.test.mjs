@@ -1,4 +1,4 @@
-// Node.js 24+: node --test tests/ngic-access.test.mjs
+// Node.js 24+: node --test --test-concurrency=1 tests/*.test.mjs
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
@@ -30,7 +30,7 @@ test('legacy API NGIC viewer links and the new public entry link are site-only',
 
 test('NGIC-only detail renders just the official link, even with cached data and resources', async () => {
   const server = await createServer({
-    server: { middlewareMode: true, watch: null },
+    server: { middlewareMode: true, watch: null, hmr: false },
     appType: 'custom',
     optimizeDeps: { noDiscovery: true, include: [] },
   });

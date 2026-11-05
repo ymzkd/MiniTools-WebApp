@@ -29,7 +29,11 @@ viewer/PDF/XML links, or relay NGIC-only data. `boring/ngicAccess.ts` centralize
 the `NGI:kj_listed` metadata must survive both tile and search-result mapping. Old cached tiles still
 contain individual-data URLs: the frontend must ignore those and jiban-api must reject relay requests
 without contacting NGIC. KuniJiban, port PDF and Tokyo data retain their existing behavior.
-Tests: `node --test tests/ngic-access.test.mjs` (Node.js 24+).
+Tests: `node --test --test-concurrency=1 tests/*.test.mjs` (Node.js 24+).
+
+The old `/api/kunijiban?url=...` relay is retired (Dokploy returns 410 without upstream access).
+Its Vercel function and Vite forwarding rule are removed. XML parsing only fetches current same-origin
+`/api/tokyo/files/*` and `/api/ngi/proxy/boring/xml/<id>` URLs; there is no external-URL fallback.
 
 ## Architecture
 

@@ -755,14 +755,13 @@ export async function fetchAndParseBoringData(
   location: GeoLocation
 ): Promise<BoringData> {
   try {
-    // ローカル配信(東京 /api/tokyo/files, 全国NGI中継 /api/ngi/proxy)は同一オリジンなので直fetch。
-    // KuniJiban(外部https)はCORS回避のためサーバーレス関数経由で取得。
-    const isLocal = xmlUrl.startsWith('/api/tokyo/') || xmlUrl.startsWith('/api/ngi/');
-    const fetchUrl = isLocal
-      ? xmlUrl
-      : `/api/kunijiban?url=${encodeURIComponent(xmlUrl)}`;
-
-    const response = await fetch(fetchUrl);
+    // 現行の東京・全国NGIのXML配信経路だけを使う。外部URLの旧中継は廃止。
+    const isLocal = xmlUrl.startsWith('/api/tokyo/files/') ||
+      /^\/api\/ngi\/proxy\/boring\/xml\/\d+(?:\?|$)/.test(xmlUrl);
+    if (!isLocal) {
+      throw new Error('このXMLの取得経路は対応していません。地図から調査地点を選び直してください。');
+    }
+    const response = await fetch(xmlUrl);
 
     if (!response.ok) {
       throw new Error(await describeFetchFailure(response));
