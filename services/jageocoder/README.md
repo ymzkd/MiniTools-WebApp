@@ -60,8 +60,7 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
 ```
 
 Dokployでは `/home/ymzkd/geocoding-data/vol` を `/data` にbind mount。
-辞書・RtreeのファイルにコンテナのUID 10001が読み書きできる権限を与える。
-SQLite本体はJageocoderの `mode=r` で開くが、Rtreeライブラリは索引を読み書きで開く。
+ホストのユーザー所有ディレクトリのため、コンテナはrootで実行する（公開ポートなし・内部DNSのみ）。
 辞書のREADMEを必ず同じ場所に残す。ライセンス全文はAPIの `/license` で取得可能。
 更新はAPIを止めている間に別ディレクトリへ展開・索引生成・検証し、mount先を切り替える。
 元の辞書をインプレースで上書きしない。
