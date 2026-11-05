@@ -16,6 +16,7 @@ import SeismicHazardPanel from './SeismicHazardPanel';
 import BoringLogViewer from '../boring/BoringLogViewer';
 import ResultsList from '../boring/ResultsList';
 import { fetchAndParseBoringData } from '../boring/api';
+import { isNgicOnly } from '../boring/ngicAccess';
 // 想定地震(震源断層を特定した地震動予測地図)。地図で断層をクリックすると左パネルへ出す。
 import FaultDetailPanel from './FaultDetailPanel';
 import { fetchNearbyFaults, fetchScenarioByCode, groupColor } from './scenarioApi';
@@ -296,6 +297,11 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
       const id = ++boringReq.current;
       setSelectedBoring(result);
       setBoringData(null);
+      // NGICのみの地点は公式サイトへのリンクだけを案内し、XMLを自動取得しない。
+      if (isNgicOnly(result)) {
+        setBoringLoading(false);
+        return;
+      }
       setBoringLoading(true);
       try {
         const xmlUrl = result.metadata?.['NGI:link_boring_xml'];

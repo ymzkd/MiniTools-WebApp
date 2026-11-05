@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Download, FileText, Droplet, Calendar, Building2, Hash, ExternalLink, Mountain, Code, Database } from 'lucide-react';
 import type { BoringData, MLITSearchResult } from './types';
 import { describeFetchFailure } from './api';
+import { isNgicOnly, NGIC_PUBLIC_URL } from './ngicAccess';
 
 interface BoringLogViewerProps {
   data: BoringData | null;
@@ -143,6 +144,26 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
       {/* 地点の情報(呼び出し側が渡したときだけ)。XMLのローディング中でも表示する */}
       {siteInfo && <div className="px-4 pt-4">{siteInfo}</div>}
 
+      {isNgicOnly(selectedResult) ? (
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            この調査データはNGICのみで公開されています。柱状図・XMLはNGICの一般公開サイトでご確認ください。本アプリでは取得しません。
+          </p>
+          <a
+            href={NGIC_PUBLIC_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
+          >
+            <ExternalLink className="w-4 h-4" />
+            NGICの一般公開サイトを開く
+          </a>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            公開元の案内では、平日16:30〜翌9:00と休日・祝日はサービス停止です。接続元の地域やネットワークによってもアクセスが制限される場合があります。
+          </p>
+        </div>
+      ) : (
+        <>
       {/* ローディング */}
       {loading && (
         <div className="p-8 text-center">
@@ -473,6 +494,8 @@ const BoringLogViewer: React.FC<BoringLogViewerProps> = ({
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   );

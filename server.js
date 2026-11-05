@@ -1,7 +1,6 @@
 // Production server for Dokploy deployment.
-// Serves the built Vite SPA from dist/ and provides the two API proxies that
-// run as Vercel serverless functions in the Vercel/Netlify deployments
-// (see api/mlit.ts and api/kunijiban.ts) so the boring-data tool keeps working.
+// Serves the built Vite SPA from dist/ and proxies local jiban-api requests.
+// The legacy MLIT GraphQL endpoint remains for compatibility.
 import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -58,38 +57,9 @@ app.post('/api/mlit', async (req, res) => {
   }
 })
 
-// KuniJiban XML proxy (avoids CORS; only allows the kunijiban.pwri.go.jp domain).
-app.get('/api/kunijiban', async (req, res) => {
-  const { url } = req.query
-  if (!url || typeof url !== 'string') {
-    return res.status(400).json({ error: 'URL parameter is required' })
-  }
-  if (!url.startsWith('https://www.kunijiban.pwri.go.jp/')) {
-    return res.status(403).json({ error: 'Invalid URL domain' })
-  }
-  try {
-    const response = await fetch(url)
-    if (!response.ok) {
-      console.error('KuniJiban API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        url,
-      })
-      return res
-        .status(response.status)
-        .json({ error: `Failed to fetch XML: ${response.status} ${response.statusText}` })
-    }
-    const arrayBuffer = await response.arrayBuffer()
-    res.setHeader('Content-Type', 'application/xml; charset=shift-jis')
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate')
-    return res.status(200).send(Buffer.from(arrayBuffer))
-  } catch (error) {
-    console.error('Server error:', error)
-    return res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    })
-  }
+// 廃止した中継URLはSPAのHTMLを返さず、外部通信なしで明示的に終了する。
+app.all('/api/kunijiban', (_req, res) => {
+  return res.status(410).json({ error: 'This proxy has been retired. Use the local jiban-api data endpoints.' })
 })
 
 // 東京の地盤(GIS版) ローカル地盤API への薄いリバースプロキシ。

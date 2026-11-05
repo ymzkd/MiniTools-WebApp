@@ -21,28 +21,11 @@ export default defineConfig(({ mode }) => {
           target: 'https://data-platform.mlit.go.jp/api/v1',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/mlit/, ''),
-          configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, _req, _res) => {
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
               // 環境変数からAPIキーを取得してヘッダーに追加
               if (env.MLIT_API_KEY) {
                 proxyReq.setHeader('apikey', env.MLIT_API_KEY);
-              }
-            });
-          },
-        },
-        // KuniJiban XML プロキシ（ローカル開発用）
-        '/api/kunijiban': {
-          target: 'https://www.kunijiban.pwri.go.jp',
-          changeOrigin: true,
-          configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req, _res) => {
-              // URLクエリパラメータから実際のURLを取得
-              const url = new URL(req.url || '', 'http://localhost');
-              const targetUrl = url.searchParams.get('url');
-              if (targetUrl) {
-                // ターゲットURLのパスに書き換え
-                const parsedTarget = new URL(targetUrl);
-                proxyReq.path = parsedTarget.pathname + parsedTarget.search;
               }
             });
           },
