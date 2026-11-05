@@ -7,6 +7,8 @@ export interface HazardReportData {
   generatedAt: string;
   point: { lat: number; lng: number };
   placeName: string | null;
+  geocodingAttribution?: string;
+  geocodingNotice?: string;
   elevation: number | null;
   seaRatio: number | null;
   landRatio: number | null;

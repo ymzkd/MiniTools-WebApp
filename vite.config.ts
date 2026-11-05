@@ -12,6 +12,10 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       open: true,
       proxy: {
+        '/api/geocoding': {
+          target: env.MINITOOLS_API_URL || 'http://127.0.0.1:3001',
+          changeOrigin: true,
+        },
         // MLIT API プロキシ（ローカル開発用）
         '/api/mlit': {
           target: 'https://data-platform.mlit.go.jp/api/v1',

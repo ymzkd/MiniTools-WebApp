@@ -5,12 +5,14 @@
 import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { createGeocodingRouter } from './geocodingProxy.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 const PORT = process.env.PORT || 3000
 
 app.use(express.json({ limit: '4mb' }))
+app.use('/api/geocoding', createGeocodingRouter())
 
 const MLIT_API_ENDPOINT = 'https://data-platform.mlit.go.jp/api/v1/'
 

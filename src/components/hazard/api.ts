@@ -1,6 +1,8 @@
 // Hazard Map の外部データ取得。
 // - 設計用地域区分(基準風速/積雪荷重係数/海率)は jiban-api を同一オリジン /api/design で叩く。
 // - 標高は国土地理院DEM、住所→座標は Nominatim をブラウザから直接叩く（boring と同じ方針）。
+// - 住所検索・逆引きはサーバーの GEOCODING_PROVIDER でローカル Jageocoder に切り替え可能。
+import { fetchLocalGeocoding, getGeocodingConfig } from './geocoding';
 
 export interface WindParams {
   zone: number;
@@ -152,6 +154,11 @@ function formatJpAddress(data: { display_name?: unknown; address?: Record<string
 /** 緯度経度 → 住所（Nominatim リバースジオコーディング, 日本語）。取得不可は null。 */
 export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
   try {
+    const config = await getGeocodingConfig();
+    if (config.provider === 'jageocoder') {
+      const result = await fetchLocalGeocoding('reverse', new URLSearchParams({ lat: String(lat), lng: String(lng) }));
+      return result?.address ?? null;
+    }
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}` +
         `&zoom=18&addressdetails=1&accept-language=ja`
@@ -165,6 +172,11 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
 
 /** 住所・地名 → 緯度経度（Nominatim, 日本に限定）。見つからなければ null。 */
 export async function geocode(address: string): Promise<{ lat: number; lng: number } | null> {
+  const config = await getGeocodingConfig();
+  if (config.provider === 'jageocoder') {
+    const result = await fetchLocalGeocoding('search', new URLSearchParams({ q: address }));
+    return result ? { lat: result.lat, lng: result.lng } : null;
+  }
   const res = await fetch(
     `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
       address

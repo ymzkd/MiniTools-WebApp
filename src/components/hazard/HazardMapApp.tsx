@@ -4,6 +4,8 @@ import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
 import { fetchDesign, fetchElevation, geocode, reverseGeocode, snowDepthCm } from './api';
+import { getGeocodingConfig } from './geocoding';
+import type { GeocodingConfig } from './geocoding';
 import { roughnessCases } from './roughness';
 import InfoTip from './InfoTip';
 import type { DesignResult, Authority, AuthorityType } from './api';
@@ -141,6 +143,12 @@ interface LatLng {
 }
 
 const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
+  const [geocodingConfig, setGeocodingConfig] = useState<GeocodingConfig | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getGeocodingConfig().then((config) => { if (!cancelled) setGeocodingConfig(config); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   // 選択中の地点は内部状態として保持（緯度経度の入力欄は持たない）。
   const [point, setPoint] = useState<LatLng>(DEFAULT_POINT);
   // 検索ボックス：住所・地名、または「緯度,経度」を受け付ける。
@@ -607,6 +615,8 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
 
       const data: HazardReportData = {
         generatedAt,
+        geocodingAttribution: geocodingConfig?.attribution,
+        geocodingNotice: geocodingConfig?.notice,
         point,
         placeName,
         elevation,
@@ -656,6 +666,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
     exporting,
     point,
     placeName,
+    geocodingConfig,
     elevation,
     seaRatio,
     landRatio,
@@ -1224,15 +1235,16 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           </a>
           <span className="ml-1">（標高・背景地図）</span>
           {' / '}
-          <a
-            href="https://www.openstreetmap.org/copyright"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-500 hover:underline"
-          >
-            OpenStreetMap
-          </a>
-          <span className="ml-1">（住所検索 Nominatim・ODbL）</span>
+          {geocodingConfig?.provider === 'jageocoder' ? (
+            <span>{geocodingConfig.attribution}</span>
+          ) : (
+            <>
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                OpenStreetMap
+              </a>
+              <span className="ml-1">（住所検索 Nominatim・ODbL）</span>
+            </>
+          )}
           {' / '}
           <a
             href="https://www.j-shis.bosai.go.jp/"
@@ -1272,6 +1284,7 @@ const HazardMapApp: React.FC<HazardMapAppProps> = ({ onSuccess, onError }) => {
           </a>
           <span className="ml-1">（ボーリング柱状図／東京都建設局 CC BY 2.1 JP）</span>
         </p>
+        {geocodingConfig?.notice && <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">{geocodingConfig.notice}</p>}
       </div>
     </div>
   );

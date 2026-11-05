@@ -248,7 +248,8 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
       {/* フッター */}
       <div style={{ marginTop: '12px', borderTop: '1px solid rgb(217,214,207)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
         <div style={{ flex: 1, fontSize: '8px', color: 'rgb(154,151,143)', lineHeight: 1.5 }}>
-          データ出典: 国土数値情報（都市地域A09・行政区域N03・湖沼W09／国土交通省・CC BY 4.0）/ 国土地理院（標高・背景地図）/ OpenStreetMap（住所検索 Nominatim・ODbL）/ 地震ハザードステーション（表層地盤・深部地盤／防災科研 J-SHIS）。
+          データ出典: 国土数値情報（都市地域A09・行政区域N03・湖沼W09／国土交通省・CC BY 4.0）/ 国土地理院（標高・背景地図）/ {data.geocodingAttribution ?? 'OpenStreetMap（住所検索 Nominatim・ODbL）'} / 地震ハザードステーション（表層地盤・深部地盤／防災科研 J-SHIS）。
+          {data.geocodingNotice && <div>{data.geocodingNotice}</div>}
         </div>
         <div style={{ textAlign: 'right', fontSize: '9px', color: 'rgb(107,104,98)', lineHeight: 1.7, whiteSpace: 'nowrap' }}>
           <div style={{ fontFamily: MINCHO, fontWeight: 600, color: 'rgb(36,59,83)' }}>Hazard Map</div>
