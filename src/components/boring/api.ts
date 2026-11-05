@@ -496,6 +496,7 @@ interface NgiSearchItem {
   source_name: string;
   code: string;
   ngi_id: number | null;
+  kj_listed?: boolean;
   title: string;
   lat: number;
   lng: number;
@@ -518,6 +519,7 @@ function mapNgiItem(item: NgiSearchItem): MLITSearchResult {
     source: 'mlit' as const,
     metadata: {
       'NGI:code': item.code,
+      ...(item.kj_listed !== undefined ? { 'NGI:kj_listed': item.kj_listed ? '1' : '0' } : {}),
       'NGI:id': item.ngi_id != null ? String(item.ngi_id) : undefined,
       'NGI:latitude': String(item.lat),
       'NGI:longitude': String(item.lng),

@@ -34,6 +34,7 @@ export interface MLITSearchResult {
     'NGI:longitude'?: string;
     'NGI:client_name'?: string;
     'NGI:source_name'?: string;
+    'NGI:kj_listed'?: string; // '0'=NGICのみ(公式サイトへの案内のみ)、'1'=KuniJiban掲載
     'NGI:address'?: string;
     'NGI:survey_finish'?: string;
     'NGI:link_boring_xml'?: string;

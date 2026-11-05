@@ -21,6 +21,16 @@ Tools (tab id → path → directory):
 Routing lives in `src/App.tsx`; the tab list / labels in `src/components/common/Navigation.tsx`; the `AppTab`
 union in `src/types/index.ts`. Adding a tool means touching those three plus a new `src/components/<tool>/`.
 
+### NGIC-only boring data access
+
+For points not listed in KuniJiban (`kj=0` in tiles / `kj_listed=false` in the API), only link to
+`https://publicweb.ngic.or.jp/public/publicweb.php`. Do not automatically fetch XML, display individual
+viewer/PDF/XML links, or relay NGIC-only data. `boring/ngicAccess.ts` centralizes the frontend predicate;
+the `NGI:kj_listed` metadata must survive both tile and search-result mapping. Old cached tiles still
+contain individual-data URLs: the frontend must ignore those and jiban-api must reject relay requests
+without contacting NGIC. KuniJiban, port PDF and Tokyo data retain their existing behavior.
+Tests: `node --test tests/ngic-access.test.mjs` (Node.js 24+).
+
 ## Architecture
 
 ### Core Components

@@ -50,6 +50,7 @@ export function featureToResult(p: TileProps, lng: number, lat: number): MLITSea
     title: p.title ?? '(調査名未取得)',
     source: isTokyo ? ('tokyo' as const) : ('mlit' as const),
     metadata: {
+      ...(p.kj !== undefined ? { 'NGI:kj_listed': String(p.kj) } : {}),
       'NGI:link_boring_xml': p.xml_url,
       // log_url は PDF型のみ存在。画像型では undefined になり「PDF柱状図を表示」は出さない。
       'NGI:link_boring_pdf': p.log_url,
