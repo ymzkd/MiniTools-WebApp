@@ -16,7 +16,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
-COPY server.js ./
+COPY server.js geocodingProxy.js ./
 # Keep production and PR-preview images distinct (Dokploy sets
 # BUILD_TARGET=preview for previews). Without this, a merge builds the same
 # tree as its preview, both tags share one image ID, and Dokploy's nightly

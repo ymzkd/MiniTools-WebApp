@@ -23,6 +23,16 @@ union in `src/types/index.ts`. Adding a tool means touching those three plus a n
 
 ## Architecture
 
+### Development-only local geocoding
+
+`services/jageocoder/` is an independent internal Dokploy application with a persisted national
+Japanese address dictionary. MiniTools uses runtime `GEOCODING_PROVIDER=nominatim|jageocoder`
+(default nominatim) and `GEOCODING_API_URL`; there is no UI switch. `geocodingProxy.js` serves config
+and proxies local-only lookups with validation, timeout and rate limiting. Do not silently fall back
+to public APIs on errors. The comparison MiniTools app is separate from production and other PR
+previews. Keep dictionary attribution in both the screen footer and PDF report. See the service README
+for deployment IDs, dictionary license/setup, endpoints and tests. Facility-name search is not supported.
+
 ### Core Components
 - **Unified App Layout**: Tab-based navigation between tools (`src/components/common/AppLayout.tsx`, `Navigation.tsx`)
 - **Map-based tool** (Hazard Map): maplibre-gl + pmtiles, served same-origin via an Express
