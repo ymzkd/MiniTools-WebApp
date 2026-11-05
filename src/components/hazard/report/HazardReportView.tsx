@@ -52,7 +52,11 @@ const rowStyle = (last?: boolean): CSSProperties => ({
   fontVariantNumeric: 'tabular-nums',
 });
 
-export function HazardReportView({ data }: { data: HazardReportData }) {
+export function HazardReportView({ data, locationUrl, qrDataUrl }: {
+  data: HazardReportData;
+  locationUrl?: string;
+  qrDataUrl?: string;
+}) {
   const { point, snow, wind, seismic, shore, roughness } = data;
   const dateDot = data.generatedAt.slice(0, 10).replace(/-/g, '.');
   const shoreM = shore?.nearestM ?? null;
@@ -252,6 +256,12 @@ export function HazardReportView({ data }: { data: HazardReportData }) {
           {data.geocodingNotice && <div>{data.geocodingNotice}</div>}
         </div>
         <div style={{ textAlign: 'right', fontSize: '9px', color: 'rgb(107,104,98)', lineHeight: 1.7, whiteSpace: 'nowrap' }}>
+          {qrDataUrl && locationUrl && (
+            <a href={locationUrl} style={{ display: 'block', color: 'inherit', textDecoration: 'none', textAlign: 'center' }}>
+              <img src={qrDataUrl} alt="この地点を地図で開くQRコード" style={{ display: 'block', width: '25mm', height: '25mm', marginLeft: 'auto' }} />
+              <div>この地点を地図で開く</div>
+            </a>
+          )}
           <div style={{ fontFamily: MINCHO, fontWeight: 600, color: 'rgb(36,59,83)' }}>Hazard Map</div>
           <div>設計用地域情報レポート</div>
         </div>

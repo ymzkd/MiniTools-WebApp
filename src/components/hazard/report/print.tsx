@@ -2,6 +2,8 @@
 // react-dom/server で印刷用HTMLを生成し、非表示 iframe に流し込んでブラウザの
 // 「印刷 → PDFに保存」を起動する。フォントはユーザーのローカル書体を使う（取得なし）。
 import { renderToStaticMarkup } from 'react-dom/server';
+import QRCode from 'qrcode';
+import { buildLocationLink } from '../locationLink';
 import { HazardReportView } from './HazardReportView';
 import type { HazardReportData } from './types';
 
@@ -49,7 +51,11 @@ async function waitReady(win: Window): Promise<void> {
 
 /** レポートを印刷ダイアログで開く（ユーザーが「PDFに保存」を選択）。 */
 export async function printHazardReport(data: HazardReportData): Promise<void> {
-  const markup = renderToStaticMarkup(<HazardReportView data={data} />);
+  const locationUrl = buildLocationLink(data.point);
+  const qrDataUrl = await QRCode.toDataURL(locationUrl, {
+    errorCorrectionLevel: 'M', margin: 4, width: 360,
+  });
+  const markup = renderToStaticMarkup(<HazardReportView data={data} locationUrl={locationUrl} qrDataUrl={qrDataUrl} />);
   const html =
     `<!doctype html><html lang="ja"><head><meta charset="utf-8">` +
     `<title>${docTitle(data)}</title><style>${PRINT_CSS}</style></head>` +
