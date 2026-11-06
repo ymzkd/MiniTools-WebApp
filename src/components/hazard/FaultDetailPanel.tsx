@@ -25,6 +25,7 @@ import {
   fetchCaseSummary,
   fetchWave,
   fmtStrike,
+  hasCutCells,
   pdfUrl,
   shindoColor,
   unitLabel,
@@ -760,6 +761,22 @@ const Legend: React.FC<{ kase: import('./scenarioApi').ScenarioCase }> = ({ kase
         <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'var(--viz-grid)' }} />
         背景領域 {Math.round(bgArea(kase.planes))} km²
       </span>
+      {hasCutCells(kase.planes) && (
+        <span
+          className="inline-flex items-center gap-1"
+          title="屈曲部で隣のセグメントとの境に切り落とされた、2km 格子のマス（断層ではない）"
+        >
+          <span
+            className="inline-block w-3 h-3 rounded-sm"
+            style={{
+              background:
+                'repeating-linear-gradient(45deg, var(--viz-muted) 0 2px, transparent 2px 4px)',
+              opacity: 0.7,
+            }}
+          />
+          断層外のマス
+        </span>
+      )}
       {kase.des && (
         <span className="inline-flex items-center gap-1">
           <Star className="w-3 h-3" fill="currentColor" />

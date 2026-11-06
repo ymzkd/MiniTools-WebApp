@@ -23,11 +23,27 @@ export interface ScenarioPlane {
   ny: number;
   /** 行優先のアスペリティ番号列。'0'=背景領域、'1'以上=アスペリティ番号(36進1桁) */
   aspn: string;
+  /** 要素の格子の起点(0列目の左端・0行目の上端の面内座標 km)。面の端から始まらない面だけ持つ。
+      柳ヶ瀬・関ヶ原断層帯主部北部などは走向方向に 0.42km 内側から並ぶ */
+  s0?: number;
+  w0?: number;
+  /** 要素の無いマス(aspn の添字)。台形の面で格子の隅が空く。aspn ではこれも '0' なので別に持つ */
+  gaps?: number[];
+  /** 面の外形(面内座標の4頂点)。屈曲部の台形・三角形の面のように [0,L]×[0,W] でない面だけ持つ */
+  outline?: { s: number[]; w: number[] };
+  /** 2km 格子に乗らない面の要素(甑断層帯・魚津断層帯など4面)。[アスペリティ番号, s1, w1, … s4, w4]。
+      これを持つ面は nx/ny/aspn(古い画面向けの近似)でなくこちらで描く */
+  tiles?: number[][];
 }
 
-/** アスペリティ矩形。p=断層面の番号、s/w=面内座標(走向方向km / 傾斜方向km)の4頂点。 */
+/**
+ * アスペリティの外形。p=断層面の番号、n=アスペリティ番号、s/w=面内座標(走向方向km / 傾斜方向km)の
+ * 多角形の頂点。同じ番号の要素断層を合わせた形で、CSV の # ASP 矩形ではない(雲仙断層群南西部北部の
+ * ように J-SHIS の矩形が要素と食い違う断層がある)。古いバンドルは n が無く、s/w は ASP 矩形の4頂点。
+ */
 export interface ScenarioAsp {
   p: number;
+  n?: number;
   s: number[];
   w: number[];
 }
@@ -226,13 +242,13 @@ export function caseNumbers(f: ScenarioFault): string[] {
 }
 
 // ---------------------------------------------------------------- 展開図の下ごしらえ
-/** 展開図のセル。面内座標(km)とアスペリティ番号。 */
+/** 展開図の要素1個。面内座標(km)の多角形(4頂点)とアスペリティ番号(0=背景領域)。 */
 export interface PlaneCell {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  pts: [number, number][];
   asp: number;
+  /** 断層外のマス。2km の直交格子のうち、屈曲部で面の外形(台形)に切り落とされて要素の無いマス。
+      J-SHIS のパラメータ表の図でグレーに塗られている部分にあたる。面積には数えない */
+  out?: boolean;
 }
 
 /** aspn の1文字 → アスペリティ番号(0=背景領域)。 */
@@ -243,57 +259,105 @@ export function aspnAt(plane: ScenarioPlane, col: number, row: number): number {
 }
 
 /**
- * 断層面 → 展開図のセル一覧(走向方向 x km、傾斜方向 y km)。
- * セル寸法は L/nx × W/ny（J-SHIS は 2km メッシュだが、端数の面があるので実測値から出す）。
+ * 要素断層の寸法(km)。J-SHIS は全国共通の 2km メッシュで、jiban-api のバンドルも要素を
+ * 面内座標 2km 刻みの格子に並べている(build_scenario_faults.py の build_case)。
+ *
+ * L/nx × W/ny で割り戻してはいけない。屈曲断層の面は台形のことがあり、上端の辺の長さ L と
+ * 要素の並ぶ範囲が一致しない(糸静南部のセグメント1は L 11.15km に5列=10km)。割り戻すと
+ * セルが伸び縮みして、実寸で描くアスペリティ外形(点線)や破壊開始点とずれる。
+ */
+export const CELL_KM = 2;
+
+/** 面に要素断層があるか(無い面は展開図に描かない)。 */
+export function planeHasElements(plane: ScenarioPlane): boolean {
+  return (plane.tiles?.length ?? 0) > 0 || (plane.nx > 0 && plane.ny > 0);
+}
+
+/**
+ * 断層面 → 展開図の要素一覧。
+ * 2km 格子に乗らない面は tiles(実際の位置から組んだ四角形)、それ以外は 2km 格子のセル。
+ *
+ * 台形の面の要素は「2km の直交格子のうち、中心が面の外形(FLT の4隅)の内側にあるマス」に
+ * なっている(21面中20面で完全一致、残り1面も境界上の1マスだけ)。格子の要素の無いマス(gaps)は
+ * その切り落とされた部分なので、out=true の断層外のマスとして返す。
  */
 export function planeCells(plane: ScenarioPlane): PlaneCell[] {
+  if (plane.tiles?.length) {
+    return plane.tiles.map((t) => ({
+      asp: t[0],
+      pts: [[t[1], t[2]], [t[3], t[4]], [t[5], t[6]], [t[7], t[8]]],
+    }));
+  }
   if (!plane.nx || !plane.ny) return [];
-  const cw = plane.L / plane.nx;
-  const ch = plane.W / plane.ny;
+  const c = CELL_KM;
+  const gs = plane.s0 ?? 0;
+  const gw = plane.w0 ?? 0;
+  const gaps = new Set(plane.gaps ?? []);
   const out: PlaneCell[] = [];
   for (let row = 0; row < plane.ny; row++) {
     for (let col = 0; col < plane.nx; col++) {
-      out.push({ x: col * cw, y: row * ch, w: cw, h: ch, asp: aspnAt(plane, col, row) });
+      const x = gs + col * c;
+      const y = gw + row * c;
+      const pts: [number, number][] = [[x, y], [x + c, y], [x + c, y + c], [x, y + c]];
+      if (gaps.has(row * plane.nx + col)) out.push({ asp: 0, out: true, pts });
+      else out.push({ asp: aspnAt(plane, col, row), pts });
     }
+  }
+  return out;
+}
+
+/** 面の外形(面内座標の頂点列)。屈曲部の台形・三角形の面は outline、それ以外は [0,L]×[0,W]。 */
+export function planeOutline(plane: ScenarioPlane): [number, number][] {
+  if (plane.outline) return plane.outline.s.map((s, i) => [s, plane.outline!.w[i]]);
+  return [[0, 0], [plane.L, 0], [plane.L, plane.W], [0, plane.W]];
+}
+
+/**
+ * 展開図に描く範囲(面内座標 km)。面の外形と要素の和。
+ * 台形の面では要素が外形からはみ出し、格子の起点が負の面では手前にもはみ出す。
+ */
+export function planeExtent(plane: ScenarioPlane): { s0: number; s1: number; w0: number; w1: number } {
+  const pts = [...planeOutline(plane), ...planeCells(plane).flatMap((c) => c.pts)];
+  return {
+    s0: Math.min(0, ...pts.map((p) => p[0])),
+    s1: Math.max(plane.L, ...pts.map((p) => p[0])),
+    w0: Math.min(0, ...pts.map((p) => p[1])),
+    w1: Math.max(plane.W, ...pts.map((p) => p[1])),
+  };
+}
+
+/** 断層外のマス(屈曲部で切り落とされたマス)を含むか。凡例用。 */
+export function hasCutCells(planes: ScenarioPlane[]): boolean {
+  return planes.some((p) => !p.tiles?.length && (p.gaps?.length ?? 0) > 0);
+}
+
+/** アスペリティ番号 → 要素断層の数。0 は背景領域。断層外のマスは数えない。 */
+function elementCounts(planes: ScenarioPlane[]): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const p of planes) {
+    for (const c of planeCells(p)) if (!c.out) out.set(c.asp, (out.get(c.asp) ?? 0) + 1);
   }
   return out;
 }
 
 /** その面に現れるアスペリティ番号(昇順)。凡例用。 */
 export function aspNumbers(planes: ScenarioPlane[]): number[] {
-  const set = new Set<number>();
-  for (const p of planes) {
-    for (const chr of p.aspn) {
-      if (chr !== '0') set.add(parseInt(chr, 36));
-    }
-  }
-  return [...set].sort((a, b) => a - b);
+  return [...elementCounts(planes).keys()].filter((n) => n > 0).sort((a, b) => a - b);
 }
 
-/** アスペリティ番号 → 面積(km²)。要素断層のセル数から数える。 */
+/**
+ * アスペリティ番号 → 面積(km²)。要素断層の数 × 2km×2km で数える。J-SHIS の断層パラメータ表の
+ * 「計算用面積(2km メッシュサイズ)」と同じ数え方(2km 格子に乗らない面の要素も 1個 4km² 扱い)。
+ */
 export function aspArea(planes: ScenarioPlane[]): Map<number, number> {
   const out = new Map<number, number>();
-  for (const p of planes) {
-    if (!p.nx || !p.ny) continue;
-    const cell = (p.L / p.nx) * (p.W / p.ny);
-    for (const chr of p.aspn) {
-      if (chr === '0') continue;
-      const n = parseInt(chr, 36);
-      out.set(n, (out.get(n) ?? 0) + cell);
-    }
-  }
+  for (const [n, k] of elementCounts(planes)) if (n > 0) out.set(n, k * CELL_KM * CELL_KM);
   return out;
 }
 
-/** 背景領域の面積(km²)。 */
+/** 背景領域の面積(km²)。数え方は aspArea と同じ。 */
 export function bgArea(planes: ScenarioPlane[]): number {
-  let sum = 0;
-  for (const p of planes) {
-    if (!p.nx || !p.ny) continue;
-    const cell = (p.L / p.nx) * (p.W / p.ny);
-    for (const chr of p.aspn) if (chr === '0') sum += cell;
-  }
-  return sum;
+  return (elementCounts(planes).get(0) ?? 0) * CELL_KM * CELL_KM;
 }
 
 /** 面内の傾斜方向距離 w(km) → 深さ(km)。 */
