@@ -3,11 +3,15 @@
 // アスペリティの外形と破壊開始点(★)を重ねる。ケースの違い(アスペリティ配置・破壊開始点)は
 // この図の差として現れるので、ケースを切り替えて見比べるのが本来の使い方。
 //
+// 面・要素・アスペリティの外形はどれも多角形で描く。屈曲部の面は長方形とは限らず(台形・三角形)、
+// 甑断層帯のつなぎ目の面のように要素が 2km 格子に乗らない面もある(jiban-api の
+// build_scenario_faults.py が面の外形 outline と要素のタイル tiles を出す)。
+//
 // 屈曲断層はセグメントごとに縦積みする。全セグメントを同じスケールで描き、パネル幅には
 // 最長セグメントを合わせる(セグメントごとに伸縮させると長さの比較ができなくなるため)。
 // 実データの最大は中央構造線の全区間同時活動で 11セグメント・全長456km・要素2025個。
-import React from 'react';
-import { aspColor, depthAt, fmtStrike, planeCells } from './scenarioApi';
+import React, { useId } from 'react';
+import { aspColor, depthAt, fmtStrike, planeCells, planeExtent, planeHasElements, planeOutline } from './scenarioApi';
 import type { ScenarioCase, ScenarioPlane } from './scenarioApi';
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -15,6 +19,9 @@ const BG_FILL = 'var(--viz-grid)';
 const INK = 'var(--viz-ink)';
 const INK2 = 'var(--viz-ink2)';
 const AXIS = 'var(--viz-axis)';
+// 断層外のマス(屈曲部で切り落とされたマス)。J-SHIS のパラメータ表の図のグレーにあたる。
+// 背景領域(断層の一部)と取り違えないよう、中間のグレーに斜線を重ねる
+const OUT_FILL = 'var(--viz-muted)';
 
 // 図の余白。左は深さ目盛り、下は走向方向の目盛り、上はセグメント見出しに使う。
 const PAD_L = 34;
@@ -31,16 +38,29 @@ interface Props {
 }
 
 const FaultPlaneView: React.FC<Props> = ({ kase, width }) => {
-  const planes = kase.planes.filter((p) => p.nx > 0 && p.ny > 0);
+  // 斜線パターンの id。useId の ":" は url(#…) で扱いにくいので落とす
+  const hatchId = `fpv-out-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  // 要素断層の乗らない面は描かない。ただし asp.p / des.p は kase.planes の元の番号なので、
+  // 間引いた後の並び順で照合すると後ろの面へ1枚ずつずれる(点線のアスペリティ外形が別セグメントに
+  // はみ出し、破壊開始点が消える)。元の番号を持ち回る
+  const shown = kase.planes
+    .map((plane, idx) => ({ plane, idx }))
+    .filter(({ plane }) => planeHasElements(plane));
+  const planes = shown.map((s) => s.plane);
   if (!planes.length) return null;
 
-  const maxL = Math.max(...planes.map((p) => p.L));
+  // 大きさは面の外形と要素の格子を合わせた範囲で取る(台形の面では格子が外形からはみ出す)。
+  // 走向方向の原点(s=0)は全セグメントでそろえ、手前にはみ出す格子のぶんだけ右へ寄せる
+  const exts = planes.map(planeExtent);
+  const left = Math.min(...exts.map((e) => e.s0));
+  const spanL = Math.max(...exts.map((e) => e.s1)) - left;
   const inner = Math.max(120, width - PAD_L - PAD_R);
   // 全セグメント共通のスケール。最長セグメントが収まる倍率にし、細かすぎるときだけ下限で止める
-  const scale = Math.max(inner / maxL, MIN_PX_PER_KM);
-  const svgW = PAD_L + maxL * scale + PAD_R;
+  const scale = Math.max(inner / spanL, MIN_PX_PER_KM);
+  const svgW = PAD_L + spanL * scale + PAD_R;
+  const ox = -left * scale;
 
-  const heights = planes.map((p) => p.W * scale);
+  const heights = exts.map((e) => (e.w1 - e.w0) * scale);
   const svgH = PAD_T + heights.reduce((a, b) => a + b + GAP + PAD_B, 0);
 
   // セグメントの縦位置(見出しぶんの PAD_T と目盛りぶんの PAD_B を挟む)
@@ -62,15 +82,24 @@ const FaultPlaneView: React.FC<Props> = ({ kase, width }) => {
         role="img"
         aria-label="断層面の展開図"
       >
-        {planes.map((plane, pi) => (
+        <defs>
+          <pattern id={hatchId} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width={5} height={5} fill={OUT_FILL} fillOpacity={0.45} />
+            <line x1={0} y1={0} x2={0} y2={5} stroke="var(--viz-surface)" strokeWidth={1.4} strokeOpacity={0.55} />
+          </pattern>
+        </defs>
+        {shown.map(({ plane, idx }, pi) => (
           <PlaneBlock
-            key={pi}
+            key={idx}
             plane={plane}
-            index={pi}
+            index={idx}
+            label={pi + 1}
             showIndex={multi}
             top={tops[pi]}
+            ox={ox}
             scale={scale}
             kase={kase}
+            hatchId={hatchId}
           />
         ))}
       </svg>
@@ -80,14 +109,27 @@ const FaultPlaneView: React.FC<Props> = ({ kase, width }) => {
 
 const PlaneBlock: React.FC<{
   plane: ScenarioPlane;
+  /** kase.planes での番号(asp.p / des.p と照合する) */
   index: number;
+  /** 見出しに出すセグメント番号(描いた面だけを1から数える) */
+  label: number;
   showIndex: boolean;
+  /** 描画範囲の上端の y(px) */
   top: number;
+  /** 面内座標 s=0 の x(px, PAD_L から) */
+  ox: number;
   scale: number;
   kase: ScenarioCase;
-}> = ({ plane, index, showIndex, top, scale, kase }) => {
-  const w = plane.L * scale;
+  /** 断層外のマスの斜線パターンの id */
+  hatchId: string;
+}> = ({ plane, index, label, showIndex, top, ox, scale, kase, hatchId }) => {
   const h = plane.W * scale;
+  const ext = planeExtent(plane);
+  const pts = (ps: [number, number][]) => ps.map(([s, w]) => `${s * scale},${w * scale}`).join(' ');
+  // w=0(面の上端)の y。格子が上にはみ出す面ではそのぶん下げる
+  const oy = -ext.w0 * scale;
+  // 走向方向の目盛りは、外形からはみ出した格子にかぶらないよう描画範囲の下端に置く
+  const hb = ext.w1 * scale;
   const cells = planeCells(plane);
   const asps = kase.asp.filter((a) => a.p === index);
   const des = kase.des && kase.des.p === index ? kase.des : null;
@@ -97,51 +139,41 @@ const PlaneBlock: React.FC<{
   for (let s = 0; s <= plane.L + 1e-6; s += step) ticks.push(s);
 
   return (
-    <g transform={`translate(${PAD_L}, ${top})`}>
+    <g transform={`translate(${PAD_L + ox}, ${top + oy})`}>
       {/* 見出し: セグメント諸元 */}
-      <text x={0} y={-4} fontSize={9.5} fill={INK2}>
-        {showIndex ? `セグメント${index + 1} ／ ` : ''}
+      <text x={-ox} y={-oy - 4} fontSize={9.5} fill={INK2}>
+        {showIndex ? `セグメント${label} ／ ` : ''}
         L {plane.L.toFixed(0)} km ／ W {plane.W.toFixed(0)} km ／ 走向 {fmtStrike(plane.strike)} ／ 傾斜 {plane.dip.toFixed(0)}°
       </text>
 
-      {/* 要素断層。背景領域は薄いグレー、アスペリティは番号ごとの色 */}
+      {/* 要素断層。背景領域は薄いグレー、アスペリティは番号ごとの色、断層外のマスは斜線入りのグレー */}
       {cells.map((c, i) => (
-        <rect
+        <polygon
           key={i}
-          x={c.x * scale}
-          y={c.y * scale}
-          width={c.w * scale}
-          height={c.h * scale}
-          fill={c.asp ? aspColor(c.asp) : BG_FILL}
-          fillOpacity={c.asp ? 0.75 : 0.55}
+          points={pts(c.pts)}
+          fill={c.out ? `url(#${hatchId})` : c.asp ? aspColor(c.asp) : BG_FILL}
+          fillOpacity={c.out ? 1 : c.asp ? 0.75 : 0.55}
           stroke="var(--viz-surface)"
           strokeWidth={0.4}
         />
       ))}
 
-      {/* アスペリティの外形(CSV の ASP 矩形。要素の塗りと一致するが、境界を明示する) */}
-      {asps.map((a, i) => {
-        const x0 = Math.min(...a.s) * scale;
-        const x1 = Math.max(...a.s) * scale;
-        const y0 = Math.min(...a.w) * scale;
-        const y1 = Math.max(...a.w) * scale;
-        return (
-          <rect
-            key={i}
-            x={x0}
-            y={y0}
-            width={x1 - x0}
-            height={y1 - y0}
-            fill="none"
-            stroke={INK}
-            strokeWidth={1.1}
-            strokeDasharray="3 2"
-          />
-        );
-      })}
+      {/* アスペリティの外形。同じ番号の要素を合わせた形(jiban-api が作る)で、塗りと一致する。
+          塗りだけだと同じ色が続いて境界が見えにくいので明示する */}
+      {asps.map((a, i) => (
+        <polygon
+          key={i}
+          points={pts(a.s.map((s, k) => [s, a.w[k]] as [number, number]))}
+          fill="none"
+          stroke={INK}
+          strokeWidth={1.1}
+          strokeDasharray="3 2"
+          strokeLinejoin="round"
+        />
+      ))}
 
       {/* 断層面の外形 */}
-      <rect x={0} y={0} width={w} height={h} fill="none" stroke={AXIS} strokeWidth={1} />
+      <polygon points={pts(planeOutline(plane))} fill="none" stroke={AXIS} strokeWidth={1} />
 
       {/* 破壊開始点。レシピではアスペリティの外側の隅・深部側に置かれる */}
       {des && <Star x={des.s * scale} y={des.w * scale} />}
@@ -149,8 +181,8 @@ const PlaneBlock: React.FC<{
       {/* 走向方向の目盛り(km) */}
       {ticks.map((s) => (
         <g key={s}>
-          <line x1={s * scale} y1={h} x2={s * scale} y2={h + 3} stroke={AXIS} strokeWidth={0.8} />
-          <text x={s * scale} y={h + 12} fontSize={9} fill={INK2} textAnchor="middle">
+          <line x1={s * scale} y1={hb} x2={s * scale} y2={hb + 3} stroke={AXIS} strokeWidth={0.8} />
+          <text x={s * scale} y={hb + 12} fontSize={9} fill={INK2} textAnchor="middle">
             {s.toFixed(0)}
           </text>
         </g>
@@ -163,12 +195,12 @@ const PlaneBlock: React.FC<{
         {depthAt(plane, plane.W).toFixed(0)}
       </text>
       <text
-        x={-PAD_L + 9}
+        x={-PAD_L - ox + 9}
         y={h / 2}
         fontSize={8.5}
         fill={INK2}
         textAnchor="middle"
-        transform={`rotate(-90, ${-PAD_L + 9}, ${h / 2})`}
+        transform={`rotate(-90, ${-PAD_L - ox + 9}, ${h / 2})`}
       >
         深さ km
       </text>
