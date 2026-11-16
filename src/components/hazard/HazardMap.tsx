@@ -38,6 +38,7 @@ export type ZoneOverlay =
   | 'wind'
   | 'seismic'
   | 'urban'
+  | 'fire_zones'
   | 'depth'
   | 'snow_zones'
   | 'authority'
@@ -184,6 +185,12 @@ const VECTOR_ZONE_KINDS = ['wind', 'seismic', 'snow_zones'] as const;
 const ZONE_SOURCE_LAYER = 'zones';
 // 値ラスターの取得パス・点読み出しは valueRaster.ts に集約（左パネルでも使うため）。
 // 都市計画区域(外形のみ)。区域区分は区別せずグレー塗りで分布を示す。tippecanoe -l urban。
+const FIRE_ZONES_PMTILES = '/fire_zones.pmtiles';
+const FIRE_ZONE_COLORS = {
+  '防火地域': '#be123c',
+  '準防火地域': '#d97706',
+} as const;
+const FIRE_ZONES_SOURCE_URL = 'https://www.mlit.go.jp/toshi/tosiko/toshi_tosiko_tk_000087.html';
 const URBAN_PMTILES = '/api/design/tiles/urban_areas.pmtiles';
 const URBAN_SOURCE_LAYER = 'urban';
 const URBAN_FILL_COLOR = '#9ca3af'; // gray-400
@@ -342,6 +349,7 @@ const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string
     min: '区域内',
     max: '',
   },
+  fire_zones: { title: '防火・準防火地域', grad: '', min: '', max: '' },
   depth: {
     title: '積雪深（垂直積雪量 cm）',
     grad:
@@ -667,7 +675,10 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       map.setLayoutProperty('zones-snow_zones-fill', 'visibility', kind === 'snow_zones' ? 'visible' : 'none');
     }
     if (map.getLayer('zones-urban-fill')) {
-      map.setLayoutProperty('zones-urban-fill', 'visibility', kind === 'urban' ? 'visible' : 'none');
+      map.setLayoutProperty('zones-urban-fill', 'visibility', (kind === 'urban' || kind === 'fire_zones') ? 'visible' : 'none');
+    }
+    if (map.getLayer('zones-fire-fill')) {
+      map.setLayoutProperty('zones-fire-fill', 'visibility', kind === 'fire_zones' ? 'visible' : 'none');
     }
     if (map.getLayer('zones-authority-fill')) {
       map.setLayoutProperty('zones-authority-fill', 'visibility', kind === 'authority' ? 'visible' : 'none');
@@ -815,6 +826,27 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         'source-layer': URBAN_SOURCE_LAYER,
         layout: { visibility: 'none' },
         paint: { 'fill-color': URBAN_FILL_COLOR, 'fill-opacity': 0.45 },
+      });
+
+      map.addSource('zones-fire', {
+        type: 'vector',
+        url: `pmtiles://${origin}${FIRE_ZONES_PMTILES}`,
+      });
+      map.addLayer({
+        id: 'zones-fire-fill',
+        type: 'fill',
+        source: 'zones-fire',
+        'source-layer': 'fire_zones',
+        layout: { visibility: 'none' },
+        paint: {
+          'fill-color': [
+            'match', ['get', 'kind'],
+            '防火地域', FIRE_ZONE_COLORS['防火地域'],
+            '準防火地域', FIRE_ZONE_COLORS['準防火地域'],
+            'transparent',
+          ],
+          'fill-opacity': 0.62,
+        },
       });
 
       // 特定行政庁（建築基準法）の分布。庁の区分(type)で4色に塗り分け。
@@ -1247,6 +1279,12 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         }
         return;
       }
+      if (ov === 'fire_zones') {
+        const [feature] = map.queryRenderedFeatures(e.point, { layers: ['zones-fire-fill'] });
+        const zone = feature?.properties;
+        setHover(zone ? `${zone.kind}（${zone.city}）` : null);
+        return;
+      }
       if (ov === 'urban') {
         const fs = map.queryRenderedFeatures(e.point, { layers: ['zones-urban-fill'] });
         setHover(fs.length ? '都市計画区域: 区域内' : '都市計画区域: 区域外');
@@ -1462,6 +1500,19 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
               <div className="text-[9px] text-gray-500 dark:text-gray-400 leading-tight">
                 地点の揺れ（震度・波形）があるのは想定地震のある活断層だけ。ほかの震源の影響は左パネルの応答スペクトルに含まれます
               </div>
+            </div>
+          ) : overlay === 'fire_zones' ? (
+            <div className="mt-1 space-y-0.5 text-[9px] text-gray-600 dark:text-gray-300">
+              {Object.entries(FIRE_ZONE_COLORS).map(([label, color]) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-4 rounded-sm" style={{ background: color }} />
+                  {label}
+                </div>
+              ))}
+              <a className="pointer-events-auto underline" href={FIRE_ZONES_SOURCE_URL} target="_blank" rel="noreferrer">
+                出典 国土交通省 都市計画決定GISデータ（令和7年度）
+              </a>
+              <div>参考情報。未掲載の区域があります。</div>
             </div>
           ) : overlay === 'boring' ? (
             <div className="mt-1 space-y-0.5">
