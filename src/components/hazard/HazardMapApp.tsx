@@ -77,9 +77,9 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     key: 'urban',
     Icon: Building2,
     label: '都市計画区域',
-    // 押すたびに 都市計画区域(外形) ↔ 特定行政庁(建築基準法の所管庁分布) をループ切替。
     variants: [
       { val: 'urban', label: '都市計画区域' },
+      { val: 'fire_zones', label: '防火・準防火地域' },
       { val: 'authority', label: '特定行政庁' },
     ],
   },
