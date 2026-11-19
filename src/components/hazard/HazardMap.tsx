@@ -11,6 +11,18 @@ import {
   ampHeightAt,
   vs350HeightAt,
 } from './valueRaster';
+// 洪水・土砂災害（ハザードマップポータルのラスタタイル）
+import {
+  DISAPORTAL_ATTRIBUTION,
+  DISAPORTAL_LAYERS,
+  DISAPORTAL_MAXZOOM,
+  DISAPORTAL_OVERLAYS,
+  DISAPORTAL_SOURCE_URL,
+  disaportalLabelAt,
+  disaportalTileUrl,
+  isDisaportalOverlay,
+} from './disaportal';
+import type { DisaportalOverlay } from './disaportal';
 // ボーリング調査地点タイル(共有定義は boring/pointsTiles.ts)。ヒートマップはオーバーレイの1つ、
 // 個別マーカーは注記トグル(annotations.boringPts)として描く。
 import {
@@ -45,7 +57,8 @@ export type ZoneOverlay =
   | 'amp'
   | 'vs350'
   | 'faults'
-  | 'boring';
+  | 'boring'
+  | DisaportalOverlay;
 
 // 全断層(下塗り・面・断層線)を描くのは 'faults'(震源断層)オーバーレイのときだけ —
 // 常時だと全国の断層が重なって読みづらいため。
@@ -330,7 +343,8 @@ function setGroupOutline(map: maplibregl.Map, src: string | null, exclude: strin
 }
 
 // 地図内オーバーレイ凡例（CSSグラデーション）。地図の塗り色と対応。
-const LEGEND: Record<Exclude<ZoneOverlay, 'none'>, { title: string; grad: string; min: string; max: string }> = {
+// 洪水・土砂災害(DisaportalOverlay)の凡例は disaportal.ts の DISAPORTAL_LAYERS から描く。
+const LEGEND: Record<Exclude<ZoneOverlay, 'none' | DisaportalOverlay>, { title: string; grad: string; min: string; max: string }> = {
   wind: {
     title: '基準風速 地域区分（平12建告1454号）',
     grad: 'linear-gradient(to right, #fee5d9, #fb6a4a, #a50f15)',
@@ -695,6 +709,11 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     if (map.getLayer('boring-heat')) {
       map.setLayoutProperty('boring-heat', 'visibility', kind === 'boring' ? 'visible' : 'none');
     }
+    for (const dp of DISAPORTAL_OVERLAYS) {
+      if (map.getLayer(`dp-${dp}`)) {
+        map.setLayoutProperty(`dp-${dp}`, 'visibility', kind === dp ? 'visible' : 'none');
+      }
+    }
     applyBoringPts(kind, annotRef.current);
     // 断層は「震源断層」オーバーレイのときだけ(全国の断層が常時重なると読みづらいため)。
     applyScenarioFaults(map, kind);
@@ -742,6 +761,13 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
     map.scrollZoom.setWheelZoomRate(1 / 120);
     map.scrollZoom.setZoomRate(1 / 60);
     map.getCanvas().style.cursor = 'crosshair';
+    // ハザードマップポータルのタイルはデータの無い範囲で 404 を返すのが正常なので握りつぶす。
+    // リスナーを付けると maplibre の既定のエラー出力が止まるため、それ以外はここで出力する。
+    map.on('error', (e) => {
+      const sourceId = (e as { sourceId?: string }).sourceId;
+      if (sourceId?.startsWith('dp-')) return;
+      console.error(e.error);
+    });
 
     // タブが display:none で 0×0 マウントされるため、実サイズが付いた最初のタイミングで
     // 一度だけ円全体にフィットさせる（0サイズで fitBounds するとズームがずれるため）。
@@ -861,6 +887,27 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         'source-layer': AUTHORITY_SOURCE_LAYER,
         layout: { visibility: 'none' },
         paint: { 'fill-color': AUTHORITY_TYPE_COLOR, 'fill-opacity': 0.5 },
+      });
+
+      // 洪水・土砂災害（ハザードマップポータルの色付きラスタタイル、キー不要・CORS可）。
+      // z17 が最大なので以降は拡大表示。データの無いタイルは 404（下の error ハンドラで無視）。
+      DISAPORTAL_OVERLAYS.forEach((dp) => {
+        const def = DISAPORTAL_LAYERS[dp];
+        map.addSource(`dp-${dp}`, {
+          type: 'raster',
+          tiles: [disaportalTileUrl(dp)],
+          tileSize: 256,
+          minzoom: def.minzoom,
+          maxzoom: DISAPORTAL_MAXZOOM,
+          attribution: DISAPORTAL_ATTRIBUTION,
+        });
+        map.addLayer({
+          id: `dp-${dp}`,
+          type: 'raster',
+          source: `dp-${dp}`,
+          layout: { visibility: 'none' },
+          paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' },
+        });
       });
 
       // 想定地震の無い震源(震源モデル)。想定地震の断層の下に敷く。海溝型の輪郭 → 活断層の面 →
@@ -1248,6 +1295,18 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         setHover(faultTxt);
         return;
       }
+      if (isDisaportalOverlay(ov)) {
+        // 色付きラスタなので、カーソル位置のタイル画素を凡例色に照合して区分を出す。
+        const token = ++hoverTokenRef.current;
+        const prefix = DISAPORTAL_LAYERS[ov].hoverPrefix;
+        disaportalLabelAt(ov, e.lngLat.lng, e.lngLat.lat, map.getZoom())
+          .then((label) => {
+            if (token !== hoverTokenRef.current) return;
+            setHover(withFault(`${prefix}: ${label ?? '区域外（データなし）'}`));
+          })
+          .catch(() => {});
+        return;
+      }
       if (ov === 'boring') {
         // ヒートマップ自体に点の属性は無い。マーカー(オーバーレイ有効中は全ズームで可視)に
         // 乗っていればその調査名とデータソースを出す。
@@ -1473,11 +1532,33 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
         地図をクリックして地点を指定
       </div>
       {overlay !== 'none' && (
-        <div className="absolute bottom-2 left-2 z-[2] pointer-events-none bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-2 backdrop-blur-sm w-56">
+        // 左上のオーバーレイ切替ボタン列(left-3, 幅 w-9+p-1)は地図の下端近くまで伸びるので、
+        // 凡例はその右に置いて重ならないようにする。
+        <div className="absolute bottom-2 left-16 z-[2] pointer-events-none bg-white/85 dark:bg-gray-800/85 rounded-lg shadow p-2 backdrop-blur-sm w-56">
           <div className="text-[10px] font-medium text-gray-700 dark:text-gray-200 leading-tight">
-            {LEGEND[overlay].title}
+            {isDisaportalOverlay(overlay) ? DISAPORTAL_LAYERS[overlay].title : LEGEND[overlay].title}
           </div>
-          {overlay === 'faults' ? (
+          {isDisaportalOverlay(overlay) ? (
+            <div className="mt-1 space-y-0.5 text-[9px] text-gray-600 dark:text-gray-300">
+              {DISAPORTAL_LAYERS[overlay].legend.map((item) => (
+                <div key={item.label} className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2.5 w-4 rounded-sm"
+                    style={
+                      overlay === 'flood_hanran'
+                        ? { background: `radial-gradient(circle, ${item.color} 35%, transparent 40%) 0 0 / 5px 5px` }
+                        : { background: item.color }
+                    }
+                  />
+                  {item.label}
+                </div>
+              ))}
+              <a className="pointer-events-auto underline" href={DISAPORTAL_SOURCE_URL} target="_blank" rel="noreferrer">
+                出典 ハザードマップポータルサイト
+              </a>
+              <div className="leading-tight">参考情報。区域の確認は都道府県・市町村の資料で行ってください。</div>
+            </div>
+          ) : overlay === 'faults' ? (
             <div className="mt-1 space-y-0.5">
               <div className="flex items-center gap-1.5 text-[9px] text-gray-600 dark:text-gray-300">
                 <span className="inline-block w-4 h-2.5 rounded-sm" style={{ background: SFAULT_FILL, boxShadow: `inset 0 0 0 1px ${SFAULT_INK}` }} />
