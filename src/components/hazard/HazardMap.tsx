@@ -19,6 +19,8 @@ import {
   DISAPORTAL_OVERLAYS,
   DISAPORTAL_SOURCE_URL,
   disaportalLabelAt,
+  disaportalLayerIds,
+  disaportalLegend,
   disaportalTileUrl,
   isDisaportalOverlay,
 } from './disaportal';
@@ -710,8 +712,8 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
       map.setLayoutProperty('boring-heat', 'visibility', kind === 'boring' ? 'visible' : 'none');
     }
     for (const dp of DISAPORTAL_OVERLAYS) {
-      if (map.getLayer(`dp-${dp}`)) {
-        map.setLayoutProperty(`dp-${dp}`, 'visibility', kind === dp ? 'visible' : 'none');
+      for (const id of disaportalLayerIds(dp)) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', kind === dp ? 'visible' : 'none');
       }
     }
     applyBoringPts(kind, annotRef.current);
@@ -891,22 +893,25 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
 
       // 洪水・土砂災害（ハザードマップポータルの色付きラスタタイル、キー不要・CORS可）。
       // z17 が最大なので以降は拡大表示。データの無いタイルは 404（下の error ハンドラで無視）。
+      // 1オーバーレイが複数タイルを重ねる場合（家屋倒壊: 河岸侵食＋氾濫流）は parts の順に下から積む。
       DISAPORTAL_OVERLAYS.forEach((dp) => {
-        const def = DISAPORTAL_LAYERS[dp];
-        map.addSource(`dp-${dp}`, {
-          type: 'raster',
-          tiles: [disaportalTileUrl(dp)],
-          tileSize: 256,
-          minzoom: def.minzoom,
-          maxzoom: DISAPORTAL_MAXZOOM,
-          attribution: DISAPORTAL_ATTRIBUTION,
-        });
-        map.addLayer({
-          id: `dp-${dp}`,
-          type: 'raster',
-          source: `dp-${dp}`,
-          layout: { visibility: 'none' },
-          paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' },
+        const ids = disaportalLayerIds(dp);
+        DISAPORTAL_LAYERS[dp].parts.forEach((part, i) => {
+          map.addSource(ids[i], {
+            type: 'raster',
+            tiles: [disaportalTileUrl(part)],
+            tileSize: 256,
+            minzoom: part.minzoom,
+            maxzoom: DISAPORTAL_MAXZOOM,
+            attribution: DISAPORTAL_ATTRIBUTION,
+          });
+          map.addLayer({
+            id: ids[i],
+            type: 'raster',
+            source: ids[i],
+            layout: { visibility: 'none' },
+            paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' },
+          });
         });
       });
 
@@ -1540,12 +1545,12 @@ const HazardMap = forwardRef<HazardMapHandle, HazardMapProps>(function HazardMap
           </div>
           {isDisaportalOverlay(overlay) ? (
             <div className="mt-1 space-y-0.5 text-[9px] text-gray-600 dark:text-gray-300">
-              {DISAPORTAL_LAYERS[overlay].legend.map((item) => (
+              {disaportalLegend(overlay).map((item) => (
                 <div key={item.label} className="flex items-center gap-1.5">
                   <span
                     className="inline-block h-2.5 w-4 rounded-sm"
                     style={
-                      overlay === 'flood_hanran'
+                      item.pattern
                         ? { background: `radial-gradient(circle, ${item.color} 35%, transparent 40%) 0 0 / 5px 5px` }
                         : { background: item.color }
                     }

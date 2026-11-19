@@ -87,13 +87,12 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
     key: 'flood',
     Icon: Waves,
     label: '洪水',
-    // 押すたびに 浸水深(計画規模) → 浸水深(想定最大規模) → 家屋倒壊(氾濫流) → 家屋倒壊(河岸侵食)。
+    // 押すたびに 浸水深(計画規模) → 浸水深(想定最大規模) → 家屋倒壊等氾濫想定区域(氾濫流＋河岸侵食を重ねて表示)。
     // ハザードマップポータルの公開ラスタタイル（disaportal.ts）。
     variants: [
       { val: 'flood_l1', label: '浸水深（計画規模）' },
       { val: 'flood_l2', label: '浸水深（想定最大規模）' },
-      { val: 'flood_hanran', label: '家屋倒壊（氾濫流）' },
-      { val: 'flood_kagan', label: '家屋倒壊（河岸侵食）' },
+      { val: 'flood_kaoku', label: '家屋倒壊等氾濫想定区域' },
     ],
   },
   {
