@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Database, Radar } from 'lucide-react';
+import { Search, MapPin, TriangleAlert, Snowflake, Wind, Activity, Building2, EyeOff, ExternalLink, Printer, Loader2, CircleDashed, Ruler, Database, Radar, Waves, Mountain } from 'lucide-react';
 import HazardMap from './HazardMap';
 import type { ZoneOverlay, HazardMapHandle, MapAnnotations } from './HazardMap';
 import { ampAtLngLat, vs400DepthAtLngLat } from './valueRaster';
@@ -81,6 +81,30 @@ const OVERLAY_CATEGORIES: OverlayCategory[] = [
       { val: 'urban', label: '都市計画区域' },
       { val: 'fire_zones', label: '防火・準防火地域' },
       { val: 'authority', label: '特定行政庁' },
+    ],
+  },
+  {
+    key: 'flood',
+    Icon: Waves,
+    label: '洪水',
+    // 押すたびに 浸水深(計画規模) → 浸水深(想定最大規模) → 家屋倒壊(氾濫流) → 家屋倒壊(河岸侵食)。
+    // ハザードマップポータルの公開ラスタタイル（disaportal.ts）。
+    variants: [
+      { val: 'flood_l1', label: '浸水深（計画規模）' },
+      { val: 'flood_l2', label: '浸水深（想定最大規模）' },
+      { val: 'flood_hanran', label: '家屋倒壊（氾濫流）' },
+      { val: 'flood_kagan', label: '家屋倒壊（河岸侵食）' },
+    ],
+  },
+  {
+    key: 'dosha',
+    Icon: Mountain,
+    label: '土砂災害',
+    // 押すたびに 急傾斜地の崩壊(崖) → 土石流 → 地すべり（土砂災害警戒区域）。
+    variants: [
+      { val: 'dosha_kyukei', label: '急傾斜地の崩壊（崖）' },
+      { val: 'dosha_dosekiryu', label: '土石流' },
+      { val: 'dosha_jisuberi', label: '地すべり' },
     ],
   },
   {
